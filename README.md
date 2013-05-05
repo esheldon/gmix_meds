@@ -10,3 +10,4 @@ scipy
 fitsio
 meds
 gmix_image
+psfex
