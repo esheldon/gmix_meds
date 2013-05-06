@@ -7,7 +7,7 @@ import meds
 import gmix_image
 from gmix_image.gmix_fit import GMixFitPSFJacob,\
         GMixFitMultiSimple,GMixFitMultiCModel, \
-        GMixFitMultiPSFFlux
+        GMixFitMultiPSFFlux,GMixFitMultiMatch
 import psfex
 
 DEFVAL=-9999
@@ -297,13 +297,80 @@ class MedsFit(object):
                 print >>stderr,fmt % ('psf_flux',flux,flux_err)
 
     def _fit_match(self, index, sdata):
+        if self.debug:
+            print >>stderr,'\tfitting matched flux'
+        niter=0
+        flux=DEFVAL
+        flux_err=PDEFVAL
         if self.det_cat is None:
-            pass
+        #if False:
+            # this is the detection band, just copy some data
+            flags,pars,pcov,niter0,mod=\
+                    self._get_best_simple_pars(self.data,index)
+            if flags==0:
+                flux=pars[5]
+                flux_err=sqrt(pcov[5,5])
+        else:
+            flags,pars0,pcov0,niter0,mod=\
+                    self._get_best_simple_pars(self.det_cat,index)
+            #flags,pars0,pcov0,niter0,mod=\
+            #        self._get_best_simple_pars(self.data,index)
+            # if flags != 0 it is because we could not find a good fit of any
+            # model
+            if flags==0:
+                match_gmix = gmix_image.GMix(pars0, type=mod)
 
-    def _copy_best_simple_to_match(self, index):
-        if self.data['exp_flags'] == 0 and self.data['dev_flags']==0:
-            if self.data['exp_loglike'] > self.data['dev_loglike']:
-                pass
+                gm=GMixFitMultiMatch(sdata['imlist'],
+                                     sdata['wtlist'],
+                                     sdata['jacob_list'],
+                                     sdata['psf_gmix_list'],
+                                     sdata['cen0'],
+                                     match_gmix)
+                res=gm.get_result()
+                flags=res['flags']
+                if flags==0:
+                    flux=res['F']
+                    flux_err=res['Ferr']
+                    niter=res['numiter']
+
+        self.data['match_flags'][index] = flags
+        self.data['match_model'][index] = mod
+        self.data['match_iter'][index] = niter
+        self.data['match_flux'][index] = flux
+        self.data['match_flux_err'][index] = flux_err
+        if self.debug:
+            fmt='\t\t%s[%s]: %g +/- %g'
+            print >>stderr,fmt % ('match_flux',mod,flux,flux_err)
+
+
+    def _get_best_simple_pars(self, data, index):
+        expflags=data['exp_flags'][index]
+        devflags=data['dev_flags'][index]
+
+        flags=0
+        if expflags==0 and devflags==0:
+            if (data['exp_loglike'][index] 
+                    > data['dev_loglike'][index]):
+                mod='exp'
+            else:
+                mod='dev'
+        elif expflags==0:
+            mod='exp'
+        elif devflags==0:
+            mod='dev'
+        else:
+            flags |= (EXP_FIT_FAILURE+DEV_FIT_FAILURE)
+            return flags,DEFVAL,PDEFVAL,0,'nil'
+
+        pn='%s_pars' % mod
+        pcn='%s_pars_cov' % mod
+        itn='%s_iter' % mod
+
+        pars=data[pn][index]
+        pcov=data[pcn][index]
+        niter=data[itn][index]
+
+        return flags,pars,pcov,niter,mod
 
     def _get_imlist(self, index, type='image'):
         """
@@ -414,12 +481,13 @@ class MedsFit(object):
         fmt='\t\t%s: %g +/- %g'
         n=ndict
         if rfc_res['flags']==0:
-            nm='-rfc %s' % n['flux']
+            print >>stderr,'\t\trfc'
+            nm='\t%s' % n['flux']
             flux=rfc_res['pars'][1]
             flux_err=sqrt(rfc_res['pcov'][1,1])
             print >>stderr,fmt % (nm,flux,flux_err)
 
-            nm='-rfc T'
+            nm='\tT'
             flux=rfc_res['pars'][0]
             flux_err=sqrt(rfc_res['pcov'][0,0])
             print >>stderr, fmt % (nm,flux,flux_err)
@@ -499,13 +567,11 @@ class MedsFit(object):
                (n['aic'],'f8'),
                (n['bic'],'f8')]
 
-        dt +=[
-               ('match_flags','i4'),
-               ('match_iter','i4'),
-               ('match_pars','f8',simple_npars),
-               ('match_pars_cov','f8',(simple_npars,simple_npars)),
-               ('match_flux','f8'),
-               ('match_flux_err','f8'),
+        dt +=[('match_flags','i4'),
+              ('match_model','S3'),
+              ('match_iter','i4'),
+              ('match_flux','f8'),
+              ('match_flux_err','f8'),
               ]
 
 
@@ -521,8 +587,6 @@ class MedsFit(object):
         data['psf_flux'] = DEFVAL
         data['psf_flux_err'] = PDEFVAL
 
-        data['match_pars'] = DEFVAL
-        data['match_pars_cov'] = PDEFVAL
         data['match_flux'] = DEFVAL
         data['match_flux_err'] = PDEFVAL
 
