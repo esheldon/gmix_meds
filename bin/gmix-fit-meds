@@ -6,6 +6,7 @@ Process the input meds file.
 """
 
 import os,sys
+import numpy
 import yaml
 import fitsio
 import gmix_meds
@@ -16,6 +17,8 @@ parser = OptionParser(__doc__)
 parser.add_option("--obj-range",default=None,
                   help=("Inclusive, zero-offset range of objects to "
                         "process"))
+parser.add_option("--det-cat", default=None,
+                  help="detection cat for matched fluxes")
 
 def load_config(fname):
     with open(fname) as fobj:
@@ -30,6 +33,20 @@ def makedir_fromfile(fname):
         except:
             # probably a race condition
             pass
+
+def make_meta(magzp_ref, meds_file, config_file):
+    clen=len(config_file)
+    flen=len(meds_file)
+    metadt=[('magzp_ref','f8'),
+            ('meds_file','S%d' % flen),
+            ('config_file','S%d' % clen)]
+    meta=numpy.zeros(1, dtype=metadt)
+    meta['magzp_ref'] = magzp_ref
+    meta['meds_file'] = meds_file
+    meta['config_file'] = config_file
+
+    return meta
+
 def main():
     options, args = parser.parse_args(sys.argv[1:])
     if len(args) < 3:
@@ -47,19 +64,30 @@ def main():
         rng=rng.split(',')
         rng = [int(i) for i in rng]
 
+    det_cat_file=options.det_cat
+    if det_cat_file is not None:
+        det_cat=fitsio.read(det_cat_file)
+    else:
+        det_cat=None
+
     gm=gmix_meds.MedsFit(meds_file,
                          obj_range=rng,
                          psf_ngauss=conf['psf_ngauss'],
                          use_seg=conf['use_seg'],
                          psf_ntry=conf['psf_ntry'],
-                         obj_ntry=conf['obj_ntry'])
+                         obj_ntry=conf['obj_ntry'],
+                         det_cat=det_cat)
     gm.do_fits()
 
     data=gm.get_data()
 
+    magzp_ref=gm.get_magzp()
+    meta=make_meta(magzp_ref, meds_file, config_file)
+
     makedir_fromfile(out_file)
     print 'writing:',out_file
     with fitsio.FITS(out_file,'rw',clobber=True) as fobj:
-        fobj.write(data)
+        fobj.write(data,extname="model_fits")
+        fobj.write(meta,extname="meta_data")
 
 main()

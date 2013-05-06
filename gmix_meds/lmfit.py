@@ -20,6 +20,8 @@ PSF_FIT_FAILURE=2**1
 EXP_FIT_FAILURE=2**2
 DEV_FIT_FAILURE=2**3
 
+NO_ATTEMPT=2**30
+
 PSF_S2N=1.e6
 
 class MedsFit(object):
@@ -176,8 +178,7 @@ class MedsFit(object):
                                    lm_max_try=self.psf_ntry)
             res=gm_psf.get_result()
             if res['flags'] != 0:
-                print 'error: psf fitting failed, '
-                print res
+                print >>stderr,'error: psf fitting failed, '
                 return None
 
             gmix_psf=gm_psf.get_gmix()
@@ -626,25 +627,30 @@ class MedsFit(object):
 
         data=numpy.zeros(nobj, dtype=dt)
         data['id'] = 1+numpy.arange(nobj)
-        data['frac_dev'] = DEFVAL
-        data['frac_dev_err'] = PDEFVAL
+
+        data['cmodel_flags'] = NO_ATTEMPT
         data['cmodel_flux'] = DEFVAL
         data['cmodel_flux_err'] = PDEFVAL
+        data['frac_dev'] = DEFVAL
+        data['frac_dev_err'] = PDEFVAL
 
+        data['psf_flags'] = NO_ATTEMPT
         data['psf_pars'] = DEFVAL
         data['psf_pars_cov'] = PDEFVAL
         data['psf_flux'] = DEFVAL
         data['psf_flux_err'] = PDEFVAL
 
+        data['match_flags'] = NO_ATTEMPT
         data['match_flux'] = DEFVAL
         data['match_flux_err'] = PDEFVAL
 
 
         for model in simple_models:
-            pars_name='%s_pars' % model
-            cov_name='%s_cov' % model
-
             n=get_model_names(model)
+
+            data[n['rfc_flags']] = NO_ATTEMPT
+            data[n['flags']] = NO_ATTEMPT
+
             data[n['rfc_pars']] = DEFVAL
             data[n['rfc_pars_cov']] = PDEFVAL
             data[n['pars']] = DEFVAL
