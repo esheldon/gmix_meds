@@ -58,6 +58,7 @@ def main():
     data=gm.get_data()
 
     makedir_fromfile(out_file)
+    print 'writing:',out_file
     with fitsio.FITS(out_file,'rw',clobber=True) as fobj:
         fobj.write(data)
 

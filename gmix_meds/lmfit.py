@@ -24,9 +24,9 @@ PSF_S2N=1.e6
 class MedsFit(object):
     def __init__(self, meds_file,
                  obj_range=None,
+                 det_cat=None,
                  psf_ngauss=2,
                  use_seg=True,
-                 det_cat=None,
                  psf_ntry=LM_MAX_TRY,
                  obj_ntry=2,
                  debug=0):
