@@ -1,4 +1,5 @@
 from sys import stderr
+import time
 import numpy
 from numpy import sqrt
 from numpy.random import randn
@@ -122,16 +123,20 @@ class MedsFit(object):
             self.data['flags'][index] |= NO_SE_CUTOUTS
             return
 
+        t0=time.time()
         cen0=self._get_cen0(index)
         imlist=self._get_imlist(index)
         wtlist=self._get_wtlist(index,cen0)
         jacob_list=self._get_jacobian_list(index)
+
+        self.data['nimage'][index] = len(imlist)
 
         if self.debug: print >>stderr,'\tfitting psfs'
 
         psf_gmix_list=self._fit_psfs(index,jacob_list)
         if psf_gmix_list is None:
             self.data['flags'][index] |= PSF_FIT_FAILURE
+            self.data['time'][index] = time.time()-t0
             return
 
         sdata={'imlist':imlist,'wtlist':wtlist,
@@ -146,6 +151,8 @@ class MedsFit(object):
 
         if self.debug >= 3:
             self._debug_image(sdata['imlist'][0],sdata['wtlist'][-1])
+
+        self.data['time'][index] = time.time()-t0
 
     def _fit_psfs(self,index,jacob_list):
         """
@@ -551,7 +558,9 @@ class MedsFit(object):
         nobj=self.meds.size
 
         dt=[('id','i4'),
-            ('flags','i4')]
+            ('flags','i4'),
+            ('nimage','i4'),
+            ('time','f8')]
 
         simple_npars=6
         simple_models=['exp','dev']

@@ -1,4 +1,4 @@
 psf_ngauss: 2
 use_seg: True
-psf_ntry: 5
+psf_ntry: 1
 obj_ntry: 2

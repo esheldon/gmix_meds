@@ -13,4 +13,4 @@ gmix_image
 psfex
 
 for the script gmix-fit-meds
-yaml (http://pyyaml.org/)
+yaml (https://bitbucket.org/xi/pyyaml)
