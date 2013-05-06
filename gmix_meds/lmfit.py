@@ -5,7 +5,8 @@ from numpy.random import randn
 import fitsio
 import meds
 import gmix_image
-from gmix_image.gmix_fit import GMixFitPSFJacob,\
+from gmix_image.gmix_fit import LM_MAX_TRY, \
+        GMixFitPSFJacob,\
         GMixFitMultiSimple,GMixFitMultiCModel, \
         GMixFitMultiPSFFlux,GMixFitMultiMatch
 import psfex
@@ -26,6 +27,8 @@ class MedsFit(object):
                  psf_ngauss=2,
                  use_seg=True,
                  det_cat=None,
+                 psf_ntry=LM_MAX_TRY,
+                 obj_ntry=2,
                  debug=0):
         """
         parameters
@@ -61,14 +64,28 @@ class MedsFit(object):
         self.det_cat=det_cat
         self.debug=debug
 
+        self.psf_ntry=psf_ntry
+        self.obj_ntry=obj_ntry
+
         self.simple_models=['exp','dev']
 
         self._make_struct()
         self._load_all_psfex_objects()
 
     def get_data(self):
+        """
+        Get the data structure.  If a subset was requested, only those rows are
+        returned.
+        """
         idlist=self.get_index_list()
         return self.data[idlist]
+
+    def get_magzp(self):
+        """
+        Get the magnitude zero point.
+        """
+        meta=self.meds.get_meta()
+        return meta['magzp_ref']
 
     def get_index_list(self):
         """
@@ -148,7 +165,8 @@ class MedsFit(object):
                                    ivar,
                                    jacob,
                                    cen0,
-                                   self.psf_ngauss)
+                                   self.psf_ngauss,
+                                   lm_max_try=self.psf_ntry)
             res=gm_psf.get_result()
             if res['flags'] != 0:
                 print 'error: psf fitting failed, '
@@ -165,7 +183,9 @@ class MedsFit(object):
         Fit all the simple models
         """
         if self.debug:
-            print >>stderr,'\tfitting simple models'
+            bsize=self.meds['box_size'][index]
+            bstr='[%d,%d]' % (bsize,bsize)
+            print >>stderr,'\tfitting simple models %s' % bstr
 
         for model in self.simple_models:
             gm=self._fit_simple(model, sdata)
@@ -223,7 +243,8 @@ class MedsFit(object):
                               sdata['jacob_list'],
                               sdata['psf_gmix_list'],
                               sdata['cen0'],
-                              model)
+                              model,
+                              lm_max_try=self.obj_ntry)
         return gm
 
     def _fit_cmodel(self, index, sdata):
@@ -246,7 +267,8 @@ class MedsFit(object):
                               sdata['psf_gmix_list'],
                               sdata['cen0'],
                               exp_gmix,
-                              dev_gmix)
+                              dev_gmix,
+                              lm_max_try=self.obj_ntry)
         res=gm.get_result()
         self.data['cmodel_flags'][index] = res['flags']
         self.data['cmodel_iter'][index] = res['numiter']
@@ -277,7 +299,8 @@ class MedsFit(object):
                                sdata['wtlist'],
                                sdata['jacob_list'],
                                sdata['psf_gmix_list'],
-                               sdata['cen0'])
+                               sdata['cen0'],
+                               lm_max_try=self.obj_ntry)
         res=gm.get_result()
         self.data['psf_flags'][index] = res['flags']
         self.data['psf_iter'][index] = res['numiter']
@@ -332,7 +355,8 @@ class MedsFit(object):
                                      sdata['jacob_list'],
                                      sdata['psf_gmix_list'],
                                      sdata['cen0'],
-                                     match_gmix)
+                                     match_gmix,
+                                     lm_max_try=self.obj_ntry)
                 res=gm.get_result()
                 flags=res['flags']
                 if flags==0:
