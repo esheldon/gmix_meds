@@ -48,8 +48,6 @@ class MedsFit(object):
             with best simple model fit from this.
 
         TODO:
-            psfflux
-            cmodel
             fluxonly
         """
 
@@ -126,6 +124,8 @@ class MedsFit(object):
         self._fit_simple_models(index, sdata)
         self._fit_cmodel(index, sdata)
         self._fit_psf_flux(index, sdata)
+        # might just be a copy if there is not det_cat
+        self._fit_match(index, sdata)
 
         if self.debug >= 3:
             self._debug_image(sdata['imlist'][0],sdata['wtlist'][-1])
@@ -201,6 +201,9 @@ class MedsFit(object):
 
             self.data[n['g']][index,:] = res['pars'][2:2+2]
             self.data[n['g_cov']][index,:,:] = res['pcov'][2:2+2,2:2+2]
+
+            for sn in _stat_names:
+                self.data[n[sn]][index] = res[sn]
         else:
             if self.debug:
                 print >>stderr,'flags != 0, errmsg:',res['errmsg']
@@ -284,9 +287,23 @@ class MedsFit(object):
             flux_err=sqrt(res['pcov'][2,2])
             self.data['psf_flux'][index] = flux
             self.data['psf_flux_err'][index] = flux_err
+
+            n=get_model_names('psf')
+            for sn in _stat_names:
+                self.data[n[sn]][index] = res[sn]
+
             if self.debug:
                 fmt='\t\t%s: %g +/- %g'
                 print >>stderr,fmt % ('psf_flux',flux,flux_err)
+
+    def _fit_match(self, index, sdata):
+        if self.det_cat is None:
+            pass
+
+    def _copy_best_simple_to_match(self, index):
+        if self.data['exp_flags'] == 0 and self.data['dev_flags']==0:
+            if self.data['exp_loglike'] > self.data['dev_loglike']:
+                pass
 
     def _get_imlist(self, index, type='image'):
         """
@@ -465,13 +482,31 @@ class MedsFit(object):
                ('cmodel_flux','f8'),
                ('cmodel_flux_err','f8'),
                ('frac_dev','f8'),
-               ('frac_dev_err','f8'),
-               ('psf_flags','i4'),
+               ('frac_dev_err','f8')]
+
+        n=get_model_names('psf')
+        dt += [('psf_flags','i4'),
                ('psf_iter','i4'),
                ('psf_pars','f8',3),
                ('psf_pars_cov','f8',(3,3)),
                ('psf_flux','f8'),
-               ('psf_flux_err','f8')]
+               ('psf_flux_err','f8'),
+               (n['s2n_w'],'f8'),
+               (n['loglike'],'f8'),
+               (n['chi2per'],'f8'),
+               (n['dof'],'i4'),
+               (n['fit_prob'],'f8'),
+               (n['aic'],'f8'),
+               (n['bic'],'f8')]
+
+        dt +=[
+               ('match_flags','i4'),
+               ('match_iter','i4'),
+               ('match_pars','f8',simple_npars),
+               ('match_pars_cov','f8',(simple_npars,simple_npars)),
+               ('match_flux','f8'),
+               ('match_flux_err','f8'),
+              ]
 
 
         data=numpy.zeros(nobj, dtype=dt)
@@ -485,6 +520,12 @@ class MedsFit(object):
         data['psf_pars_cov'] = PDEFVAL
         data['psf_flux'] = DEFVAL
         data['psf_flux_err'] = PDEFVAL
+
+        data['match_pars'] = DEFVAL
+        data['match_pars_cov'] = PDEFVAL
+        data['match_flux'] = DEFVAL
+        data['match_flux_err'] = PDEFVAL
+
 
         for model in simple_models:
             pars_name='%s_pars' % model
@@ -508,6 +549,14 @@ class MedsFit(object):
         
         self.data=data
 
+_stat_names=['s2n_w',
+             'loglike',
+             'chi2per',
+             'dof',
+             'fit_prob',
+             'aic',
+             'bic']
+
 def get_model_names(model):
     names=['rfc_flags',
            'rfc_iter',
@@ -520,14 +569,8 @@ def get_model_names(model):
            'flux_err',
            'g',
            'g_cov',
-           'iter',
-           's2n_w',
-           'loglike',
-           'chi2per',
-           'dof',
-           'fit_prob',
-           'aic',
-           'bic']
+           'iter']
+    names += _stat_names
 
     ndict={}
     for n in names:
