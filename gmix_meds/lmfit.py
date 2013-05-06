@@ -5,10 +5,12 @@ from numpy.random import randn
 import fitsio
 import meds
 import gmix_image
-from gmix_image.gmix_fit import GMixFitPSFJacob, GMixFitMultiSimple
+from gmix_image.gmix_fit import GMixFitPSFJacob,\
+        GMixFitMultiSimple,GMixFitMultiCModel
 import psfex
 
 DEFVAL=-9999
+PDEFVAL=9999
 
 NO_SE_CUTOUTS=2**0
 PSF_FIT_FAILURE=2**1
@@ -124,6 +126,7 @@ class MedsFit(object):
             print >>stderr,'\tfitting simple models'
 
         self._fit_simple_models(index, sdata)
+        self._fit_cmodel(index, sdata)
 
         if self.debug >= 3:
             self._debug_image(sdata['imlist'][0],sdata['wtlist'][-1])
@@ -172,13 +175,19 @@ class MedsFit(object):
             if self.debug:
                 self._print_simple_stats(n, rfc_res, res)
 
+            self.data[n['rfc_flags']][index] = rfc_res['flags']
+            self.data[n['rfc_iter']][index] = rfc_res['numiter']
+
+            if rfc_res['flags']==0:
+                self.data[n['rfc_pars']][index,:] = rfc_res['pars']
+                self.data[n['rfc_pars_cov']][index,:] = rfc_res['pcov']
+
             self.data[n['flags']][index] = res['flags']
-            if 'pars' in res:
-                self.data[n['pars']][index,:] = res['pars']
-                self.data[n['numiter']][index] = res['numiter']
 
             if res['flags'] == 0:
-                self.data[n['pcov']][index,:,:] = res['pcov']
+                self.data[n['pars']][index,:] = res['pars']
+                self.data[n['iter']][index] = res['numiter']
+                self.data[n['pars_cov']][index,:,:] = res['pcov']
 
                 flux=res['pars'][5]
                 flux_err=sqrt(res['pcov'][5,5])
@@ -186,7 +195,7 @@ class MedsFit(object):
                 self.data[n['flux_err']][index] = flux_err
 
                 self.data[n['g']][index,:] = res['pars'][2:2+2]
-                self.data[n['gcov']][index,:,:] = res['pcov'][2:2+2,2:2+2]
+                self.data[n['g_cov']][index,:,:] = res['pcov'][2:2+2,2:2+2]
             else:
                 if self.debug:
                     print >>stderr,'flags != 0, errmsg:',res['errmsg']
@@ -207,6 +216,39 @@ class MedsFit(object):
                               model)
         return gm
 
+    def _fit_cmodel(self, index, sdata):
+        if self.data['exp_flags'][index]!=0:
+            self.data['cmodel_flags'][index] |= EXP_FIT_FAILURE
+        if self.data['dev_flags'][index]!=0:
+            self.data['cmodel_flags'][index] |= DEV_FIT_FAILURE
+
+        if self.data['cmodel_flags'][index] != 0:
+            return
+
+        exp_gmix = gmix_image.GMix(self.data['exp_pars'][index],type='exp')
+        dev_gmix = gmix_image.GMix(self.data['dev_pars'][index],type='dev')
+
+        gm=GMixFitMultiCModel(sdata['imlist'],
+                              sdata['wtlist'],
+                              sdata['jacob_list'],
+                              sdata['psf_gmix_list'],
+                              sdata['cen0'],
+                              exp_gmix,
+                              dev_gmix)
+        res=gm.get_result()
+        if res['flags']==0:
+            f=res['fracdev']
+            ferr=res['fracdev_err']
+            self.data['frac_dev'][index] = f
+            self.data['frac_dev_err'][index] = ferr
+            flux=(1.-f)*self.data['exp_flux'][index] \
+                    + f*self.data['dev_flux'][index]
+            flux_err2=(1.-f)**2*self.data['exp_flux_err'][index]**2 \
+                         + f**2*self.data['dev_flux_err'][index]**2
+            flux_err=sqrt(flux_err2)
+            self.data['cmodel_flux'][index] = flux
+            self.data['cmodel_flux_err'][index] = flux_err
+                    
     def _get_imlist(self, index, type='image'):
         """
         get the image list, skipping the coadd
@@ -358,16 +400,17 @@ class MedsFit(object):
             n=get_model_names(model)
 
             dt+=[(n['rfc_flags'],'i4'),
+                 (n['rfc_iter'],'i4'),
                  (n['rfc_pars'],'f8',2),
-                 (n['rfc_pcov'],'f8',(2,2)),
+                 (n['rfc_pars_cov'],'f8',(2,2)),
                  (n['flags'],'i4'),
-                 (n['numiter'],'i4'),
+                 (n['iter'],'i4'),
                  (n['pars'],'f8',simple_npars),
-                 (n['pcov'],'f8',(simple_npars,simple_npars)),
+                 (n['pars_cov'],'f8',(simple_npars,simple_npars)),
                  (n['flux'],'f8'),
                  (n['flux_err'],'f8'),
                  (n['g'],'f8',2),
-                 (n['gcov'],'f8',(2,2)),
+                 (n['g_cov'],'f8',(2,2)),
                 
                  (n['s2n_w'],'f8'),
                  (n['loglike'],'f8'),
@@ -378,8 +421,19 @@ class MedsFit(object):
                  (n['bic'],'f8'),
                 ]
 
+        dt += [('cmodel_flags','i4'),
+               ('cmodel_flux','f8'),
+               ('cmodel_flux_err','f8'),
+               ('frac_dev','f8'),
+               ('frac_dev_err','f8')]
+
+
         data=numpy.zeros(nobj, dtype=dt)
         data['id'] = 1+numpy.arange(nobj)
+        data['frac_dev'] = DEFVAL
+        data['frac_dev_err'] = PDEFVAL
+        data['cmodel_flux'] = DEFVAL
+        data['cmodel_flux_err'] = PDEFVAL
 
         for model in simple_models:
             pars_name='%s_pars' % model
@@ -387,17 +441,17 @@ class MedsFit(object):
 
             n=get_model_names(model)
             data[n['rfc_pars']] = DEFVAL
-            data[n['rfc_pcov']] = abs(DEFVAL)
+            data[n['rfc_pars_cov']] = PDEFVAL
             data[n['pars']] = DEFVAL
-            data[n['pcov']] = abs(DEFVAL)
+            data[n['pars_cov']] = PDEFVAL
             data[n['flux']] = DEFVAL
-            data[n['flux_err']] = abs(DEFVAL)
+            data[n['flux_err']] = PDEFVAL
             data[n['g']] = DEFVAL
-            data[n['gcov']] = abs(DEFVAL)
+            data[n['g_cov']] = PDEFVAL
 
             data[n['s2n_w']] = DEFVAL
             data[n['loglike']] = -9.999e9
-            data[n['chi2per']] = abs(DEFVAL)
+            data[n['chi2per']] = PDEFVAL
             data[n['aic']] = DEFVAL
             data[n['bic']] = DEFVAL
         
@@ -405,16 +459,17 @@ class MedsFit(object):
 
 def get_model_names(model):
     names=['rfc_flags',
+           'rfc_iter',
            'rfc_pars',
-           'rfc_pcov',
+           'rfc_pars_cov',
            'flags',
            'pars',
-           'pcov',
+           'pars_cov',
            'flux',
            'flux_err',
            'g',
-           'gcov',
-           'numiter',
+           'g_cov',
+           'iter',
            's2n_w',
            'loglike',
            'chi2per',
