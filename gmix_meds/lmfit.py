@@ -6,7 +6,8 @@ import fitsio
 import meds
 import gmix_image
 from gmix_image.gmix_fit import GMixFitPSFJacob,\
-        GMixFitMultiSimple,GMixFitMultiCModel
+        GMixFitMultiSimple,GMixFitMultiCModel, \
+        GMixFitMultiPSFFlux
 import psfex
 
 DEFVAL=-9999
@@ -122,11 +123,9 @@ class MedsFit(object):
                'jacob_list':jacob_list,'cen0':cen0,
                'psf_gmix_list':psf_gmix_list}
 
-        if self.debug:
-            print >>stderr,'\tfitting simple models'
-
         self._fit_simple_models(index, sdata)
         self._fit_cmodel(index, sdata)
+        self._fit_psf_flux(index, sdata)
 
         if self.debug >= 3:
             self._debug_image(sdata['imlist'][0],sdata['wtlist'][-1])
@@ -165,6 +164,9 @@ class MedsFit(object):
         """
         Fit all the simple models
         """
+        if self.debug:
+            print >>stderr,'\tfitting simple models'
+
         for model in self.simple_models:
             gm=self._fit_simple(model, sdata)
             res=gm.get_result()
@@ -175,32 +177,35 @@ class MedsFit(object):
             if self.debug:
                 self._print_simple_stats(n, rfc_res, res)
 
-            self.data[n['rfc_flags']][index] = rfc_res['flags']
-            self.data[n['rfc_iter']][index] = rfc_res['numiter']
+            self._copy_simple_pars(index, rfc_res, res, n )
 
-            if rfc_res['flags']==0:
-                self.data[n['rfc_pars']][index,:] = rfc_res['pars']
-                self.data[n['rfc_pars_cov']][index,:] = rfc_res['pcov']
+    def _copy_simple_pars(self, index, rfc_res, res, n):
+        self.data[n['rfc_flags']][index] = rfc_res['flags']
+        self.data[n['rfc_iter']][index] = rfc_res['numiter']
 
-            self.data[n['flags']][index] = res['flags']
+        if rfc_res['flags']==0:
+            self.data[n['rfc_pars']][index,:] = rfc_res['pars']
+            self.data[n['rfc_pars_cov']][index,:] = rfc_res['pcov']
 
-            if res['flags'] == 0:
-                self.data[n['pars']][index,:] = res['pars']
-                self.data[n['iter']][index] = res['numiter']
-                self.data[n['pars_cov']][index,:,:] = res['pcov']
+        self.data[n['flags']][index] = res['flags']
 
-                flux=res['pars'][5]
-                flux_err=sqrt(res['pcov'][5,5])
-                self.data[n['flux']][index] = flux
-                self.data[n['flux_err']][index] = flux_err
+        if res['flags'] == 0:
+            self.data[n['pars']][index,:] = res['pars']
+            self.data[n['iter']][index] = res['numiter']
+            self.data[n['pars_cov']][index,:,:] = res['pcov']
 
-                self.data[n['g']][index,:] = res['pars'][2:2+2]
-                self.data[n['g_cov']][index,:,:] = res['pcov'][2:2+2,2:2+2]
-            else:
-                if self.debug:
-                    print >>stderr,'flags != 0, errmsg:',res['errmsg']
-                if self.debug > 1 and self.debug < 3:
-                    self._debug_image(sdata['imlist'][0],sdata['wtlist'][0])
+            flux=res['pars'][5]
+            flux_err=sqrt(res['pcov'][5,5])
+            self.data[n['flux']][index] = flux
+            self.data[n['flux_err']][index] = flux_err
+
+            self.data[n['g']][index,:] = res['pars'][2:2+2]
+            self.data[n['g_cov']][index,:,:] = res['pcov'][2:2+2,2:2+2]
+        else:
+            if self.debug:
+                print >>stderr,'flags != 0, errmsg:',res['errmsg']
+            if self.debug > 1 and self.debug < 3:
+                self._debug_image(sdata['imlist'][0],sdata['wtlist'][0])
 
 
 
@@ -217,6 +222,8 @@ class MedsFit(object):
         return gm
 
     def _fit_cmodel(self, index, sdata):
+        if self.debug:
+            print >>stderr,'\tfitting frac_dev'
         if self.data['exp_flags'][index]!=0:
             self.data['cmodel_flags'][index] |= EXP_FIT_FAILURE
         if self.data['dev_flags'][index]!=0:
@@ -236,6 +243,9 @@ class MedsFit(object):
                               exp_gmix,
                               dev_gmix)
         res=gm.get_result()
+        self.data['cmodel_flags'][index] = res['flags']
+        self.data['cmodel_iter'][index] = res['numiter']
+
         if res['flags']==0:
             f=res['fracdev']
             ferr=res['fracdev_err']
@@ -248,7 +258,36 @@ class MedsFit(object):
             flux_err=sqrt(flux_err2)
             self.data['cmodel_flux'][index] = flux
             self.data['cmodel_flux_err'][index] = flux_err
+
+            if self.debug:
+                fmt='\t\t%s: %g +/- %g'
+                print >>stderr,fmt % ('frac_dev',f,ferr)
+                print >>stderr,fmt % ('cmodel_flux',flux,flux_err)
                     
+    def _fit_psf_flux(self, index, sdata):
+        if self.debug:
+            print >>stderr,'\tfitting psf flux'
+        gm=GMixFitMultiPSFFlux(sdata['imlist'],
+                               sdata['wtlist'],
+                               sdata['jacob_list'],
+                               sdata['psf_gmix_list'],
+                               sdata['cen0'])
+        res=gm.get_result()
+        self.data['psf_flags'][index] = res['flags']
+        self.data['psf_iter'][index] = res['numiter']
+
+        if res['flags']==0:
+            self.data['psf_pars'][index,:]=res['pars']
+            self.data['psf_pars_cov'][index,:,:] = res['pcov']
+
+            flux=res['pars'][2]
+            flux_err=sqrt(res['pcov'][2,2])
+            self.data['psf_flux'][index] = flux
+            self.data['psf_flux_err'][index] = flux_err
+            if self.debug:
+                fmt='\t\t%s: %g +/- %g'
+                print >>stderr,fmt % ('psf_flux',flux,flux_err)
+
     def _get_imlist(self, index, type='image'):
         """
         get the image list, skipping the coadd
@@ -422,10 +461,17 @@ class MedsFit(object):
                 ]
 
         dt += [('cmodel_flags','i4'),
+               ('cmodel_iter','i4'),
                ('cmodel_flux','f8'),
                ('cmodel_flux_err','f8'),
                ('frac_dev','f8'),
-               ('frac_dev_err','f8')]
+               ('frac_dev_err','f8'),
+               ('psf_flags','i4'),
+               ('psf_iter','i4'),
+               ('psf_pars','f8',3),
+               ('psf_pars_cov','f8',(3,3)),
+               ('psf_flux','f8'),
+               ('psf_flux_err','f8')]
 
 
         data=numpy.zeros(nobj, dtype=dt)
@@ -434,6 +480,11 @@ class MedsFit(object):
         data['frac_dev_err'] = PDEFVAL
         data['cmodel_flux'] = DEFVAL
         data['cmodel_flux_err'] = PDEFVAL
+
+        data['psf_pars'] = DEFVAL
+        data['psf_pars_cov'] = PDEFVAL
+        data['psf_flux'] = DEFVAL
+        data['psf_flux_err'] = PDEFVAL
 
         for model in simple_models:
             pars_name='%s_pars' % model
