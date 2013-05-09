@@ -14,6 +14,9 @@ import psfex
 
 DEFVAL=-9999
 PDEFVAL=9999
+BIG_DEFVAL=-9.999e9
+BIG_PDEFVAL=9.999e9
+
 
 NO_SE_CUTOUTS=2**0
 PSF_FIT_FAILURE=2**1
@@ -25,7 +28,9 @@ NO_ATTEMPT=2**30
 PSF_S2N=1.e6
 
 class MedsFit(object):
-    def __init__(self, meds_file,
+    def __init__(self,
+                 meds_file,
+                 seed=None,
                  obj_range=None,
                  det_cat=None,
                  psf_ngauss=2,
@@ -56,9 +61,12 @@ class MedsFit(object):
         TODO:
             fluxonly
         """
+        
+        numpy.random.seed(seed)
 
         self.meds_file=meds_file
         self.meds=meds.MEDS(meds_file)
+        self.meds_meta=self.meds.get_meta()
         self.nobj=self.meds.size
 
         self.obj_range=obj_range
@@ -83,12 +91,14 @@ class MedsFit(object):
         idlist=self.get_index_list()
         return self.data[idlist]
 
+    def get_meds_meta(self):
+        return self.meds_meta.copy()
+
     def get_magzp(self):
         """
         Get the magnitude zero point.
         """
-        meta=self.meds.get_meta()
-        return meta['magzp_ref']
+        return self.meds_meta['magzp_ref'][0]
 
     def get_index_list(self):
         """
@@ -126,9 +136,9 @@ class MedsFit(object):
             return
 
         t0=time.time()
-        cen0=self._get_cen0(index)
+        cenlist=self._get_cenlist(index)
         imlist=self._get_imlist(index)
-        wtlist=self._get_wtlist(index,cen0)
+        wtlist=self._get_wtlist(index)
         jacob_list=self._get_jacobian_list(index)
 
         self.data['nimage'][index] = len(imlist)
@@ -142,7 +152,7 @@ class MedsFit(object):
             return
 
         sdata={'imlist':imlist,'wtlist':wtlist,
-               'jacob_list':jacob_list,'cen0':cen0,
+               'jacob_list':jacob_list,'cenlist':cenlist,
                'psf_gmix_list':psf_gmix_list}
 
         self._fit_simple_models(index, sdata)
@@ -178,7 +188,7 @@ class MedsFit(object):
                                    lm_max_try=self.psf_ntry)
             res=gm_psf.get_result()
             if res['flags'] != 0:
-                print >>stderr,'error: psf fitting failed, '
+                print >>stderr,'psf fitting failed, '
                 return None
 
             gmix_psf=gm_psf.get_gmix()
@@ -250,7 +260,7 @@ class MedsFit(object):
                               sdata['wtlist'],
                               sdata['jacob_list'],
                               sdata['psf_gmix_list'],
-                              sdata['cen0'],
+                              sdata['cenlist'],
                               model,
                               lm_max_try=self.obj_ntry)
         return gm
@@ -273,7 +283,7 @@ class MedsFit(object):
                               sdata['wtlist'],
                               sdata['jacob_list'],
                               sdata['psf_gmix_list'],
-                              sdata['cen0'],
+                              sdata['cenlist'],
                               exp_gmix,
                               dev_gmix,
                               lm_max_try=self.obj_ntry)
@@ -307,7 +317,7 @@ class MedsFit(object):
                                sdata['wtlist'],
                                sdata['jacob_list'],
                                sdata['psf_gmix_list'],
-                               sdata['cen0'],
+                               sdata['cenlist'],
                                lm_max_try=self.obj_ntry)
         res=gm.get_result()
         self.data['psf_flags'][index] = res['flags']
@@ -362,7 +372,7 @@ class MedsFit(object):
                                      sdata['wtlist'],
                                      sdata['jacob_list'],
                                      sdata['psf_gmix_list'],
-                                     sdata['cen0'],
+                                     sdata['cenlist'],
                                      match_gmix,
                                      lm_max_try=self.obj_ntry)
                 res=gm.get_result()
@@ -423,25 +433,18 @@ class MedsFit(object):
         imlist=imlist[1:]
         return imlist
 
-    def _get_wtlist(self, index, cen0):
+    def _get_wtlist(self, index):
         """
         get the weight list.
 
-        If using the seg map, mark pixels outside the
-        object as zero weight
-
-        have kludge checking seg val against the
-        center
+        If using the seg map, mark pixels outside the coadd object region as
+        zero weight
         """
-        wtlist=self._get_imlist(index, type='weight')
-
         if self.use_seg:
-            seglist=self._get_imlist(index,type='seg')
-            for wt,seg in zip(wtlist,seglist):
-                sval=seg[cen0[0], cen0[1]]
-                w=numpy.where(seg != sval)
-                if w[0].size > 0:
-                    wt[w] = 0.0
+            wtlist=self.meds.get_cweight_cutout_list(index)
+            wtlist=wtlist[1:]
+        else:
+            wtlist=self._get_imlist(index, type='weight')
 
         return wtlist
 
@@ -454,16 +457,22 @@ class MedsFit(object):
         jacob_list=jacob_list[1:]
         return jacob_list
     
-    def _get_cen0(self, index):
+    def _get_cenlist(self, index):
         """
         Get the median of the cutout row,col centers,
         skipping the coadd
         """
         ncut=self.meds['ncutout'][index]
-        row0 = numpy.median(self.meds['cutout_row'][index,1:ncut])
-        col0 = numpy.median(self.meds['cutout_col'][index,1:ncut])
+        cenlist=[]
+        # start at 1 to skip coadd
+        for icut in xrange(1,ncut):
 
-        return [row0,col0]
+            row0 = self.meds['cutout_row'][index,icut]
+            col0 = self.meds['cutout_col'][index,icut]
+            cen0 = [row0, col0]
+            cenlist.append(cen0)
+
+        return cenlist
 
     def _get_psfex_reclist(self, index):
         """
@@ -586,7 +595,7 @@ class MedsFit(object):
                  (n['s2n_w'],'f8'),
                  (n['loglike'],'f8'),
                  (n['chi2per'],'f8'),
-                 (n['dof'],'i4'),
+                 (n['dof'],'f8'),
                  (n['fit_prob'],'f8'),
                  (n['aic'],'f8'),
                  (n['bic'],'f8'),
@@ -611,7 +620,7 @@ class MedsFit(object):
                (n['s2n_w'],'f8'),
                (n['loglike'],'f8'),
                (n['chi2per'],'f8'),
-               (n['dof'],'i4'),
+               (n['dof'],'f8'),
                (n['fit_prob'],'f8'),
                (n['aic'],'f8'),
                (n['bic'],'f8')]
@@ -640,9 +649,17 @@ class MedsFit(object):
         data['psf_flux'] = DEFVAL
         data['psf_flux_err'] = PDEFVAL
 
+        data['psf_s2n_w'] = DEFVAL
+        data['psf_loglike'] = BIG_DEFVAL
+        data['psf_chi2per'] = PDEFVAL
+        data['psf_aic'] = BIG_PDEFVAL
+        data['psf_bic'] = BIG_PDEFVAL
+
+
         data['match_flags'] = NO_ATTEMPT
         data['match_flux'] = DEFVAL
         data['match_flux_err'] = PDEFVAL
+        data['match_model'] = 'nil'
 
 
         for model in simple_models:
@@ -661,10 +678,10 @@ class MedsFit(object):
             data[n['g_cov']] = PDEFVAL
 
             data[n['s2n_w']] = DEFVAL
-            data[n['loglike']] = -9.999e9
+            data[n['loglike']] = BIG_DEFVAL
             data[n['chi2per']] = PDEFVAL
-            data[n['aic']] = DEFVAL
-            data[n['bic']] = DEFVAL
+            data[n['aic']] = BIG_PDEFVAL
+            data[n['bic']] = BIG_PDEFVAL
         
         self.data=data
 

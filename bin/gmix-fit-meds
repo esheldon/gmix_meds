@@ -19,6 +19,8 @@ parser.add_option("--obj-range",default=None,
                         "process"))
 parser.add_option("--det-cat", default=None,
                   help="detection cat for matched fluxes")
+parser.add_option("--seed", default=None,
+                  help="A seed for random numbers")
 
 def load_config(fname):
     with open(fname) as fobj:
@@ -34,16 +36,21 @@ def makedir_fromfile(fname):
             # probably a race condition
             pass
 
-def make_meta(magzp_ref, meds_file, config_file):
+def make_meta(meds_meta, meds_file, config_file):
+
+    dt = meds_meta.dtype.descr
+
     clen=len(config_file)
     flen=len(meds_file)
-    metadt=[('magzp_ref','f8'),
-            ('meds_file','S%d' % flen),
-            ('config_file','S%d' % clen)]
-    meta=numpy.zeros(1, dtype=metadt)
-    meta['magzp_ref'] = magzp_ref
-    meta['meds_file'] = meds_file
-    meta['config_file'] = config_file
+
+    dt += [('gmix_meds_config','S%d' % clen),
+           ('meds_file','S%d' % flen)]
+
+    meta=numpy.zeros(1, dtype=dt)
+    for n in meds_meta.dtype.names:
+        meta[n] = meds_meta[n]
+    meta['gmix_meds_config'] = config_file
+    meta['meds_file'] = config_file
 
     return meta
 
@@ -59,6 +66,9 @@ def main():
 
     conf=load_config(config_file)
 
+    seed=options.seed
+    if seed is not None:
+        seed=int(seed)
     rng=options.obj_range
     if rng is not None:
         rng=rng.split(',')
@@ -72,6 +82,7 @@ def main():
 
     gm=gmix_meds.MedsFit(meds_file,
                          obj_range=rng,
+                         seed=seed,
                          psf_ngauss=conf['psf_ngauss'],
                          use_seg=conf['use_seg'],
                          psf_ntry=conf['psf_ntry'],
@@ -80,9 +91,8 @@ def main():
     gm.do_fits()
 
     data=gm.get_data()
-
-    magzp_ref=gm.get_magzp()
-    meta=make_meta(magzp_ref, meds_file, config_file)
+    meds_meta=gm.get_meds_meta()
+    meta=make_meta(meds_meta, meds_file, config_file)
 
     makedir_fromfile(out_file)
     print 'writing:',out_file
