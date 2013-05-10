@@ -36,21 +36,31 @@ def makedir_fromfile(fname):
             # probably a race condition
             pass
 
-def make_meta(meds_meta, meds_file, config_file):
+def make_meta(conf, meds_meta, meds_file, config_file):
 
     dt = meds_meta.dtype.descr
 
     clen=len(config_file)
     flen=len(meds_file)
+    mlen=len(conf['psf_model'])
 
     dt += [('gmix_meds_config','S%d' % clen),
-           ('meds_file','S%d' % flen)]
+           ('meds_file','S%d' % flen),
+           ('psf_ntry','i2'),
+           ('obj_ntry','i2'),
+           ('psf_model','S%d' % mlen),
+           ('pix_nsig','i2')]
 
     meta=numpy.zeros(1, dtype=dt)
     for n in meds_meta.dtype.names:
         meta[n] = meds_meta[n]
+
     meta['gmix_meds_config'] = config_file
     meta['meds_file'] = config_file
+    meta['psf_ntry'] = conf['psf_ntry']
+    meta['obj_ntry'] = conf['obj_ntry']
+    meta['psf_model'] = conf['psf_model']
+    meta['pix_nsig'] = conf['pix_nsig']
 
     return meta
 
@@ -83,16 +93,16 @@ def main():
     gm=gmix_meds.MedsFit(meds_file,
                          obj_range=rng,
                          seed=seed,
-                         psf_ngauss=conf['psf_ngauss'],
-                         use_seg=conf['use_seg'],
+                         psf_model=conf['psf_model'],
                          psf_ntry=conf['psf_ntry'],
                          obj_ntry=conf['obj_ntry'],
+                         pix_nsig=conf['pix_nsig'],
                          det_cat=det_cat)
     gm.do_fits()
 
     data=gm.get_data()
     meds_meta=gm.get_meds_meta()
-    meta=make_meta(meds_meta, meds_file, config_file)
+    meta=make_meta(conf, meds_meta, meds_file, config_file)
 
     makedir_fromfile(out_file)
     print 'writing:',out_file

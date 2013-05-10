@@ -27,16 +27,23 @@ NO_ATTEMPT=2**30
 
 PSF_S2N=1.e6
 
+_psf_ngauss_map={'lm1':1, 'lm2':2, 'lm3':3,
+                 'em1':1, 'em2':2, 'em3':3}
+def get_psf_ngauss(psf_model):
+    if psf_model not in _psf_ngauss_map:
+        raise ValueError("bad psf model: '%s'" % psf_model)
+    return _psf_ngauss_map[psf_model]
+
 class MedsFit(object):
     def __init__(self,
                  meds_file,
                  seed=None,
                  obj_range=None,
                  det_cat=None,
-                 psf_ngauss=2,
-                 use_seg=True,
+                 psf_model="lm2",
                  psf_ntry=LM_MAX_TRY,
                  obj_ntry=2,
+                 pix_nsig=10,
                  debug=0):
         """
         parameters
@@ -47,19 +54,11 @@ class MedsFit(object):
             a 2-element sequence or None.  If not None, only the objects in the
             specified range are processed and get_data() will only return those
             objects. The range is inclusive unlike slices.
-        psf_ngauss: optional,int
-            Number of gaussians to fit to PSF.
-        use_seg: bool,optional
-            If True, limit pixels to the seg map.  We just ask which pixels
-            have same seg id as the center one.  This is far from optimal!
-            Somehow need overall seg map in ra,dec space, maybe interpolate
-            from coadd
+        psf_model: string, int
+            e.g. "lm2" or in the future "em2"
         det_cat: optional
             Catalog to use as "detection" catalog; an overall flux will be fit
             with best simple model fit from this.
-
-        TODO:
-            fluxonly
         """
         
         numpy.random.seed(seed)
@@ -70,13 +69,16 @@ class MedsFit(object):
         self.nobj=self.meds.size
 
         self.obj_range=obj_range
-        self.psf_ngauss=psf_ngauss
-        self.use_seg=use_seg
+
+        self.psf_model=psf_model
+        self.psf_ngauss=get_psf_ngauss(psf_model)
+
         self.det_cat=det_cat
         self.debug=debug
 
         self.psf_ntry=psf_ntry
         self.obj_ntry=obj_ntry
+        self.pix_nsig=pix_nsig
 
         self.simple_models=['exp','dev']
 
@@ -136,9 +138,10 @@ class MedsFit(object):
             return
 
         t0=time.time()
+        imlist,wtlist=self._get_image_lists(index)
         cenlist=self._get_cenlist(index)
-        imlist=self._get_imlist(index)
-        wtlist=self._get_wtlist(index)
+        #imlist=self._get_imlist(index)
+        #wtlist=self._get_wtlist(index)
         jacob_list=self._get_jacobian_list(index)
 
         self.data['nimage'][index] = len(imlist)
@@ -425,6 +428,43 @@ class MedsFit(object):
 
         return flags,pars,pcov,niter,ntry,mod
 
+    def _get_image_lists(self, index):
+        """
+        Get the image lists.
+
+        Remove 10-sigma outliers from the regions with weight
+        by setting their weight to zero
+        """
+        mosaic0=self.meds.get_mosaic(index,type='image')
+        wt_mosaic0=self.meds.get_cweight_mosaic(index)
+
+        # cut out the coadd
+        mosaic=mosaic0[mosaic0.shape[1]:].copy()
+        wt_mosaic=wt_mosaic0[wt_mosaic0.shape[1]:].copy()
+
+        # do outlier rejection on the pixels with weight
+        wtmax=wt_mosaic.max()
+        keep_logic = ( wt_mosaic > 0.2*wtmax )
+        wkeep=numpy.where(keep_logic)
+
+        if wkeep[0].size > 0:
+            mos_keep=mosaic[wkeep]
+            crap,sig=sigma_clip(mos_keep.ravel())
+            med=numpy.median(mos_keep)
+
+            # note repeating the weight cut
+            wout=numpy.where(  keep_logic
+                             & (numpy.abs(mosaic-med) > self.pix_nsig*sig) )
+            if wout[0].size > 0:
+                print '\tfound',wout[0].size,self.pix_nsig,'sigma outliers:'
+                wt_mosaic[wout] = 0.0
+
+        imlist=meds.split_mosaic(mosaic)
+        wtlist=meds.split_mosaic(wt_mosaic)
+
+        return imlist, wtlist
+
+    '''
     def _get_imlist(self, index, type='image'):
         """
         get the image list, skipping the coadd
@@ -447,6 +487,7 @@ class MedsFit(object):
             wtlist=self._get_imlist(index, type='weight')
 
         return wtlist
+    '''
 
     def _get_jacobian_list(self, index):
         """
@@ -753,3 +794,84 @@ def add_noise_matched(im, s2n):
     image = im + noise_image
 
     return image, skysig
+
+
+def sigma_clip(arrin, niter=4, nsig=4, get_indices=False, extra={}, 
+               verbose=False, silent=False):
+    """
+    NAME:
+      sigma_clip()
+      
+    PURPOSE:
+      Calculate the mean/stdev of an array with sigma clipping. Iterate
+      niter times, removing elements that are outside nsig, and recalculating
+      mean/stdev.
+
+    CALLING SEQUENCE:
+      mean,stdev = sigma_clip(arr, niter=4, nsig=4, extra={})
+    
+    INPUTS:
+      arr: A numpy array or a sequence that can be converted.
+
+    OPTIONAL INPUTS:
+      niter: number of iterations, defaults to 4
+      nsig: number of sigma, defaults to 4
+      get_indices: bool,optional
+        if True return mean,stdev,indices
+
+    OUTPUTS:
+      mean,stdev: A tuple containing mean and standard deviation.
+    OPTIONAL OUTPUTS
+      extra={}: Dictionary containing the array of used indices in
+         extra['index']
+
+    REVISION HISTORY:
+      Converted from IDL: 2006-10-23. Erin Sheldon, NYU
+      Minor bug fix to error messaging: 2010-05-28. Brian Gerke, SLAC
+      Added silent keyword, to shut off error messages.  BFG 2010-09-13
+
+    """
+    arr = numpy.array(arrin, ndmin=1, copy=False)
+
+    index = numpy.arange( arr.size )
+
+    if get_indices:
+        res=[None,None,None]
+    else:
+        res=[None,None]
+
+    for i in numpy.arange(niter):
+        m = arr[index].mean()
+        s = arr[index].std()
+
+        if verbose:
+            stdout.write('iter %s\tnuse: %s\tmean %s\tstdev %s\n' % \
+                             (i+1, index.size,m,s))
+
+        clip = nsig*s
+
+        w, = numpy.where( (numpy.abs(arr[index] - m)) < clip )
+
+        if (w.size == 0):
+            if (not silent):
+                stderr.write("nsig too small. Everything clipped on "
+                             "iteration %d\n" % (i+1))
+            res[0]=m
+            res[1]=s
+            return res
+
+        index = index[w]
+
+    # Calculate final stats
+    amean = arr[index].mean()
+    asig = arr[index].std()
+
+    res[0]=m
+    res[1]=s
+    extra['index'] = index
+    if get_indices:
+        res[2] = index
+
+    return res 
+
+
