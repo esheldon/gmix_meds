@@ -140,8 +140,6 @@ class MedsFit(object):
         t0=time.time()
         imlist,wtlist=self._get_image_lists(index)
         cenlist=self._get_cenlist(index)
-        #imlist=self._get_imlist(index)
-        #wtlist=self._get_wtlist(index)
         jacob_list=self._get_jacobian_list(index)
 
         self.data['nimage'][index] = len(imlist)
@@ -456,7 +454,7 @@ class MedsFit(object):
             wout=numpy.where(  keep_logic
                              & (numpy.abs(mosaic-med) > self.pix_nsig*sig) )
             if wout[0].size > 0:
-                print '\tfound %d %d-sigma outliers' % (wout[0].size,self.pix_nsig)
+                print >>stderr,'\tfound %d %d-sigma outliers' % (wout[0].size,self.pix_nsig)
                 wt_mosaic[wout] = 0.0
 
         imlist=meds.split_mosaic(mosaic)
@@ -464,30 +462,6 @@ class MedsFit(object):
 
         return imlist, wtlist
 
-    '''
-    def _get_imlist(self, index, type='image'):
-        """
-        get the image list, skipping the coadd
-        """
-        imlist=self.meds.get_cutout_list(index,type=type)
-        imlist=imlist[1:]
-        return imlist
-
-    def _get_wtlist(self, index):
-        """
-        get the weight list.
-
-        If using the seg map, mark pixels outside the coadd object region as
-        zero weight
-        """
-        if self.use_seg:
-            wtlist=self.meds.get_cweight_cutout_list(index)
-            wtlist=wtlist[1:]
-        else:
-            wtlist=self._get_imlist(index, type='weight')
-
-        return wtlist
-    '''
 
     def _get_jacobian_list(self, index):
         """
@@ -725,6 +699,33 @@ class MedsFit(object):
             data[n['bic']] = BIG_PDEFVAL
         
         self.data=data
+
+
+    '''
+    def _get_imlist(self, index, type='image'):
+        """
+        get the image list, skipping the coadd
+        """
+        imlist=self.meds.get_cutout_list(index,type=type)
+        imlist=imlist[1:]
+        return imlist
+
+    def _get_wtlist(self, index):
+        """
+        get the weight list.
+
+        If using the seg map, mark pixels outside the coadd object region as
+        zero weight
+        """
+        if self.use_seg:
+            wtlist=self.meds.get_cweight_cutout_list(index)
+            wtlist=wtlist[1:]
+        else:
+            wtlist=self._get_imlist(index, type='weight')
+
+        return wtlist
+    '''
+
 
 _stat_names=['s2n_w',
              'loglike',
