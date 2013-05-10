@@ -456,7 +456,7 @@ class MedsFit(object):
             wout=numpy.where(  keep_logic
                              & (numpy.abs(mosaic-med) > self.pix_nsig*sig) )
             if wout[0].size > 0:
-                print '\tfound',wout[0].size,self.pix_nsig,'sigma outliers:'
+                print '\tfound %d %d-sigma outliers' % (wout[0].size,self.pix_nsig)
                 wt_mosaic[wout] = 0.0
 
         imlist=meds.split_mosaic(mosaic)
