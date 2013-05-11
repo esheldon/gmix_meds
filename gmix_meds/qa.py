@@ -2,11 +2,12 @@ import numpy
 from numpy import log10
 import fitsio
 
+SCALE=0.265
 class FluxHist(object):
     """
     Plot the histogram of flux or magnitude
     """
-    def __init__(self, fname, scale=0.27):
+    def __init__(self, fname, scale=SCALE):
         self.fname=fname
         self.scale=scale
 
@@ -58,7 +59,7 @@ class ComparePSFMags(object):
     """
     Compare to sextractor psf mags
     """
-    def __init__(self, fname, scale=0.27):
+    def __init__(self, fname, scale=SCALE):
         self.fname=fname
         self.scale=scale
 
