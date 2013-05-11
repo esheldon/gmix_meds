@@ -1,5 +1,7 @@
 psf_ntry: 2
 obj_ntry: 2
+
+reject_outliers: true
 pix_nsig: 10 
 
 psf_model: "lm2"

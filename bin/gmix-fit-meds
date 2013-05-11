@@ -10,6 +10,7 @@ import numpy
 import yaml
 import fitsio
 import gmix_meds
+import pprint
 
 from optparse import OptionParser
 parser = OptionParser(__doc__)
@@ -49,7 +50,8 @@ def make_meta(conf, meds_meta, meds_file, config_file):
            ('psf_ntry','i2'),
            ('obj_ntry','i2'),
            ('psf_model','S%d' % mlen),
-           ('pix_nsig','i2')]
+           ('reject_outliers','i2'),
+           ('pix_nsig','f8')]
 
     meta=numpy.zeros(1, dtype=dt)
     for n in meds_meta.dtype.names:
@@ -60,6 +62,7 @@ def make_meta(conf, meds_meta, meds_file, config_file):
     meta['psf_ntry'] = conf['psf_ntry']
     meta['obj_ntry'] = conf['obj_ntry']
     meta['psf_model'] = conf['psf_model']
+    meta['reject_outliers'] = conf['reject_outliers']
     meta['pix_nsig'] = conf['pix_nsig']
 
     return meta
@@ -75,6 +78,7 @@ def main():
     out_file=args[2]
 
     conf=load_config(config_file)
+    pprint.pprint(conf)
 
     seed=options.seed
     if seed is not None:

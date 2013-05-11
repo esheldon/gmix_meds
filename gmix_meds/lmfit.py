@@ -43,6 +43,7 @@ class MedsFit(object):
                  psf_model="lm2",
                  psf_ntry=LM_MAX_TRY,
                  obj_ntry=2,
+                 reject_outliers=False,
                  pix_nsig=10,
                  debug=0):
         """
@@ -78,6 +79,7 @@ class MedsFit(object):
 
         self.psf_ntry=psf_ntry
         self.obj_ntry=obj_ntry
+        self.reject_outliers=reject_outliers
         self.pix_nsig=pix_nsig
 
         self.simple_models=['exp','dev']
@@ -138,7 +140,12 @@ class MedsFit(object):
             return
 
         t0=time.time()
-        imlist,wtlist=self._get_image_lists(index)
+        if self.reject_outliers:
+            imlist,wtlist=self._get_imlists_outlier_reject(index)
+        else:
+            imlist=self._get_imlist(index)
+            wtlist=self._get_wtlist(index)
+
         cenlist=self._get_cenlist(index)
         jacob_list=self._get_jacobian_list(index)
 
@@ -426,7 +433,7 @@ class MedsFit(object):
 
         return flags,pars,pcov,niter,ntry,mod
 
-    def _get_image_lists(self, index):
+    def _get_imlists_outlier_reject(self, index):
         """
         Get the image lists.
 
@@ -437,8 +444,9 @@ class MedsFit(object):
         wt_mosaic0=self.meds.get_cweight_mosaic(index)
 
         # cut out the coadd
-        mosaic=mosaic0[mosaic0.shape[1]:].copy()
-        wt_mosaic=wt_mosaic0[wt_mosaic0.shape[1]:].copy()
+        box_size  = mosaic0.shape[1]
+        mosaic    = mosaic0[box_size:, :].copy()
+        wt_mosaic = wt_mosaic0[box_size:, :].copy()
 
         # do outlier rejection on the pixels with weight
         wtmax=wt_mosaic.max()
@@ -460,6 +468,9 @@ class MedsFit(object):
         imlist=meds.split_mosaic(mosaic)
         wtlist=meds.split_mosaic(wt_mosaic)
 
+        import images
+        images.view_mosaic(imlist)
+        stop
         return imlist, wtlist
 
 
@@ -701,7 +712,6 @@ class MedsFit(object):
         self.data=data
 
 
-    '''
     def _get_imlist(self, index, type='image'):
         """
         get the image list, skipping the coadd
@@ -717,14 +727,9 @@ class MedsFit(object):
         If using the seg map, mark pixels outside the coadd object region as
         zero weight
         """
-        if self.use_seg:
-            wtlist=self.meds.get_cweight_cutout_list(index)
-            wtlist=wtlist[1:]
-        else:
-            wtlist=self._get_imlist(index, type='weight')
-
+        wtlist=self.meds.get_cweight_cutout_list(index)
+        wtlist=wtlist[1:]
         return wtlist
-    '''
 
 
 _stat_names=['s2n_w',
