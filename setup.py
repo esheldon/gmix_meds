@@ -2,7 +2,11 @@ import os
 import glob
 from distutils.core import setup
 
-scripts=['gmix-fit-meds','gmix-meds-concat','gmix-meds-concat-all']
+scripts=['gmix-fit-meds',
+         'gmix-meds-concat',
+         'gmix-meds-concat-all',
+         'gmix-fit-double-psf']
+
 scripts=[os.path.join('bin',s) for s in scripts]
 
 conf_files=glob.glob('config/*.yaml')
