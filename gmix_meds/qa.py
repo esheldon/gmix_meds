@@ -64,7 +64,8 @@ class ComparePSFMags(object):
 
         self._load_data()
 
-    def doplot(self, show=False, **keys):
+    def doplot(self, show=False, stars=False, 
+               star_spread_model_max=0.002, **keys):
         import esutil as eu
         import biggles
         
@@ -72,10 +73,15 @@ class ComparePSFMags(object):
         data=self.data
         sxdata=self.sxdata
 
-        w,=numpy.where(  (data['psf_flags']==0) 
-                       & (data['psf_flux'] > 0.001)
-                       & (data['psf_flux_err'] > 0.001)
-                       & (sxdata['flags']==0) )
+        logic= ( (data['psf_flags']==0) 
+                & (data['psf_flux'] > 0.001)
+                & (data['psf_flux_err'] > 0.001)
+                & (sxdata['flags']==0) )
+        if stars:
+            av=numpy.abs(sxdata['spread_model'])
+            logic = logic & (av < star_spread_model_max)
+
+        w,=numpy.where(logic)
 
         fs2n = data['psf_flux'][w]/data['psf_flux_err'][w]
 
@@ -84,29 +90,48 @@ class ComparePSFMags(object):
 
         fscale = data['psf_flux'][w]/( self.scale**2 )
         mag = -2.5*log10(fscale) + self.meta['magzp_ref'][0]
+        sxmag = sxdata['mag_psf'][w]
 
-        mdiff = mag - sxdata['mag_psf'][w]
+        mdiff = mag - sxmag
 
-        xlabel=r'$mag^{SX}_{psf}'
-        ylabel=r'$mag^{ME}_{psf} - mag^{SX}_{psf}$'
+        xlabel=r'$mag^{SX}_{psf}$'
+        vs_ylabel=r'$mag^{ME}_{psf}$'
+        diff_ylabel=r'$mag^{ME}_{psf} - mag^{SX}_{psf}$'
 
         tab=biggles.Table(2,1)
 
-        plt_vs=eu.plotting.bscatter(mag, sxdata['mag_psf'][w],
-                                 type='dot',
-                                 xrange=[14,26],
-                                 yrange=[14,26],
-                                 xlabel=xlabel,
-                                 ylabel=ylabel,
-                                 show=False)
+        type='dot'
+        xrng=[15,26]
+        plt_vs=eu.plotting.bscatter(mag, sxmag,
+                                    type=type,
+                                    xrange=xrng,
+                                    yrange=xrng,
+                                    xlabel=xlabel,
+                                    ylabel=vs_ylabel,
+                                    show=False)
 
         plt_diff=eu.plotting.bscatter(mag, mdiff,
-                                 type='dot',
-                                 xrange=[14,26],
-                                 yrange=[-0.1,0.2],
-                                 xlabel=xlabel,
-                                 ylabel=ylabel,
-                                 show=False)
+                                      type=type,
+                                      xrange=xrng,
+                                      yrange=[-0.3,0.35],
+                                      xlabel=xlabel,
+                                      ylabel=diff_ylabel,
+                                      show=False)
+
+        plt_vs.aspect_ratio=1
+        plt_diff.aspect_ratio=1
+
+        if stars:
+            mlow=16
+            mhigh=20
+            wfit,=numpy.where( (sxmag >  mlow) & (sxmag < mhigh) )
+            coeffs=numpy.polyfit(sxmag[wfit], mdiff[wfit], 0)
+            c=biggles.Curve(xrng,[coeffs[0],coeffs[0]])
+            plt_diff.add(c)
+
+            labstr=r'$spread_{model} < %.3f$' % star_spread_model_max
+            lab=biggles.PlotLabel(0.05,0.9,labstr,halign='left')
+            plt_vs.add(lab)
 
         tab[0,0] = plt_vs
         tab[1,0] = plt_diff
