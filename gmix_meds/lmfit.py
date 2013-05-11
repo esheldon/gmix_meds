@@ -146,7 +146,6 @@ class MedsFit(object):
             imlist=self._get_imlist(index)
             wtlist=self._get_wtlist(index)
 
-        cenlist=self._get_cenlist(index)
         jacob_list=self._get_jacobian_list(index)
 
         self.data['nimage'][index] = len(imlist)
@@ -160,7 +159,7 @@ class MedsFit(object):
             return
 
         sdata={'imlist':imlist,'wtlist':wtlist,
-               'jacob_list':jacob_list,'cenlist':cenlist,
+               'jacob_list':jacob_list,
                'psf_gmix_list':psf_gmix_list}
 
         self._fit_simple_models(index, sdata)
@@ -185,13 +184,19 @@ class MedsFit(object):
         for i in xrange(len(imlist)):
             im=imlist[i]
             ivar=ivarlist[i]
-            jacob=jacob_list[i]
+            jacob0=jacob_list[i]
+
             cen0=cenlist[i]
+            # the dimensions of the psfs are different, need
+            # new center
+            jacob={}
+            jacob.update(jacob0)
+            jacob['row0'] = cen0[0]
+            jacob['col0'] = cen0[1]
 
             gm_psf=GMixFitPSFJacob(im,
                                    ivar,
                                    jacob,
-                                   cen0,
                                    self.psf_ngauss,
                                    lm_max_try=self.psf_ntry)
             res=gm_psf.get_result()
@@ -268,7 +273,6 @@ class MedsFit(object):
                               sdata['wtlist'],
                               sdata['jacob_list'],
                               sdata['psf_gmix_list'],
-                              sdata['cenlist'],
                               model,
                               lm_max_try=self.obj_ntry)
         return gm
@@ -291,7 +295,6 @@ class MedsFit(object):
                               sdata['wtlist'],
                               sdata['jacob_list'],
                               sdata['psf_gmix_list'],
-                              sdata['cenlist'],
                               exp_gmix,
                               dev_gmix,
                               lm_max_try=self.obj_ntry)
@@ -325,7 +328,6 @@ class MedsFit(object):
                                sdata['wtlist'],
                                sdata['jacob_list'],
                                sdata['psf_gmix_list'],
-                               sdata['cenlist'],
                                lm_max_try=self.obj_ntry)
         res=gm.get_result()
         self.data['psf_flags'][index] = res['flags']
@@ -380,7 +382,6 @@ class MedsFit(object):
                                      sdata['wtlist'],
                                      sdata['jacob_list'],
                                      sdata['psf_gmix_list'],
-                                     sdata['cenlist'],
                                      match_gmix,
                                      lm_max_try=self.obj_ntry)
                 res=gm.get_result()
@@ -483,6 +484,7 @@ class MedsFit(object):
         jacob_list=jacob_list[1:]
         return jacob_list
     
+    '''
     def _get_cenlist(self, index):
         """
         Get the median of the cutout row,col centers,
@@ -499,6 +501,7 @@ class MedsFit(object):
             cenlist.append(cen0)
 
         return cenlist
+    '''
 
     def _get_psfex_reclist(self, index):
         """
