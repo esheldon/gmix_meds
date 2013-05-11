@@ -1,10 +1,7 @@
-# this is to try old meds and old config pars
-# e.g. using psf_ntry 1
-# will use on old meds
-psf_ntry: 1
+psf_ntry: 2
 obj_ntry: 2
 
 reject_outliers: false
 pix_nsig: 1.0e6
 
-psf_model: "lm2"
+psf_model: "em2"

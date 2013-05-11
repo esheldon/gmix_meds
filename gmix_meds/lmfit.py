@@ -10,6 +10,7 @@ from gmix_image.gmix_fit import LM_MAX_TRY, \
         GMixFitPSFJacob,\
         GMixFitMultiSimple,GMixFitMultiCModel, \
         GMixFitMultiPSFFlux,GMixFitMultiMatch
+from gmix_image.gmix_em import GMixEMBoot
 import psfex
 
 DEFVAL=-9999
@@ -178,13 +179,16 @@ class MedsFit(object):
         Generate psfex images for all SE images and fit
         them to gaussian mixture models
         """
-        imlist,ivarlist,cenlist=self._get_psfex_reclist(index)
+        ptuple = self._get_psfex_reclist(index)
+        imlist,ivarlist,cenlist,siglist,flist,cenpix=ptuple
+
         gmix_list=[]
 
         for i in xrange(len(imlist)):
             im=imlist[i]
             ivar=ivarlist[i]
             jacob0=jacob_list[i]
+            sigma=siglist[i]
 
             cen0=cenlist[i]
             # the dimensions of the psfs are different, need
@@ -194,20 +198,100 @@ class MedsFit(object):
             jacob['row0'] = cen0[0]
             jacob['col0'] = cen0[1]
 
-            gm_psf=GMixFitPSFJacob(im,
-                                   ivar,
-                                   jacob,
-                                   self.psf_ngauss,
-                                   lm_max_try=self.psf_ntry)
-            res=gm_psf.get_result()
+            gm=self._do_fit_psf(im,jacob,ivar,sigma)
+
+            res=gm.get_result()
             if res['flags'] != 0:
                 print >>stderr,'psf fitting failed, '
                 return None
 
-            gmix_psf=gm_psf.get_gmix()
+
+            gmix_psf=gm.get_gmix()
             gmix_list.append( gmix_psf )
 
+            if False:
+                self._compare_psf_model(im, gm, index, i, flist[i], cenpix)
+
         return gmix_list
+
+
+    def _do_fit_psf(self, im, jacob, ivar, sigma_guess):
+        if 'lm' in self.psf_model:
+            gm=self._run_psf_lm_fit(im,ivar,jacob)
+        elif 'em' in self.psf_model:
+            gm=self._run_psf_em_fit(im,ivar,jacob,sigma_guess)
+        else:
+            raise RuntimeError("bad psf model '%s'" % self.psf_model)
+        return gm
+
+    def _run_psf_lm_fit(self, im, ivar, jacob):
+        gm=GMixFitPSFJacob(im,
+                           ivar,
+                           jacob,
+                           self.psf_ngauss,
+                           lm_max_try=self.psf_ntry)
+        return gm
+
+    def _run_psf_em_fit(self, im, ivar, jacob, sigma_guess):
+        cen_guess=[0.0, 0.0]
+        gm=GMixEMBoot(im, self.psf_ngauss, cen_guess,
+                      sigma_guess=sigma_guess,
+                      jacobian=jacob,
+                      ivar=ivar,
+                      maxtry=self.psf_ntry)
+        return gm
+
+
+    def _compare_psf_model(self, im, gm, index, i,fname,cenpix):
+        """
+        Since we work in sky coords, can only generate the
+        diff image currently
+        """
+        import os
+        import images
+
+        print fname
+        name='%s_%06d_%02d' % (self.psf_model,index,i)
+
+        imsum=im.sum()
+        model=gm.get_model()
+        model *= imsum/model.sum()
+
+        if 'em2' in self.psf_model:
+            gmix = gm.get_gmix()
+            gl=gmix.get_dlist()
+            offset=sqrt( (gl[0]['row']-gl[1]['row'])**2 + 
+                         (gl[0]['col']-gl[1]['col'])**2 )
+            print >>stderr,'offset:',offset
+            for g in gl:
+                print >>stderr,'gauss %d:' % (i+1),g['row'],g['col']
+
+        #diff = model-im
+        #resid = sqrt( (diff**2).sum() )/imsum
+
+        #title='%s sq resid: %s' % (name,resid)
+        #plt=images.view(diff, title=title,show=False)
+
+        bname=os.path.basename(fname)
+        bname=bname.replace('_psfcat.psf','')
+
+        title='%s row: %.1f col: %.2f' % (bname,cenpix[0],cenpix[1])
+        plt=images.compare_images(im, model,show=False,title=title)
+
+        plt.title_style['fontsize']=2
+
+        d=os.path.join(os.environ['HOME'], 'tmp','test-psf-rec')
+        if not os.path.exists(d):
+            os.makedirs(d)
+
+        pngname='%s_%s.png' % (bname,name)
+        path=os.path.join(d,pngname)
+        print >>stderr,'    ',path
+        plt.write_img(1000,1000,path)
+
+
+
+
 
     def _fit_simple_models(self, index, sdata):
         """
@@ -514,9 +598,12 @@ class MedsFit(object):
         imlist=[]
         ivarlist=[]
         cenlist=[]
+        siglist=[]
+        flist=[]
         for icut in xrange(1,ncut):
             file_id=self.meds['file_id'][index,icut]
             pex=self.psfex_list[file_id]
+            fname=pex['filename']
 
             row=self.meds['orig_row'][index,icut]
             col=self.meds['orig_col'][index,icut]
@@ -530,8 +617,10 @@ class MedsFit(object):
             imlist.append( im )
             ivarlist.append(ivar)
             cenlist.append(cen0)
+            siglist.append( pex.get_sigma() )
+            flist.append( fname)
 
-        return imlist, ivarlist, cenlist
+        return imlist, ivarlist, cenlist, siglist, flist, [row,col]
 
 
 
