@@ -1,0 +1,43 @@
+#!/usr/bin/env python
+"""
+    %prog [options] file_list output_file
+
+"""
+
+import os,sys
+import gmix_meds
+
+from optparse import OptionParser
+parser = OptionParser(__doc__)
+
+parser.add_option("--ccd", default=None, help="Only process the input ccd")
+
+
+def load_file_list(fname):
+    flist=[]
+    with open(fname) as fobj:
+        for f in fobj:
+            flist.append( f.strip() )
+    return flist
+
+def main():
+    options, args = parser.parse_args(sys.argv[1:])
+    if len(args) < 2:
+        parser.print_help()
+        sys.exit(45)
+
+    
+    flist_name=args[0]
+    out_file=args[1]
+
+    flist=load_file_list(flist_name)
+
+    if options.ccd is not None:
+        ccd=int(options.ccd)
+        print 'extracting ccd:',ccd
+        flist = gmix_meds.double_psf.extract_ccd_flist(flist, ccd)
+
+    gmix_meds.double_psf.fit_em2(flist, out_file)
+
+
+main()
