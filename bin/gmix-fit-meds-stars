@@ -11,6 +11,10 @@ import gmix_meds
 from optparse import OptionParser
 parser = OptionParser(__doc__)
 
+parser.add_option('--doplots',action='store_true',
+                  help=("only do the star-galaxy separation "
+                        "plots.  Because won't work on worker nodes"))
+
 def main():
     options, args = parser.parse_args(sys.argv[1:])
     if len(args) < 1:
@@ -20,6 +24,9 @@ def main():
     meds_file=args[0]
 
     sf=gmix_meds.mag_dep_psf.StarFitter(meds_file)
-    sf.go()
+    if options.doplots:
+        sf.do_mag_spread_plot()
+    else:
+        sf.measure_stars()
 
 main()

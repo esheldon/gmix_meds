@@ -6,7 +6,7 @@ scripts=['gmix-fit-meds',
          'gmix-meds-concat',
          'gmix-meds-concat-all',
          'gmix-fit-double-psf',
-         'gmix-fit-magdep-psf']
+         'gmix-fit-meds-stars']
 
 
 scripts=[os.path.join('bin',s) for s in scripts]
