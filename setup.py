@@ -5,7 +5,9 @@ from distutils.core import setup
 scripts=['gmix-fit-meds',
          'gmix-meds-concat',
          'gmix-meds-concat-all',
-         'gmix-fit-double-psf']
+         'gmix-fit-double-psf',
+         'gmix-fit-magdep-psf']
+
 
 scripts=[os.path.join('bin',s) for s in scripts]
 

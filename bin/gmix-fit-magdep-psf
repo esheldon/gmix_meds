@@ -1,0 +1,25 @@
+#!/usr/bin/env python
+"""
+    %prog [options] meds_file
+
+Process the input meds file.
+"""
+
+import sys
+import gmix_meds
+
+from optparse import OptionParser
+parser = OptionParser(__doc__)
+
+def main():
+    options, args = parser.parse_args(sys.argv[1:])
+    if len(args) < 1:
+        parser.print_help()
+        sys.exit(45)
+
+    meds_file=args[0]
+
+    sf=gmix_meds.mag_dep_psf.StarFitter(meds_file)
+    sf.go()
+
+main()
