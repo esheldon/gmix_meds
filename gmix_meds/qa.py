@@ -1,8 +1,70 @@
+import os
 import numpy
 from numpy import log10
 import fitsio
 
 SCALE=0.265
+
+def do_many_compare_psfmag(goodlist_file):
+    import json
+    import desdb
+
+    with open(goodlist_file) as fobj:
+        data=json.load(fobj)
+
+    tdict = key_by_tile_band(data)
+
+    run=data[0]['run']
+    
+    desdata=os.environ['DESDATA']
+    outdir=os.path.join(desdata,'users','esheldon','gfme-qa',run)
+    if not os.path.exists(outdir):
+        os.makedirs(outdir)
+
+    print outdir
+
+    df=desdb.DESFiles()
+    for tileband,fdict in tdict.iteritems():
+
+        fname=df.url(type='wlpipe_me_generic',
+                     run=run,
+                     tilename=fdict['tilename'],
+                     band=fdict['band'],
+                     filetype='lmfit',
+                     ext='fits')
+
+        print fname
+
+        comp=ComparePSFMags(fname)
+        plt=comp.doplot()
+        plt_stars=comp.doplot(stars=True)
+
+        bname=os.path.basename(fname)
+        epsname=bname.replace('.fits','-magdiff.eps')
+        epsname=os.path.join(outdir,epsname)
+
+        epsname_stars=epsname.replace(".eps", "-stars.eps")
+
+        print '    ',epsname
+        print '    ',epsname_stars
+
+        plt.write_eps(epsname)
+        plt_stars.write_eps(epsname_stars)
+
+def key_by_tile_band(data):
+    odict={}
+
+    for d in data:
+        tilename=d['tilename']
+        band=d['band']
+
+        key='%s-%s' % (tilename,band)
+
+        odict[key] = d
+
+    return odict
+
+
 class FluxHist(object):
     """
     Plot the histogram of flux or magnitude
@@ -99,8 +161,10 @@ class ComparePSFMags(object):
         vs_ylabel=r'$mag^{ME}_{psf}$'
         diff_ylabel=r'$mag^{ME}_{psf} - mag^{SX}_{psf}$'
 
-        tab=biggles.Table(2,1)
+        tab=biggles.Table(1,2)
 
+        tab.title=os.path.basename(self.fname).replace('.fits','')
+        tab.aspect_ratio=1./1.618
         type='dot'
         xrng=[15,26]
         plt_vs=eu.plotting.bscatter(mag, sxmag,
@@ -135,7 +199,7 @@ class ComparePSFMags(object):
             plt_vs.add(lab)
 
         tab[0,0] = plt_vs
-        tab[1,0] = plt_diff
+        tab[0,1] = plt_diff
         if show:
             tab.show()
         return tab
