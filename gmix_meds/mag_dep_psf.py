@@ -53,7 +53,7 @@ class StarPlotter(object):
 
         self._extract_by_exp()
 
-    def doplots(self, type='normal', show=False):
+    def doplots(self, xfield='coadd_mag_auto', type='normal', show=False):
         import biggles
         biggles.configure('default','fontsize_min',1.5)
         nexp=len(self.expdict)
@@ -61,14 +61,107 @@ class StarPlotter(object):
         for expname,exp_objs in self.expdict.iteritems():
             print >>stderr,'%d/%d' % (i,nexp)
 
-            if type=='em2':
-                self._process_exp_em2(expname,exp_objs,show=show)
-            else:
+            if type=='em2_widths':
+                self._process_exp_em2_widths(expname,exp_objs,xfield,show=show)
+            elif type=='widths':
+                self._process_exp_widths(expname,exp_objs,xfield,show=show)
+            elif type=='normal':
                 self._process_exp(expname,exp_objs,show=show)
+            else:
+                raise ValueError("bad type: '%s'" % type)
             i += 1
 
 
-    def _process_exp_em2(self, expname, exp_objs,show=False):
+    def _process_exp_widths(self, expname, exp_objs, xfield, show=False):
+        import biggles
+        import pcolors
+        import esutil as eu
+        print >>stderr,'found',len(exp_objs),'ccds in',expname
+
+        ccds = list(exp_objs.keys())
+        nccd = len(ccds)
+
+        plt=biggles.FramedArray(3,2)
+        plt.title='%s  nccd: %d' % (expname,nccd)
+        plt.yrange=[0.0,2.0]
+        plt.uniform_limits=1
+
+        if xfield=='coadd_mag_auto':
+            plt.xlabel=r'$mag_{auto}$'
+            plt.xrange=[15.4,19.2]
+        elif xfield=='max_pixel':
+            plt.xlabel=r'$max pixel$'
+            # need to fix
+            plt.xrange=[0,10000]
+
+        plt.ylabel=r'$2 \times sqrt(area/\pi) [arcsec]$'
+
+        colors=pcolors.rainbow(nccd)
+
+        fw75_slopes=numpy.zeros(nccd) -9999.e9
+        fw50_slopes=numpy.zeros(nccd) -9999.e9
+        fw25_slopes=numpy.zeros(nccd) -9999.e9
+
+        for i,ccd in enumerate(ccds):
+            wccd = numpy.array(exp_objs[ccd])
+            color = colors[i]
+
+            nw=len(wccd)
+
+            # still cut just so we get the same objects
+            w, = numpy.where(self.data['flags2'][wccd]==0
+                              & (self.data['offset_arcsec'][wccd] < self.offset_max))
+            if w.size != 0:
+                w=wccd[w]
+
+
+                self._add_to_plot(plt[0,0], xfield, 'fw75', w, color)
+                cf=self._add_to_plot(plt[0,1], xfield, 'fw75', w, color, doslope=True)
+                if cf is not None:
+                    fw75_slopes[i] = cf[0]
+
+                self._add_to_plot(plt[1,0], xfield, 'fw50', w, color)
+                cf=self._add_to_plot(plt[1,1], xfield, 'fw50', w, color, doslope=True)
+                if cf is not None:
+                    fw50_slopes[i] = cf[0]
+
+                self._add_to_plot(plt[2,0], xfield, 'fw25', w, color)
+                cf=self._add_to_plot(plt[2,1], xfield, 'fw25', w, color, doslope=True)
+                if cf is not None:
+                    fw25_slopes[i] = cf[0]
+
+
+        lab75=biggles.PlotLabel(0.1,0.9,'FW75',halign='left')
+        lab50=biggles.PlotLabel(0.1,0.9,'FW50',halign='left')
+        lab25=biggles.PlotLabel(0.1,0.9,'FW20',halign='left')
+        plt[0,0].add(lab75)
+        plt[1,0].add(lab50)
+        plt[2,0].add(lab25)
+
+        ws,=numpy.where(fw75_slopes > -1000)
+        if ws.size > 2:
+            self._add_slope(plt[0,1], fw75_slopes[ws])
+        ws,=numpy.where(fw50_slopes > -1000)
+        if ws.size > 2:
+            self._add_slope(plt[1,1], fw50_slopes[ws])
+        ws,=numpy.where(fw25_slopes > -1000)
+        if ws.size > 2:
+            self._add_slope(plt[2,1], fw25_slopes[ws])
+
+        if show:
+            plt.show()
+            key=raw_input('hit a key (q to quit): ')
+            if key.lower() == 'q':
+                stop
+
+        pngname=get_exp_size_mag_plot(self.version, expname,ext='png',type='widths')
+        if not os.path.exists(os.path.dirname(pngname)):
+            os.makedirs(os.path.dirname(pngname))
+        print pngname
+        #plt.write_img(600,600,pngname)
+        plt.write_img(1100,1100,pngname)
+
+    def _process_exp_em2_widths(self, expname, exp_objs,show=False):
         import biggles
         import pcolors
         import esutil as eu
@@ -106,18 +199,18 @@ class StarPlotter(object):
 
                 offset_arrlist.append( self.data['offset_arcsec'][w])
 
-                self._add_to_plot(plt[0,0], 'fw75', w, color)
-                cf=self._add_to_plot(plt[0,1], 'fw75', w, color, doslope=True)
+                self._add_to_plot(plt[0,0], xfield, 'fw75_em2', w, color)
+                cf=self._add_to_plot(plt[0,1], xfield, 'fw75_em2', w, color, doslope=True)
                 if cf is not None:
                     fw75_slopes[i] = cf[0]
 
-                self._add_to_plot(plt[1,0], 'fw50', w, color)
-                cf=self._add_to_plot(plt[1,1], 'fw50', w, color, doslope=True)
+                self._add_to_plot(plt[1,0], xfield, 'fw50_em2', w, color)
+                cf=self._add_to_plot(plt[1,1], xfield, 'fw50_em2', w, color, doslope=True)
                 if cf is not None:
                     fw50_slopes[i] = cf[0]
 
-                self._add_to_plot(plt[2,0], 'fw25', w, color)
-                cf=self._add_to_plot(plt[2,1], 'fw25', w, color, doslope=True)
+                self._add_to_plot(plt[2,0], xfield, 'fw25_em2', w, color)
+                cf=self._add_to_plot(plt[2,1], xfield, 'fw25_em2', w, color, doslope=True)
                 if cf is not None:
                     fw25_slopes[i] = cf[0]
 
@@ -128,9 +221,9 @@ class StarPlotter(object):
         offlab = biggles.PlotLabel(0.9,0.9,'<offset>: %.3g' % mean_offset,halign='right')
         plt[0,0].add(offlab)
 
-        lab75=biggles.PlotLabel(0.1,0.9,'FW75',halign='left')
-        lab50=biggles.PlotLabel(0.1,0.9,'FW50',halign='left')
-        lab25=biggles.PlotLabel(0.1,0.9,'FW20',halign='left')
+        lab75=biggles.PlotLabel(0.1,0.9,'FW75 EM2',halign='left')
+        lab50=biggles.PlotLabel(0.1,0.9,'FW50 EM2',halign='left')
+        lab25=biggles.PlotLabel(0.1,0.9,'FW20 EM2',halign='left')
         plt[0,0].add(lab75)
         plt[1,0].add(lab50)
         plt[2,0].add(lab25)
@@ -151,7 +244,7 @@ class StarPlotter(object):
             if key.lower() == 'q':
                 stop
 
-        pngname=get_exp_size_mag_plot(self.version, expname,ext='png',type='em2')
+        pngname=get_exp_size_mag_plot(self.version, expname,ext='png',type='em2_widths')
         if not os.path.exists(os.path.dirname(pngname)):
             os.makedirs(os.path.dirname(pngname))
         print pngname
@@ -269,7 +362,7 @@ class StarPlotter(object):
         plt.add(slab)
 
 
-    def _add_to_plot(self, plt, type, w, color, doslope=False):
+    def _add_to_plot(self, plt, xfield, type, w, color, doslope=False):
         """
 
         Add widths to plot and plot a fit line. Very broad Sigma clipping is
@@ -279,23 +372,24 @@ class StarPlotter(object):
         import biggles
         from esutil.stat import sigma_clip
 
-        width=numpy.zeros(w.size)
 
         if type=='fw25':
-            width[:] = self.data['fw25_arcsec'][w]
+            width = self.data['fw25_arcsec'][w]
         elif type=='fw50':
-            width[:] = self.data['fw50_arcsec'][w]
+            width = self.data['fw50_arcsec'][w]
+            print width
         elif type=='fw75':
-            width[:] = self.data['fw75_arcsec'][w]
-        if type=='fw25_em2':
-            width[:] = self.data['fw25_arcsec_em2'][w]
+            width = self.data['fw75_arcsec'][w]
+        elif type=='fw25_em2':
+            width = self.data['fw25_arcsec_em2'][w]
         elif type=='fw50_em2':
-            width[:] = self.data['fw50_arcsec_em2'][w]
+            width = self.data['fw50_arcsec_em2'][w]
         elif type=='fw75_em2':
-            width[:] = self.data['fw75_arcsec_em2'][w]
+            width = self.data['fw75_arcsec_em2'][w]
         else:
             for i,wi in enumerate(w):
 
+                width=numpy.zeros(w.size)
                 if type=='em1':
                     gmix=gmix_image.GMix(self.data['pars1'][wi,:])
                 elif type=='em2':
@@ -306,19 +400,17 @@ class StarPlotter(object):
                 T=gmix.get_T()
                 width[i] = 0.265*2.3548*sqrt(T/2.)
 
-        mag=self.data['coadd_mag_auto'][w]
-        pts=biggles.Points(mag,
-                           width, type='dot',
-                           color=color)
+        x=self.data[xfield][w]
+        pts=biggles.Points(x, width, type='dot', color=color)
 
         coeffs=None
         if doslope and w.size > 20:
             crap1,crap2,wsc=sigma_clip(width, nsig=5,get_indices=True)
             if wsc.size > 20:
-                coeffs=numpy.polyfit(mag[wsc], width[wsc], 1)
+                coeffs=numpy.polyfit(x[wsc], width[wsc], 1)
                 ply=numpy.poly1d(coeffs)
-                yvals=ply(mag[wsc])
-                cv=biggles.Curve(mag[wsc], yvals, color=color)
+                yvals=ply(x[wsc])
+                cv=biggles.Curve(x[wsc], yvals, color=color)
                 plt.add(cv)
 
         plt.add(pts)
@@ -413,9 +505,10 @@ class StarFitter(object):
             icut=icutlist[i]
 
             ares,res1,res2,widths,max_pixel=self._process_star(iobj,icut)
-            st['fw25_arcsec'][i] = PIX_SCALE*widths[0]
-            st['fw50_arcsec'][i] = PIX_SCALE*widths[1]
-            st['fw75_arcsec'][i] = PIX_SCALE*widths[2]
+            if widths[0] > 0:
+                st['fw25_arcsec'][i] = PIX_SCALE*widths[0]
+                st['fw50_arcsec'][i] = PIX_SCALE*widths[1]
+                st['fw75_arcsec'][i] = PIX_SCALE*widths[2]
 
             st['max_pixel'][i] = max_pixel
             st['amflags'][i] = ares['whyflag']
@@ -815,7 +908,8 @@ def measure_image_width(image, ivar, thresh_vals, debug=False):
 
     widths=numpy.zeros(len(thresh_vals))
     for i,thresh in enumerate(thresh_vals):
-        arg = (nim-thresh)*ierr
+        #arg = (nim-thresh)*ierr
+        arg = (nim-thresh)/0.1
 
         vals = 0.5*( 1+erf(arg) )
         area = vals.sum()
@@ -889,7 +983,4 @@ def get_exp_dir(version):
 
 def get_exp_size_mag_plot(version, expname, type='normal', ext='eps'):
     d=get_exp_dir(version)
-    if type=='em2':
-        return os.path.join(d, '%s_size_mag_%s_em2.%s' % (expname,version,ext))
-    else:
-        return os.path.join(d, '%s_size_mag_%s.%s' % (expname,version,ext))
+    return os.path.join(d, '%s_size_mag_%s_%s.%s' % (expname,version,type,ext))
