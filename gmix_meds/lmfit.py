@@ -824,6 +824,7 @@ class MedsFit(object):
         return wtlist
 
 
+
 _stat_names=['s2n_w',
              'loglike',
              'chi2per',

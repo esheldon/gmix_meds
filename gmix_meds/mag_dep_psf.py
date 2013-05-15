@@ -14,11 +14,15 @@ SPREAD_RANGE =[-0.01,0.04]
 STAR_MAG_RANGE = [15.5,19.0]
 STAR_SPREAD_RANGE = [-0.002,0.002]
 
-def collate_results(out_file):
-    import glob
-    d=get_output_dir()
+PIX_SCALE=0.265
 
-    flist=glob.glob(d+'/DES*/*.fits')
+WIDTHS = [0.25,0.50,0.75]
+
+def collate_results(version, out_file):
+    import glob
+    d=get_tile_dir(version)
+
+    flist=glob.glob(d+'/*models_%s.fits' % version)
 
     first=True
     print 'writing to:',out_file
@@ -40,22 +44,119 @@ class StarPlotter(object):
     """
     Plot results from the collated file
     """
-    def __init__(self, collated_file):
+    def __init__(self, version, collated_file):
         print collated_file
+        self.version=version
         self.data=fitsio.read(collated_file)
 
         self.offset_max=0.25
 
         self._extract_by_exp()
 
-    def doplots(self, show=False):
+    def doplots(self, type='normal', show=False):
+        import biggles
+        biggles.configure('default','fontsize_min',1.5)
         nexp=len(self.expdict)
         i=1
         for expname,exp_objs in self.expdict.iteritems():
             print >>stderr,'%d/%d' % (i,nexp)
 
-            self._process_exp(expname,exp_objs,show=show)
+            if type=='em2':
+                self._process_exp_em2(expname,exp_objs,show=show)
+            else:
+                self._process_exp(expname,exp_objs,show=show)
             i += 1
+
+
+    def _process_exp_em2(self, expname, exp_objs,show=False):
+        import biggles
+        import pcolors
+        import esutil as eu
+        print >>stderr,'found',len(exp_objs),'ccds in',expname
+
+        ccds = list(exp_objs.keys())
+        nccd = len(ccds)
+
+        plt=biggles.FramedArray(3,2)
+        plt.title='%s  nccd: %d' % (expname,nccd)
+        plt.yrange=[0.0,2.0]
+        plt.xrange=[15.4,19.2]
+        plt.uniform_limits=1
+
+        plt.xlabel=r'$mag_{auto}$'
+        plt.ylabel=r'$2 \times sqrt(area/\pi) [arcsec]$'
+
+        colors=pcolors.rainbow(nccd)
+
+        fw75_slopes=numpy.zeros(nccd) -9999.e9
+        fw50_slopes=numpy.zeros(nccd) -9999.e9
+        fw25_slopes=numpy.zeros(nccd) -9999.e9
+
+        offset_arrlist=[]
+        for i,ccd in enumerate(ccds):
+            wccd = numpy.array(exp_objs[ccd])
+            color = colors[i]
+
+            nw=len(wccd)
+
+            w, = numpy.where(self.data['flags2'][wccd]==0
+                              & (self.data['offset_arcsec'][wccd] < self.offset_max))
+            if w.size != 0:
+                w=wccd[w]
+
+                offset_arrlist.append( self.data['offset_arcsec'][w])
+
+                self._add_to_plot(plt[0,0], 'fw75', w, color)
+                cf=self._add_to_plot(plt[0,1], 'fw75', w, color, doslope=True)
+                if cf is not None:
+                    fw75_slopes[i] = cf[0]
+
+                self._add_to_plot(plt[1,0], 'fw50', w, color)
+                cf=self._add_to_plot(plt[1,1], 'fw50', w, color, doslope=True)
+                if cf is not None:
+                    fw50_slopes[i] = cf[0]
+
+                self._add_to_plot(plt[2,0], 'fw25', w, color)
+                cf=self._add_to_plot(plt[2,1], 'fw25', w, color, doslope=True)
+                if cf is not None:
+                    fw25_slopes[i] = cf[0]
+
+
+        offsets=eu.numpy_util.combine_arrlist(offset_arrlist)
+        mean_offset,soffset=eu.stat.sigma_clip(offsets)
+
+        offlab = biggles.PlotLabel(0.9,0.9,'<offset>: %.3g' % mean_offset,halign='right')
+        plt[0,0].add(offlab)
+
+        lab75=biggles.PlotLabel(0.1,0.9,'FW75',halign='left')
+        lab50=biggles.PlotLabel(0.1,0.9,'FW50',halign='left')
+        lab25=biggles.PlotLabel(0.1,0.9,'FW20',halign='left')
+        plt[0,0].add(lab75)
+        plt[1,0].add(lab50)
+        plt[2,0].add(lab25)
+
+        ws,=numpy.where(fw75_slopes > -1000)
+        if ws.size > 2:
+            self._add_slope(plt[0,1], fw75_slopes[ws])
+        ws,=numpy.where(fw50_slopes > -1000)
+        if ws.size > 2:
+            self._add_slope(plt[1,1], fw50_slopes[ws])
+        ws,=numpy.where(fw25_slopes > -1000)
+        if ws.size > 2:
+            self._add_slope(plt[2,1], fw25_slopes[ws])
+
+        if show:
+            plt.show()
+            key=raw_input('hit a key (q to quit): ')
+            if key.lower() == 'q':
+                stop
+
+        pngname=get_exp_size_mag_plot(self.version, expname,ext='png',type='em2')
+        if not os.path.exists(os.path.dirname(pngname)):
+            os.makedirs(os.path.dirname(pngname))
+        print pngname
+        plt.write_img(600,600,pngname)
+
 
     def _process_exp(self, expname, exp_objs,show=False):
         import biggles
@@ -65,14 +166,12 @@ class StarPlotter(object):
         ccds = list(exp_objs.keys())
         nccd = len(ccds)
 
-        plt=biggles.FramedArray(2,1)
+        plt=biggles.FramedArray(3,2)
         plt.title='%s  nccd: %d' % (expname,nccd)
         plt.yrange=[0.7,1.6]
         plt.xrange=[15.4,19.2]
         plt.uniform_limits=1
 
-        plt1=biggles.FramedPlot()
-        plt2=biggles.FramedPlot()
         xlabel=r'$mag_{auto}$'
         ylabel=r'$FWHM [arcsec]$'
 
@@ -81,6 +180,10 @@ class StarPlotter(object):
 
 
         colors=pcolors.rainbow(nccd)
+
+        em1_slopes=numpy.zeros(nccd) -9999.e9
+        em2_slopes=numpy.zeros(nccd) -9999.e9
+        am_slopes=numpy.zeros(nccd) -9999.e9
 
         for i,ccd in enumerate(ccds):
             wccd = numpy.array(exp_objs[ccd])
@@ -92,22 +195,50 @@ class StarPlotter(object):
             w1, = numpy.where(self.data['flags1'][wccd]==0)
             if w1.size != 0:
                 w1=wccd[w1]
-                self._add_to_plot(plt[0,0], 1, w1, color)
+                self._add_to_plot(plt[0,0], 'em1', w1, color)
+                cf=self._add_to_plot(plt[0,1], 'em1', w1, color,doslope=True)
+                if cf is not None:
+                    em1_slopes[i] = cf[0]
 
             offsets=self.data['offset_arcsec'][wccd]
             w2, = numpy.where(  (self.data['flags2'][wccd]==0)
                               & (offsets < self.offset_max))
+
             if w2.size != 0:
                 w2=wccd[w2]
-                self._add_to_plot(plt[1,0], 2, w2, color)
+                self._add_to_plot(plt[1,0], 'em2', w2, color)
+                cf=self._add_to_plot(plt[1,1], 'em2', w2, color,doslope=True)
+                if cf is not None:
+                    em2_slopes[i] = cf[0]
+
+            wam, = numpy.where(self.data['amflags'][wccd]==0)
+            if wam.size != 0:
+                wam=wccd[wam]
+                self._add_to_plot(plt[2,0], 'am', wam, color)
+                cf=self._add_to_plot(plt[2,1], 'am', wam, color, doslope=True)
+                if cf is not None:
+                    am_slopes[i] = cf[0]
 
         lab1=biggles.PlotLabel(0.1,0.9,'ngauss: 1',halign='left')
         lab2_1=biggles.PlotLabel(0.1,0.9, "ngauss: 2", halign='left')
         lab2_2=biggles.PlotLabel(0.1,0.8,
                                "offset < %.2f''" % self.offset_max,
                                halign='left')
+        amlab=biggles.PlotLabel(0.1,0.9, "AM", halign='left')
         plt[0,0].add(lab1)
         plt[1,0].add(lab2_1,lab2_2)
+        plt[2,0].add(amlab)
+
+        print >>stderr,'doing slopes'
+        w,=numpy.where(em1_slopes > -1000)
+        if w.size > 2:
+            self._add_slope(plt[0,1], em1_slopes[w])
+        w,=numpy.where(em2_slopes > -1000)
+        if w.size > 2:
+            self._add_slope(plt[1,1], em2_slopes[w])
+        w,=numpy.where(am_slopes > -1000)
+        if w.size > 2:
+            self._add_slope(plt[2,1], am_slopes[w])
 
         if show:
             plt.show()
@@ -115,29 +246,84 @@ class StarPlotter(object):
             if key.lower() == 'q':
                 stop
 
-        epsname=get_exp_size_mag_plot(expname)
-        write_eps_and_convert(plt,epsname)
+        pngname=get_exp_size_mag_plot(self.version, expname,ext='png')
+        if not os.path.exists(os.path.dirname(pngname)):
+            os.makedirs(os.path.dirname(pngname))
+        print pngname
+        plt.write_img(600,600,pngname)
+        #epsname=get_exp_size_mag_plot(self.version, expname)
+        #write_eps_and_convert(plt,epsname)
 
 
-    def _add_to_plot(self, plt, ngauss, w, color):
+    def _add_slope(self, plt, slopes):
         import biggles
+        from esutil.stat import sigma_clip
+        slope,slope_sig=sigma_clip(slopes)
+        slope_err=slope_sig/sqrt(slopes.size)
 
-        fwhm=numpy.zeros(w.size)
-        for i,wi in enumerate(w):
+        #slope = slopes.mean()
+        #slope_err = slopes.std()/sqrt(slopes.size)
 
-            if ngauss==1:
-                gmix=gmix_image.GMix(self.data['pars1'][wi,:])
-            else:
-                gmix=gmix_image.GMix(self.data['pars2'][wi,:])
+        m='<slope>: %.2g +/- %.2g' % (slope,slope_err)
+        slab = biggles.PlotLabel(0.9,0.9,m,halign='right')
+        plt.add(slab)
 
-            T=gmix.get_T()
-            
-            fwhm[i] = 0.265*2.3548*sqrt(T/2.)
 
-        pts=biggles.Points(self.data['coadd_mag_auto'][w],
-                           fwhm, type='dot',
+    def _add_to_plot(self, plt, type, w, color, doslope=False):
+        """
+
+        Add widths to plot and plot a fit line. Very broad Sigma clipping is
+        performed before fitting the line
+
+        """
+        import biggles
+        from esutil.stat import sigma_clip
+
+        width=numpy.zeros(w.size)
+
+        if type=='fw25':
+            width[:] = self.data['fw25_arcsec'][w]
+        elif type=='fw50':
+            width[:] = self.data['fw50_arcsec'][w]
+        elif type=='fw75':
+            width[:] = self.data['fw75_arcsec'][w]
+        if type=='fw25_em2':
+            width[:] = self.data['fw25_arcsec_em2'][w]
+        elif type=='fw50_em2':
+            width[:] = self.data['fw50_arcsec_em2'][w]
+        elif type=='fw75_em2':
+            width[:] = self.data['fw75_arcsec_em2'][w]
+        else:
+            for i,wi in enumerate(w):
+
+                if type=='em1':
+                    gmix=gmix_image.GMix(self.data['pars1'][wi,:])
+                elif type=='em2':
+                    gmix=gmix_image.GMix(self.data['pars2'][wi,:])
+                elif type=='am':
+                    gmix=gmix_image.GMix(self.data['ampars'][wi,:])
+                
+                T=gmix.get_T()
+                width[i] = 0.265*2.3548*sqrt(T/2.)
+
+        mag=self.data['coadd_mag_auto'][w]
+        pts=biggles.Points(mag,
+                           width, type='dot',
                            color=color)
+
+        coeffs=None
+        if doslope and w.size > 20:
+            crap1,crap2,wsc=sigma_clip(width, nsig=5,get_indices=True)
+            if wsc.size > 20:
+                coeffs=numpy.polyfit(mag[wsc], width[wsc], 1)
+                ply=numpy.poly1d(coeffs)
+                yvals=ply(mag[wsc])
+                cv=biggles.Curve(mag[wsc], yvals, color=color)
+                plt.add(cv)
+
         plt.add(pts)
+
+        return coeffs
 
     def _match_expname(self, expname):
         import esutil as eu
@@ -176,9 +362,10 @@ class StarPlotter(object):
         return ccd
 
 class StarFitter(object):
-    def __init__(self, meds_file):
+    def __init__(self, version, meds_file):
 
         self.meds_file=meds_file
+        self.version=version
 
         self._load_data()
         self._set_tileband()
@@ -187,7 +374,7 @@ class StarFitter(object):
 
     def measure_stars(self):
 
-        out_file=get_tile_path(self.tileband)
+        out_file=get_tile_path(self.version, self.tileband)
         print >>stderr,'opening output:',out_file
 
         first=True
@@ -225,30 +412,69 @@ class StarFitter(object):
             iobj=slist[i]
             icut=icutlist[i]
 
-            res1,res2=self._process_star(iobj,icut)
+            ares,res1,res2,widths,max_pixel=self._process_star(iobj,icut)
+            st['fw25_arcsec'][i] = PIX_SCALE*widths[0]
+            st['fw50_arcsec'][i] = PIX_SCALE*widths[1]
+            st['fw75_arcsec'][i] = PIX_SCALE*widths[2]
 
+            st['max_pixel'][i] = max_pixel
+            st['amflags'][i] = ares['whyflag']
             st['flags1'][i] = res1['flags']
             st['flags2'][i] = res2['flags']
 
+            if ares['whyflag'] == 0:
+                st['ampars'][i,:] = [1.0,ares['wrow'],ares['wcol'],
+                                     ares['Irr'],ares['Irc'],ares['Icc']]
             if res1['flags'] == 0:
                 st['pars1'][i,:] = res1['pars']
 
             if res2['flags'] == 0:
                 st['pars2'][i,:] = res2['pars']
                 st['offset_arcsec'][i] = self._get_offset_arcsec(res2['pars'])
+                gmix=gmix_image.GMix(st['pars2'][i,:])
+                debug=False
+                #if st['offset_arcsec'][i] > 0.8:
+                #    debug=True
+                em2_widths = gmix_image.util.measure_gmix_width(gmix,
+                                                                WIDTHS,
+                                                                expand=8, debug=debug)
+                st['fw25_arcsec_em2'][i] = PIX_SCALE*em2_widths[0]
+                st['fw50_arcsec_em2'][i] = PIX_SCALE*em2_widths[1]
+                st['fw75_arcsec_em2'][i] = PIX_SCALE*em2_widths[2]
+                print >>stderr,'\t\t',st['fw50_arcsec'][i],st['fw50_arcsec_em2'][i]
+
         return st
 
 
     def _process_star(self, iobj, icutout):
         from gmix_image import GMixEMBoot
+        import admom
+
+        defres=({'whyflag':ZERO_WEIGHT_PIXELS},
+                {'flags':ZERO_WEIGHT_PIXELS},
+                {'flags':ZERO_WEIGHT_PIXELS},
+                numpy.zeros(len(WIDTHS)) - 9999,
+                -9999.0)
 
         im,ivar,cen_guess=self._get_star_data(iobj,icutout)
 
         if im is None:
-            return [{'flags':ZERO_WEIGHT_PIXELS}]*2
+            return defres
         
+        max_pixel = im.max()
+
+        widths = measure_image_width(im, ivar, WIDTHS, debug=False)
+
         cen1_guess=cen_guess
         sig1_guess=sqrt(2)
+
+        ares = admom.admom(im,
+                           cen_guess[0],
+                           cen_guess[1],
+                           guess=sig1_guess)
+
+
+
         gm1=GMixEMBoot(im, 1, cen1_guess, sigma_guess=sig1_guess)
         res1=gm1.get_result()
         
@@ -273,37 +499,80 @@ class StarFitter(object):
                 stop
 
 
-        return res1,res2
+        return ares,res1,res2,widths,max_pixel
 
     def _get_star_data(self, iobj, icutout):
+        """
+        We use a fixed size apertures for all stars but only process stars for
+        which there are no neighbors in that aperture and for which there are
+        not zero weights in that aperture.
+
+        The smallest cutout we do is 32x32 so we will use a sub region
+        of that to allow for pixel shifts, 25x25.  Then the region is
+        rowcen-r1, colcen+r1 where r1 is (25-1)/2 = 12
+        """
+
         defres=None,None,[]
+
+        box_size=29
+        rsub=(box_size-1)//2
 
         image0=self.meds.get_cutout(iobj,icutout)
         wt0=self.meds.get_cutout(iobj,icutout,type='weight')
-        seg=self.meds.get_cutout(iobj,icutout,type='seg')
+        seg0=self.meds.get_cutout(iobj,icutout,type='seg')
+
         rowcen=self.meds['cutout_row'][iobj,icutout]
         colcen=self.meds['cutout_col'][iobj,icutout]
 
-        sid=seg[rowcen,colcen]
+        sid=seg0[rowcen,colcen]
+
+        # fix up compression issue
+
+        """
         w=numpy.where(seg == sid)
         if w[0].size ==0:
             return defres
-
         rowmin=w[0].min()
         rowmax=w[0].max()
         colmin=w[1].min()
         colmax=w[1].max()
+        """
+
+        rowmin = int(rowcen) - rsub
+        rowmax = int(rowcen) + rsub
+        colmin = int(colcen) - rsub
+        colmax = int(colcen) + rsub
+
+        if ((rowmin < 0)
+                or (rowmax > image0.shape[0])
+                or (colmin < 0)
+                or (colmax > image0.shape[1]) ):
+            print >>stderr,'    hit bounds'
+            return defres
+
 
         rowcen -= rowmin
         colcen -= colmin
 
-        image=image0[rowmin:rowmax+1, colmin:colmax+1]
-        wt=wt0[rowmin:rowmax+1, colmin:colmax+1]
+        image = image0[rowmin:rowmax+1, colmin:colmax+1]
+        wt    =    wt0[rowmin:rowmax+1, colmin:colmax+1]
+        seg   =   seg0[rowmin:rowmax+1, colmin:colmax+1]
 
         if False:
             import images
-            images.view(image0,title='raw')
-            images.view(image,title='cut')
+            import biggles
+            tab=biggles.Table(1,2)
+            w0=numpy.where(wt0 < 0.2*wt0.max())
+            if w0[0].size != 0:
+                image0[w0] = 0
+            w=numpy.where(wt < 0.2*wt.max())
+            if w[0].size != 0:
+                image[w] = 0
+
+            nl=0.05
+            tab[0,0]=images.view(image0,nonlinear=nl,title='raw',show=False)
+            tab[0,1]=images.view(image,nonlinear=nl,title='cut',show=False)
+            tab.show()
             resp=raw_input('hit enter (q to quit): ')
             if resp.lower() == 'q':
                 stop
@@ -312,9 +581,17 @@ class StarFitter(object):
         # in the image anywere because the EM code doesn't
         # have that feature
         # have to deal with noisy "zero" weights
-        w=numpy.where(wt < 0.2*wt.max())
-        if w[0].size > 0:
-            print >>stderr,'    ',iobj,'has',w[0].size,'zero weight pixels'
+        # also no pixels from other objects in our box
+        wt_logic  =  ( wt < 0.2*wt.max()  )
+        seg_logic = ( (seg != sid) & (seg != 0) )
+        w_wt  = numpy.where(wt_logic)
+        w_seg = numpy.where(seg_logic)
+
+        if w_wt[0].size > 0:
+            print >>stderr,'    ',iobj,'has',w_wt[0].size,'zero weight pixels'
+            return None,None,[]
+        if w_seg[0].size > 0:
+            print >>stderr,'    ',iobj,'has',w_seg[0].size,'neighbor pixels'
             return None,None,[]
 
 
@@ -435,7 +712,7 @@ class StarFitter(object):
 
         self.mag_size_plt=plt
 
-        epsname=get_sg_plot_path(self.tileband)
+        epsname=get_sg_plot_path(self.version, self.tileband)
         write_eps_and_convert(plt,epsname)
 
     def _set_tileband(self):
@@ -456,7 +733,7 @@ class StarFitter(object):
             
 
     def _make_dirs(self):
-        maind=get_tile_dir()
+        maind=get_tile_dir(self.version)
         make_dirs(maind)
 
     def _get_struct(self,n):
@@ -473,18 +750,102 @@ class StarFitter(object):
             ('sename','S%d' % maxs),
             ('coadd_mag_auto','f8'),
             ('coadd_spread_model','f8'),
+            ('max_pixel','f4'),
             ('flags1','i4'),
             ('flags2','i4'),
+            ('amflags','i4'),
             ('pars1','f8',npars1),
             ('pars2','f8',npars2),
+            ('fw25_arcsec','f8'),
+            ('fw50_arcsec','f8'),
+            ('fw75_arcsec','f8'),
+            ('fw25_arcsec_em2','f8'),
+            ('fw50_arcsec_em2','f8'),
+            ('fw75_arcsec_em2','f8'),
+            ('ampars','f8',npars1),
             ('offset_arcsec','f8')]
 
         st=numpy.zeros(n, dtype=dt)
 
         st['pars1']=-9999
         st['pars2']=-9999
+        st['fw25_arcsec'] = -9999
+        st['fw50_arcsec'] = -9999
+        st['fw75_arcsec'] = -9999
+        st['fw25_arcsec_em2'] = -9999
+        st['fw50_arcsec_em2'] = -9999
+        st['fw75_arcsec_em2'] = -9999
         st['offset_arcsec'] = 9999
         return st
+
+
+def measure_image_width(image, ivar, thresh_vals, debug=False):
+    """
+    Measure light-fraction width, e.g. 0.5 would be FWHM
+
+    parameters
+    ----------
+    image: 2-d darray
+        The image to measure
+    ivar: float
+        The inverse variance of the image
+    thresh_vals: sequence
+        threshold is, e.g. [0.25,0.5,0.75] which indicate pixels at that
+        fraction of the max height
+
+    output
+    ------
+    widths: ndarray
+        sqrt(Area)/pi where Area is,
+
+            nim=image.image.max()
+            arg =  ivar*(nim-thresh)**2 
+            vals = 0.5*( 1 + erf(arg) )
+            area = vals.sum()
+            width = 2*sqrt(area/pi)
+    """
+    from scipy.special import erf
+    from numpy import pi
+
+    nim = image.copy()
+    maxval=image.max()
+    nim *= (1./maxval)
+
+    ierr = sqrt(ivar)*maxval
+
+    widths=numpy.zeros(len(thresh_vals))
+    for i,thresh in enumerate(thresh_vals):
+        arg = (nim-thresh)*ierr
+
+        vals = 0.5*( 1+erf(arg) )
+        area = vals.sum()
+        widths[i] = 2*sqrt(area/pi)
+
+        if debug:
+            import images
+
+            w=numpy.where(numpy.isfinite(image) != 1)
+            print w[0].size
+            w=numpy.where(arg != arg)
+            print w[0].size
+
+            images.multiview(nim)
+            images.multiview(arg)
+            images.multiview(vals)
+
+            # compare to simple one
+            w=numpy.where(nim >= thresh)
+            swidth = 2*sqrt(w[0].size/pi)
+
+            print 'erf:',widths[i],'npix:',swidth
+
+            key=raw_input('hit a key (q to quit): ')
+            if key=='q':
+                stop
+
+
+    return widths
+
 
 def make_dirs(*args):
     for d in args:
@@ -509,23 +870,26 @@ def get_output_dir():
     desdata=os.environ['DESDATA']
     return os.path.join(desdata, 'users/esheldon/mag-dependent-psf')
 
-def get_tile_dir():
+def get_tile_dir(version):
     d=get_output_dir()
-    return os.path.join(d, 'bytile')
+    return os.path.join(d, 'bytile-%s' % version)
 
-def get_tile_path(tileband):
-    d=get_tile_dir()
-    return os.path.join(d, '%s_models.fits' % tileband)
+def get_tile_path(version, tileband):
+    d=get_tile_dir(version)
+    return os.path.join(d, '%s_models_%s.fits' % (tileband,version))
 
-def get_sg_plot_path(tileband, ext='eps'):
-    d=get_tile_dir()
-    return os.path.join(d, '%s_sg.%s' % (tileband,ext))
+def get_sg_plot_path(version, tileband, ext='eps'):
+    d=get_tile_dir(version)
+    return os.path.join(d, '%s_sg_%s.%s' % (tileband,version,ext))
 
-def get_exp_dir():
+def get_exp_dir(version):
     d=get_output_dir()
-    return os.path.join(d, 'byexp')
+    return os.path.join(d, 'byexp-%s' % version)
 
 
-def get_exp_size_mag_plot(expname, ext='eps'):
-    d=get_exp_dir()
-    return os.path.join(d, '%s_size_mag.%s' % (expname,ext))
+def get_exp_size_mag_plot(version, expname, type='normal', ext='eps'):
+    d=get_exp_dir(version)
+    if type=='em2':
+        return os.path.join(d, '%s_size_mag_%s_em2.%s' % (expname,version,ext))
+    else:
+        return os.path.join(d, '%s_size_mag_%s.%s' % (expname,version,ext))
