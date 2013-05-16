@@ -89,10 +89,10 @@ class StarPlotter(object):
         if xfield=='coadd_mag_auto':
             plt.xlabel=r'$mag_{auto}$'
             plt.xrange=[15.4,19.2]
-        elif xfield=='max_pixel':
-            plt.xlabel=r'$max pixel$'
+        elif xfield=='flux_max':
+            plt.xlabel=r'$FLUX_MAX$'
             # need to fix
-            plt.xrange=[0,10000]
+            plt.xrange=[0,40000]
 
         plt.ylabel=r'$2 \times sqrt(area/\pi) [arcsec]$'
 
@@ -133,7 +133,7 @@ class StarPlotter(object):
 
         lab75=biggles.PlotLabel(0.1,0.9,'FW75',halign='left')
         lab50=biggles.PlotLabel(0.1,0.9,'FW50',halign='left')
-        lab25=biggles.PlotLabel(0.1,0.9,'FW20',halign='left')
+        lab25=biggles.PlotLabel(0.1,0.9,'FW25',halign='left')
         plt[0,0].add(lab75)
         plt[1,0].add(lab50)
         plt[2,0].add(lab25)
@@ -154,12 +154,12 @@ class StarPlotter(object):
             if key.lower() == 'q':
                 stop
 
-        pngname=get_exp_size_mag_plot(self.version, expname,ext='png',type='widths')
+        pngname=get_exp_size_mag_plot(self.version, expname, xfield, ext='png',type='widths')
         if not os.path.exists(os.path.dirname(pngname)):
             os.makedirs(os.path.dirname(pngname))
         print pngname
-        #plt.write_img(600,600,pngname)
-        plt.write_img(1100,1100,pngname)
+        plt.write_img(600,600,pngname)
+        #plt.write_img(1100,1100,pngname)
 
     def _process_exp_em2_widths(self, expname, exp_objs,show=False):
         import biggles
@@ -244,7 +244,7 @@ class StarPlotter(object):
             if key.lower() == 'q':
                 stop
 
-        pngname=get_exp_size_mag_plot(self.version, expname,ext='png',type='em2_widths')
+        pngname=get_exp_size_mag_plot(self.version, expname, xfield, ext='png',type='em2_widths')
         if not os.path.exists(os.path.dirname(pngname)):
             os.makedirs(os.path.dirname(pngname))
         print pngname
@@ -339,7 +339,7 @@ class StarPlotter(object):
             if key.lower() == 'q':
                 stop
 
-        pngname=get_exp_size_mag_plot(self.version, expname,ext='png')
+        pngname=get_exp_size_mag_plot(self.version, expname, xfield, ext='png')
         if not os.path.exists(os.path.dirname(pngname)):
             os.makedirs(os.path.dirname(pngname))
         print pngname
@@ -377,7 +377,6 @@ class StarPlotter(object):
             width = self.data['fw25_arcsec'][w]
         elif type=='fw50':
             width = self.data['fw50_arcsec'][w]
-            print width
         elif type=='fw75':
             width = self.data['fw75_arcsec'][w]
         elif type=='fw25_em2':
@@ -407,11 +406,23 @@ class StarPlotter(object):
         if doslope and w.size > 20:
             crap1,crap2,wsc=sigma_clip(width, nsig=5,get_indices=True)
             if wsc.size > 20:
-                coeffs=numpy.polyfit(x[wsc], width[wsc], 1)
-                ply=numpy.poly1d(coeffs)
-                yvals=ply(x[wsc])
-                cv=biggles.Curve(x[wsc], yvals, color=color)
-                plt.add(cv)
+
+                if xfield == 'flux_max':
+                    w2,=numpy.where((x[wsc] > 5000) & (x[wsc] < 25000) )
+                    xuse=x[wsc[w2]]
+                    yuse=width[wsc[w2]]
+                    #xuse=x[wsc]
+                    #yuse=width[wsc]
+                else:
+                    xuse=x[wsc]
+                    yuse=width[wsc]
+
+                if xuse.size > 20:
+                    coeffs=numpy.polyfit(xuse, yuse, 1)
+                    ply=numpy.poly1d(coeffs)
+                    yvals=ply(xuse)
+                    cv=biggles.Curve(xuse, yvals, color=color)
+                    plt.add(cv)
 
         plt.add(pts)
 
@@ -499,12 +510,14 @@ class StarFitter(object):
         st['sename']=self.bnames[file_id]
         st['coadd_mag_auto'] = self.cat['mag_auto'][slist]
         st['coadd_spread_model'] = self.cat['spread_model'][slist]
+        st['flux_max'] = self.cat['flux_max'][slist]
 
         for i in xrange(ns):
             iobj=slist[i]
             icut=icutlist[i]
 
             ares,res1,res2,widths,max_pixel=self._process_star(iobj,icut)
+
             if widths[0] > 0:
                 st['fw25_arcsec'][i] = PIX_SCALE*widths[0]
                 st['fw50_arcsec'][i] = PIX_SCALE*widths[1]
@@ -556,7 +569,7 @@ class StarFitter(object):
         
         max_pixel = im.max()
 
-        widths = measure_image_width(im, ivar, WIDTHS, debug=False)
+        widths = measure_image_width(im, WIDTHS)
 
         cen1_guess=cen_guess
         sig1_guess=sqrt(2)
@@ -844,6 +857,7 @@ class StarFitter(object):
             ('coadd_mag_auto','f8'),
             ('coadd_spread_model','f8'),
             ('max_pixel','f4'),
+            ('flux_max','f4'), # from sectractor
             ('flags1','i4'),
             ('flags2','i4'),
             ('amflags','i4'),
@@ -872,75 +886,212 @@ class StarFitter(object):
         return st
 
 
-def measure_image_width(image, ivar, thresh_vals, debug=False):
+   
+
+def measure_image_width_erf(image, thresh_vals, smooth=0.1, nsub=10, type='erf'):
     """
-    Measure light-fraction width, e.g. 0.5 would be FWHM
+    Measure width at the given threshold using the specified method.
+    
+    e.g. 0.5 would be the FWHM
+
+    You can send smooth= for the erf method and nsub= for the interp
+    method.
 
     parameters
     ----------
     image: 2-d darray
         The image to measure
-    ivar: float
-        The inverse variance of the image
-    thresh_vals: sequence
-        threshold is, e.g. [0.25,0.5,0.75] which indicate pixels at that
-        fraction of the max height
+    thresh_vals: scalar or sequence
+        threshold is, e.g. 0.5 to get a Full Width at Half max
+    smooth: float
+        erf method only.
+
+        The smoothing scale for the erf.  This should be between 0 and 1. If
+        you have noisy data, you might set this to the noise value or greater,
+        scaled by the max value in the images.  Otherwise just make sure it
+        smooths enough to avoid pixelization effects.
+    nsub: int
+        interpolation method only
+
+        sub-pixel samples in each dimension
 
     output
     ------
-    widths: ndarray
+    widths: scalar or ndarray
+
+    method
+    ------
+    erf method:
         sqrt(Area)/pi where Area is,
 
             nim=image.image.max()
-            arg =  ivar*(nim-thresh)**2 
+            arg =  (nim-thresh)/smooth
+            vals = 0.5*( 1 + erf(arg) )
+            area = vals.sum()
+            width = 2*sqrt(area/pi)
+
+    interp method:
+        Linear interpolation
+    """
+
+    if type=='erf':
+        return measure_image_width_erf(image, thresh_vals, smooth=smooth)
+    else:
+        return measure_image_width_interp(image, thresh_vals, nsub=nsub)
+
+def measure_image_width_erf(image, thresh_vals, smooth=0.1):
+    """
+    Measure width at the given threshold using an erf to smooth the contour.
+    
+    e.g. 0.5 would be the FWHM
+
+    parameters
+    ----------
+    image: 2-d darray
+        The image to measure
+    thresh_vals: scalar or sequence
+        threshold is, e.g. 0.5 to get a Full Width at Half max
+    smooth: float
+        The smoothing scale for the erf.  This should be between 0 and 1. If
+        you have noisy data, you might set this to the noise value or greater,
+        scaled by the max value in the images.  Otherwise just make sure it
+        smooths enough to avoid pixelization effects.
+
+    output
+    ------
+    widths: scalar or ndarray
+        sqrt(Area)/pi where Area is,
+
+            nim=image.image.max()
+            arg =  (nim-thresh)/smooth
             vals = 0.5*( 1 + erf(arg) )
             area = vals.sum()
             width = 2*sqrt(area/pi)
     """
+    from numpy import array, sqrt, zeros, pi, where
     from scipy.special import erf
-    from numpy import pi
+
+    if isinstance(thresh_vals, (list,tuple,numpy.ndarray)):
+        is_seq=True
+    else:
+        is_seq=False
+
+    thresh_vals=array(thresh_vals,ndmin=1,dtype='f8')
 
     nim = image.copy()
     maxval=image.max()
     nim *= (1./maxval)
 
-    ierr = sqrt(ivar)*maxval
-
-    widths=numpy.zeros(len(thresh_vals))
+    widths=zeros(len(thresh_vals))
     for i,thresh in enumerate(thresh_vals):
-        #arg = (nim-thresh)*ierr
-        arg = (nim-thresh)/0.1
+        arg = (nim-thresh)/smooth
 
         vals = 0.5*( 1+erf(arg) )
         area = vals.sum()
         widths[i] = 2*sqrt(area/pi)
 
-        if debug:
-            import images
+    if is_seq:
+        return widths
+    else:
+        return widths[0]
 
-            w=numpy.where(numpy.isfinite(image) != 1)
-            print w[0].size
-            w=numpy.where(arg != arg)
-            print w[0].size
+def measure_image_width_interp(image, thresh_vals, nsub=20):
+    """
+    Measure width at the given threshold using an erf to smooth the contour.
+    
+    e.g. 0.5 would be the FWHM
 
-            images.multiview(nim)
-            images.multiview(arg)
-            images.multiview(vals)
+    parameters
+    ----------
+    image: 2-d darray
+        The image to measure
+    thresh_vals: scalar or sequence
+        threshold is, e.g. 0.5 to get a Full Width at Half max
+    smooth: float
+        The smoothing scale for the erf.  This should be between 0 and 1. If
+        you have noisy data, you might set this to the noise value or greater,
+        scaled by the max value in the images.  Otherwise just make sure it
+        smooths enough to avoid pixelization effects.
 
-            # compare to simple one
-            w=numpy.where(nim >= thresh)
-            swidth = 2*sqrt(w[0].size/pi)
+    output
+    ------
+    widths: scalar or ndarray
+        sqrt(Area)/pi where Area is,
 
-            print 'erf:',widths[i],'npix:',swidth
+            nim=image.image.max()
+            arg =  (nim-thresh)/smooth
+            vals = 0.5*( 1 + erf(arg) )
+            area = vals.sum()
+            width = 2*sqrt(area/pi)
+    """
+    from numpy import array, sqrt, zeros, pi, where
+    from scipy.special import erf
 
-            key=raw_input('hit a key (q to quit): ')
-            if key=='q':
-                stop
+    if isinstance(thresh_vals, (list,tuple,numpy.ndarray)):
+        is_seq=True
+    else:
+        is_seq=False
 
+    thresh_vals=array(thresh_vals,ndmin=1,dtype='f8')
 
-    return widths
+    nim0 = image.copy()
+    maxval=image.max()
+    nim0 *= (1./maxval)
 
+    nim = _make_interpolated_image(nim0, nsub)
 
+    widths=zeros(len(thresh_vals))
+
+    for i,thresh in enumerate(thresh_vals):
+        w=where(nim > thresh)
+
+        area = w[0].size
+        widths[i] = 2*sqrt(area/pi)/nsub
+
+    if is_seq:
+        return widths
+    else:
+        return widths[0]
+
+def _make_interpolated_image(im, nsub, order=1):
+    """
+    Make a new image linearly interpolated 
+    on a nsubxnsub grid
+    """
+    # mgrid is inclusive at end when step
+    # is complex and indicates number of
+    # points
+    import scipy.ndimage
+    zimage=scipy.ndimage.zoom(im, nsub, order=order)
+    if True:
+        import images
+        images.multiview(im)
+        images.multiview(zimage)
+
+    return zimage
+
+def test_measure_image_width(fwhm=20.0, smooth=0.1, nsub=20, type='erf'):
+    print 'testing type:',type
+    sigma=fwhm/2.3548
+
+    dim=2*5*sigma
+    if (dim % 2)==0:
+        dim+=1
+    dims=[dim]*2
+    cen=[(dim-1)//2]*2
+
+    gm=gmix_image.GMix([1.0, cen[0], cen[1], sigma**2, 0.0, sigma**2])
+
+    im=gmix_image.gmix2image(gm, dims)
+    
+    if type=='erf':
+        widths = measure_image_width(im, 0.5, smooth=smooth)
+    else:
+        widths = measure_image_width_interp(im, 0.5, nsub=nsub)
+    print 'true:',fwhm
+    print 'meas:',widths
+    print 'meas/true-1:',widths/fwhm-1
+ 
 def make_dirs(*args):
     for d in args:
         if not os.path.exists(d):
@@ -981,6 +1132,12 @@ def get_exp_dir(version):
     return os.path.join(d, 'byexp-%s' % version)
 
 
-def get_exp_size_mag_plot(version, expname, type='normal', ext='eps'):
+def get_exp_size_mag_plot(version, expname, xfield, type='normal', ext='eps'):
     d=get_exp_dir(version)
-    return os.path.join(d, '%s_size_mag_%s_%s.%s' % (expname,version,type,ext))
+    if 'mag' in xfield:
+        xstr='mag'
+    elif 'flux_max' in xfield:
+        xstr='maxflux'
+    else:
+        raise ValueError("bad xfield '%s'" % xfield)
+    return os.path.join(d, '%s_size_%s_%s_%s.%s' % (expname,xstr,version,type,ext))
