@@ -30,6 +30,7 @@ class TileConcat(object):
 
             fobj.write(meta,extname="meta_data")
 
+        print 'output is in:',out_file
 
     def _set_out_file(self):
         """
