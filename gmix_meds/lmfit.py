@@ -84,7 +84,7 @@ class MedsFit(object):
 
         self.simple_models=['exp','dev']
 
-        self._se_index_list()
+        self._set_index_list()
         self._make_struct()
         self._set_det_cat(det_cat)
         self._load_all_psfex_objects()

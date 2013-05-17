@@ -96,6 +96,7 @@ def main():
 
     det_cat_file=options.det_cat
     if det_cat_file is not None and det_cat_file != "":
+        print >>stderr,'reading:',det_cat_file
         det_cat=fitsio.read(det_cat_file)
     else:
         det_cat=None
