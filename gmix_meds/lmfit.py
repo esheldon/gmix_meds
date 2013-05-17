@@ -75,7 +75,6 @@ class MedsFit(object):
         self.psf_model=psf_model
         self.psf_ngauss=get_psf_ngauss(psf_model)
 
-        self.det_cat=det_cat
         self.debug=debug
 
         self.psf_ntry=psf_ntry
@@ -85,7 +84,9 @@ class MedsFit(object):
 
         self.simple_models=['exp','dev']
 
+        self._se_index_list()
         self._make_struct()
+        self._set_det_cat(det_cat)
         self._load_all_psfex_objects()
 
     def get_data(self):
@@ -93,8 +94,7 @@ class MedsFit(object):
         Get the data structure.  If a subset was requested, only those rows are
         returned.
         """
-        idlist=self.get_index_list()
-        return self.data[idlist]
+        return self.data[self.index_list]
 
     def get_meds_meta(self):
         return self.meds_meta.copy()
@@ -105,27 +105,13 @@ class MedsFit(object):
         """
         return self.meds_meta['magzp_ref'][0]
 
-    def get_index_list(self):
-        """
-        Return a list of indices to be processed
-        """
-        if self.obj_range is None:
-            start=0
-            end=self.meds.size-1
-        else:
-            start=self.obj_range[0]
-            end=self.obj_range[1]
-
-        return numpy.arange(start,end+1)
-
 
     def do_fits(self):
         """
-        Fit objects in the indicated range
+        Fit all objects in our list
         """
-        idlist=self.get_index_list()
-        last=idlist[-1]
-        for index in idlist:
+        last=self.index_list[-1]
+        for index in self.index_list:
             print >>stderr,'index: %d:%d' % (index,last)
             self.fit_obj(index)
 
@@ -443,7 +429,6 @@ class MedsFit(object):
         flux=DEFVAL
         flux_err=PDEFVAL
         if self.det_cat is None:
-        #if False:
             # this is the detection band, just copy some data
             flags,pars,pcov,niter0,ntry0,mod=\
                     self._get_best_simple_pars(self.data,index)
@@ -455,8 +440,6 @@ class MedsFit(object):
         else:
             flags,pars0,pcov0,niter0,ntry0,mod=\
                     self._get_best_simple_pars(self.det_cat,index)
-            #flags,pars0,pcov0,niter0,mod=\
-            #        self._get_best_simple_pars(self.data,index)
             # if flags != 0 it is because we could not find a good fit of any
             # model
             if flags==0:
@@ -681,6 +664,28 @@ class MedsFit(object):
         key=raw_input('hit a key (q to quit): ')
         if key.lower() == 'q':
             stop
+
+    def _set_index_list(self):
+        """
+        set the list of indices to be processed
+        """
+        if self.obj_range is None:
+            start=0
+            end=self.meds.size-1
+        else:
+            start=self.obj_range[0]
+            end=self.obj_range[1]
+
+        self.index_list = numpy.arange(start,end+1)
+
+    def _set_det_cat(self, det_cat):
+        if det_cat is not None:
+            if det_cat.size != self.meds.size:
+                mess=("det_cat should be collated and match full "
+                      "coadd size (%d) got %d")
+                mess=mess % (self.meds.size,det_cat.size)
+                raise ValueError(mess)
+        self.det_cat=det_cat
 
     def _make_struct(self):
         nobj=self.meds.size
