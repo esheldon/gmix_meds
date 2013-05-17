@@ -1,7 +1,6 @@
 psf_ntry: 2
 obj_ntry: 2
-
-reject_outliers: false
-pix_nsig: 1.0e6
-
 psf_model: "em2"
+
+# in arcsec
+psf_offset_max: 0.25

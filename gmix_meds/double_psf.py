@@ -132,6 +132,14 @@ def _do_measure_em2(pex, pos, ngauss, maxtry):
 
     return im,gm,flags,offset_arcsec
 
+def calc_offset_arcsec(gmix):
+    dlist=gmix.get_dlist()
+
+    offset=sqrt( (dlist[0]['row']-dlist[1]['row'])**2 + 
+                 (dlist[0]['col']-dlist[1]['col'])**2 )
+    offset_arcsec=offset*PIXEL_SCALE
+    return offset_arcsec
+
 
 def _do_plots(im, gm, expname, ccd, pos, offset, png_path):
     model=gm.get_model()

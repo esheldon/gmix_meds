@@ -21,12 +21,14 @@ BIG_PDEFVAL=9.999e9
 
 NO_SE_CUTOUTS=2**0
 PSF_FIT_FAILURE=2**1
-EXP_FIT_FAILURE=2**2
-DEV_FIT_FAILURE=2**3
+PSF_LARGE_OFFSETS=2**2
+EXP_FIT_FAILURE=2**3
+DEV_FIT_FAILURE=2**4
 
 NO_ATTEMPT=2**30
 
 PSF_S2N=1.e6
+PSF_OFFSET_MAX=0.25
 
 _psf_ngauss_map={'lm1':1, 'lm2':2, 'lm3':3,
                  'em1':1, 'em2':2, 'em3':3}
@@ -42,10 +44,9 @@ class MedsFit(object):
                  obj_range=None,
                  det_cat=None,
                  psf_model="lm2",
+                 psf_offset_max=PSF_OFFSET_MAX,
                  psf_ntry=LM_MAX_TRY,
                  obj_ntry=2,
-                 reject_outliers=False,
-                 pix_nsig=10,
                  debug=0):
         """
         parameters
@@ -73,14 +74,13 @@ class MedsFit(object):
         self.obj_range=obj_range
 
         self.psf_model=psf_model
+        self.psf_offset_max=psf_offset_max
         self.psf_ngauss=get_psf_ngauss(psf_model)
 
         self.debug=debug
 
         self.psf_ntry=psf_ntry
         self.obj_ntry=obj_ntry
-        self.reject_outliers=reject_outliers
-        self.pix_nsig=pix_nsig
 
         self.simple_models=['exp','dev']
 
@@ -122,37 +122,40 @@ class MedsFit(object):
         The first cutout is always the coadd, followed by
         the SE images which will be fit simultaneously
         """
+
+        t0=time.time()
         if self.meds['ncutout'][index] < 2:
             self.data['flags'][index] |= NO_SE_CUTOUTS
             return
 
-        t0=time.time()
-        if self.reject_outliers:
-            imlist,wtlist=self._get_imlists_outlier_reject(index)
-        else:
-            imlist=self._get_imlist(index)
-            wtlist=self._get_wtlist(index)
-
-        jacob_list=self._get_jacobian_list(index)
-
-        self.data['nimage'][index] = len(imlist)
-
-        if self.debug: print >>stderr,'\tfitting psfs'
-
-        psf_gmix_list=self._fit_psfs(index,jacob_list)
-        if psf_gmix_list is None:
+        imlist0=self._get_imlist(index)
+        wtlist0=self._get_wtlist(index)
+        jacob_list0=self._get_jacobian_list(index)
+        self.data['nimage_tot'][index] = len(imlist0)
+    
+        keep_list,psf_gmix_list=self._fit_psfs(index,jacob_list0)
+        if len(psf_gmix_list)==0:
             self.data['flags'][index] |= PSF_FIT_FAILURE
-            self.data['time'][index] = time.time()-t0
             return
 
-        sdata={'imlist':imlist,'wtlist':wtlist,
+        keep_list,psf_gmix_list=self._remove_bad_psfs(keep_list,psf_gmix_list)
+        if len(psf_gmix_list)==0:
+            self.data['flags'][index] |= PSF_LARGE_OFFSETS
+            return
+
+        imlist = [imlist0[i] for i in keep_list]
+        wtlist = [wtlist0[i] for i in keep_list]
+        jacob_list = [jacob_list0[i] for i in keep_list]
+        self.data['nimage_use'][index] = len(imlist)
+
+        sdata={'imlist':imlist,
+               'wtlist':wtlist,
                'jacob_list':jacob_list,
                'psf_gmix_list':psf_gmix_list}
 
         self._fit_simple_models(index, sdata)
         self._fit_cmodel(index, sdata)
         self._fit_psf_flux(index, sdata)
-        # might just be a copy if there is not det_cat
         self._fit_match(index, sdata)
 
         if self.debug >= 3:
@@ -168,6 +171,7 @@ class MedsFit(object):
         ptuple = self._get_psfex_reclist(index)
         imlist,ivarlist,cenlist,siglist,flist,cenpix=ptuple
 
+        keep_list=[]
         gmix_list=[]
 
         for i in xrange(len(imlist)):
@@ -187,19 +191,40 @@ class MedsFit(object):
             gm=self._do_fit_psf(im,jacob,ivar,sigma)
 
             res=gm.get_result()
-            if res['flags'] != 0:
-                print >>stderr,'psf fitting failed, '
-                return None
+            if res['flags'] == 0:
+                
+                keep_list.append(i)
+                gmix_psf=gm.get_gmix()
+                gmix_list.append( gmix_psf )
+
+                if False:
+                    self._compare_psf_model(im, gm, index, i, flist[i], cenpix)
+            else:
+                print >>stderr,'psf fail',flist[i]
 
 
-            gmix_psf=gm.get_gmix()
-            gmix_list.append( gmix_psf )
+        return keep_list, gmix_list
 
-            if False:
-                self._compare_psf_model(im, gm, index, i, flist[i], cenpix)
+    def _remove_bad_psfs(self, keep_list0, gmix_list0):
+        from .double_psf import calc_offset_arcsec
 
-        return gmix_list
+        if self.psf_model != 'em2':
+            return keep_list0, gmix_list0
 
+        keep_list=[]
+        gmix_list=[]
+        for i in xrange(len(gmix_list0)):
+            gmix=gmix_list0[i]
+            ki=keep_list0[i]
+
+            offset_arcsec = calc_offset_arcsec(gmix)
+            if offset_arcsec < self.psf_offset_max:
+                keep_list.append( ki )
+                gmix_list.append( gmix )
+            else:
+                print >>stderr,'    removed offset psf:',offset_arcsec
+
+        return keep_list, gmix_list
 
     def _do_fit_psf(self, im, jacob, ivar, sigma_guess):
         if 'lm' in self.psf_model:
@@ -501,47 +526,6 @@ class MedsFit(object):
 
         return flags,pars,pcov,niter,ntry,mod
 
-    def _get_imlists_outlier_reject(self, index):
-        """
-        Get the image lists.
-
-        Remove 10-sigma outliers from the regions with weight
-        by setting their weight to zero
-        """
-        mosaic0=self.meds.get_mosaic(index,type='image')
-        wt_mosaic0=self.meds.get_cweight_mosaic(index)
-
-        # cut out the coadd
-        box_size  = mosaic0.shape[1]
-        mosaic    = mosaic0[box_size:, :].copy()
-        wt_mosaic = wt_mosaic0[box_size:, :].copy()
-
-        # do outlier rejection on the pixels with weight
-        wtmax=wt_mosaic.max()
-        keep_logic = ( wt_mosaic > 0.2*wtmax )
-        wkeep=numpy.where(keep_logic)
-
-        if wkeep[0].size > 0:
-            mos_keep=mosaic[wkeep]
-            crap,sig=sigma_clip(mos_keep.ravel())
-            med=numpy.median(mos_keep)
-
-            # note repeating the weight cut
-            wout=numpy.where(  keep_logic
-                             & (numpy.abs(mosaic-med) > self.pix_nsig*sig) )
-            if wout[0].size > 0:
-                print >>stderr,'\tfound %d %d-sigma outliers' % (wout[0].size,self.pix_nsig)
-                wt_mosaic[wout] = 0.0
-
-        imlist=meds.split_mosaic(mosaic)
-        wtlist=meds.split_mosaic(wt_mosaic)
-
-        import images
-        images.view_mosaic(imlist)
-        stop
-        return imlist, wtlist
-
-
     def _get_jacobian_list(self, index):
         """
         Get a list of the jocobians for this object
@@ -692,7 +676,8 @@ class MedsFit(object):
 
         dt=[('id','i4'),
             ('flags','i4'),
-            ('nimage','i4'),
+            ('nimage_tot','i4'),
+            ('nimage_use','i4'),
             ('time','f8')]
 
         simple_npars=6

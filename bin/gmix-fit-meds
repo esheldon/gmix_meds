@@ -51,8 +51,7 @@ def make_meta(conf, meds_meta, meds_file, config_file):
            ('psf_ntry','i2'),
            ('obj_ntry','i2'),
            ('psf_model','S%d' % mlen),
-           ('reject_outliers','i2'),
-           ('pix_nsig','f8')]
+           ('psf_offset_max','f8')]
 
     meta=numpy.zeros(1, dtype=dt)
     for n in meds_meta.dtype.names:
@@ -63,13 +62,7 @@ def make_meta(conf, meds_meta, meds_file, config_file):
     meta['psf_ntry'] = conf['psf_ntry']
     meta['obj_ntry'] = conf['obj_ntry']
     meta['psf_model'] = conf['psf_model']
-    
-    if conf['reject_outliers']:
-        meta['reject_outliers'] = 1
-    else:
-        meta['reject_outliers'] = 0
-
-    meta['pix_nsig'] = conf['pix_nsig']
+    meta['psf_offset_max'] = conf['psf_offset_max']
 
     return meta
 
@@ -105,10 +98,9 @@ def main():
                          obj_range=rng,
                          seed=seed,
                          psf_model=conf['psf_model'],
+                         psf_offset_max=conf['psf_offset_max'],
                          psf_ntry=conf['psf_ntry'],
                          obj_ntry=conf['obj_ntry'],
-                         reject_outliers=conf['reject_outliers'],
-                         pix_nsig=conf['pix_nsig'],
                          det_cat=det_cat)
     gm.do_fits()
 
