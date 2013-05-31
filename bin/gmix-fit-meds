@@ -58,7 +58,7 @@ def make_meta(conf, meds_meta, meds_file, config_file):
         meta[n] = meds_meta[n]
 
     meta['gmix_meds_config'] = config_file
-    meta['meds_file'] = config_file
+    meta['meds_file'] = meds_file
     meta['psf_ntry'] = conf['psf_ntry']
     meta['obj_ntry'] = conf['obj_ntry']
     meta['psf_model'] = conf['psf_model']

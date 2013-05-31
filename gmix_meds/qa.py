@@ -121,8 +121,9 @@ class ComparePSFMags(object):
     """
     Compare to sextractor psf mags
     """
-    def __init__(self, fname, scale=SCALE):
+    def __init__(self, fname, coadd_cat_file=None, scale=SCALE):
         self.fname=fname
+        self.coadd_cat_file=coadd_cat_file
         self.scale=scale
 
         self._load_data()
@@ -134,14 +135,14 @@ class ComparePSFMags(object):
         
 
         data=self.data
-        sxdata=self.sxdata
+        coaddcat_data=self.coaddcat_data
 
         logic= ( (data['psf_flags']==0) 
                 & (data['psf_flux'] > 0.001)
                 & (data['psf_flux_err'] > 0.001)
-                & (sxdata['flags']==0) )
+                & (coaddcat_data['flags']==0) )
         if stars:
-            av=numpy.abs(sxdata['spread_model'])
+            av=numpy.abs(coaddcat_data['spread_model'])
             logic = logic & (av < star_spread_model_max)
 
         w,=numpy.where(logic)
@@ -153,7 +154,7 @@ class ComparePSFMags(object):
 
         fscale = data['psf_flux'][w]/( self.scale**2 )
         mag = -2.5*log10(fscale) + self.meta['magzp_ref'][0]
-        sxmag = sxdata['mag_psf'][w]
+        sxmag = coaddcat_data['mag_psf'][w]
 
         mdiff = mag - sxmag
 
@@ -209,5 +210,8 @@ class ComparePSFMags(object):
             self.data=fobj['model_fits'][:]
             self.meta=fobj['meta_data'][:]
 
-        sxname=self.meta['coaddcat_file'][0]
-        self.sxdata=fitsio.read(sxname,lower=True)
+        if self.coadd_cat_file is not None:
+            coadd_cat_file=self.coadd_cat_file
+        else:
+            coadd_cat_file=self.meta['coaddcat_file'][0]
+        self.coaddcat_data=fitsio.read(coadd_cat_file,lower=True)
