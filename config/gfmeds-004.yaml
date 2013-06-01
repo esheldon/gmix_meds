@@ -1,6 +1,7 @@
 psf_ntry: 2
 obj_ntry: 2
 psf_model: "em2"
+region: "seg_and_sky"
 
 # in arcsec
 psf_offset_max: 0.25

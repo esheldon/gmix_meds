@@ -45,13 +45,15 @@ def make_meta(conf, meds_meta, meds_file, config_file):
     clen=len(config_file)
     flen=len(meds_file)
     mlen=len(conf['psf_model'])
+    rlen=len(conf['region'])
 
     dt += [('gmix_meds_config','S%d' % clen),
            ('meds_file','S%d' % flen),
            ('psf_ntry','i2'),
            ('obj_ntry','i2'),
            ('psf_model','S%d' % mlen),
-           ('psf_offset_max','f8')]
+           ('psf_offset_max','f8'),
+           ('region','S%d' % rlen)]
 
     meta=numpy.zeros(1, dtype=dt)
     for n in meds_meta.dtype.names:
@@ -63,6 +65,7 @@ def make_meta(conf, meds_meta, meds_file, config_file):
     meta['obj_ntry'] = conf['obj_ntry']
     meta['psf_model'] = conf['psf_model']
     meta['psf_offset_max'] = conf['psf_offset_max']
+    meta['region'] = conf['region']
 
     return meta
 
@@ -101,6 +104,7 @@ def main():
                          psf_offset_max=conf['psf_offset_max'],
                          psf_ntry=conf['psf_ntry'],
                          obj_ntry=conf['obj_ntry'],
+                         region=conf['region'],
                          det_cat=det_cat)
     gm.do_fits()
 

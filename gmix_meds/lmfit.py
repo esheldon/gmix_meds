@@ -47,6 +47,7 @@ class MedsFit(object):
                  psf_offset_max=PSF_OFFSET_MAX,
                  psf_ntry=LM_MAX_TRY,
                  obj_ntry=2,
+                 region='seg_and_sky',
                  debug=0):
         """
         parameters
@@ -81,6 +82,8 @@ class MedsFit(object):
 
         self.psf_ntry=psf_ntry
         self.obj_ntry=obj_ntry
+
+        self.region=region
 
         self.simple_models=['exp','dev']
 
@@ -375,6 +378,9 @@ class MedsFit(object):
     def _fit_cmodel(self, index, sdata):
         if self.debug:
             print >>stderr,'\tfitting frac_dev'
+
+        self.data['cmodel_flags'][index]=0
+
         if self.data['exp_flags'][index]!=0:
             self.data['cmodel_flags'][index] |= EXP_FIT_FAILURE
         if self.data['dev_flags'][index]!=0:
@@ -809,8 +815,11 @@ class MedsFit(object):
         If using the seg map, mark pixels outside the coadd object region as
         zero weight
         """
-        wtlist=self.meds.get_cweight_cutout_list(index)
-        wtlist=wtlist[1:]
+        if self.region=='seg_and_sky':
+            wtlist=self.meds.get_cweight_cutout_list(index)
+            wtlist=wtlist[1:]
+        else:
+            raise ValueError("support other region types")
         return wtlist
 
 
