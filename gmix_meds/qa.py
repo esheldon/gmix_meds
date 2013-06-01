@@ -117,7 +117,7 @@ class FluxHist(object):
             self.data=fobj['model_fits'][:]
             self.meta=fobj['meta_data'][:]
 
-class ComparePSFMags(object):
+class CompareBase(object):
     """
     Compare to sextractor psf mags
     """
@@ -127,6 +127,27 @@ class ComparePSFMags(object):
         self.scale=scale
 
         self._load_data()
+
+        
+    def _load_data(self):
+        with fitsio.FITS(self.fname) as fobj:
+            self.data=fobj['model_fits'][:]
+            self.meta=fobj['meta_data'][:]
+
+        if self.coadd_cat_file is not None:
+            coadd_cat_file=self.coadd_cat_file
+        else:
+            coadd_cat_file=self.meta['coaddcat_file'][0]
+        self.coaddcat_data=fitsio.read(coadd_cat_file,lower=True)
+
+class ComparePSFMags(CompareBase):
+    """
+    Compare to sextractor psf mags
+    """
+    def __init__(self, fname, coadd_cat_file=None, scale=SCALE):
+        super(ComparePSFMags,self).__init__(fname,
+                                            coadd_cat_file=coadd_cat_file,
+                                            scale=scale)
 
     def doplot(self, show=False, stars=False, 
                star_spread_model_max=0.002, **keys):
@@ -205,13 +226,73 @@ class ComparePSFMags(object):
             tab.show()
         return tab
         
-    def _load_data(self):
-        with fitsio.FITS(self.fname) as fobj:
-            self.data=fobj['model_fits'][:]
-            self.meta=fobj['meta_data'][:]
+class CompareSimpleMags(CompareBase):
+    """
+    Compare to sextractor psf mags
+    """
+    def __init__(self, fname, coadd_cat_file=None, scale=SCALE):
+        super(CompareSimpleMags,self).__init__(fname,
+                                               coadd_cat_file=coadd_cat_file,
+                                               scale=scale)
 
-        if self.coadd_cat_file is not None:
-            coadd_cat_file=self.coadd_cat_file
-        else:
-            coadd_cat_file=self.meta['coaddcat_file'][0]
-        self.coaddcat_data=fitsio.read(coadd_cat_file,lower=True)
+    def doplot(self, model, show=False, 
+               star_spread_model_max=0.002, **keys):
+        import esutil as eu
+        import biggles
+        
+
+        data=self.data
+        coaddcat_data=self.coaddcat_data
+
+        flags=data['%s_flags' % model]
+        flux=data['%s_flux' % model]
+        flux_err=data['%s_flux_err' % model]
+
+        logic= ( (flags==0) 
+                & (flux > 0.001)
+                & (flux_err > 0.001)
+                & (coaddcat_data['flags']==0)
+                & (coaddcat_data['spread_model'] > star_spread_model_max) )
+
+        w,=numpy.where(logic)
+
+        fscale = flux[w]/( self.scale**2 )
+        mag = -2.5*log10(fscale) + self.meta['magzp_ref'][0]
+        mag_auto = coaddcat_data['mag_auto'][w]
+        mag_auto_err = coaddcat_data['magerr_auto'][w]
+
+        xlabel=r'$mag^{SX}_{auto} or mag^{LM}_{%s}$' % model
+        ylabel=r'$\sigma( mag^{SX}_{auto} )$'
+
+        xrng=[15,26]
+        yrng=[0,0.5]
+        type='dot'
+        size=1.5
+        plt0=eu.plotting.bscatter(mag_auto, mag_auto_err,
+                                  xrange=xrng,
+                                  yrange=yrng,
+                                  xlabel=xlabel,
+                                  ylabel=ylabel,
+                                  type=type,
+                                  size=size,
+                                  show=False)
+
+        plt=eu.plotting.bscatter(mag, mag_auto_err,
+                                 type=type,
+                                 size=size,
+                                 color='red',
+                                 plt=plt0,
+                                 show=False)
+
+
+
+        plt.title=os.path.basename(self.fname).replace('.fits','')
+
+
+        plt.aspect_ratio=1
+
+
+        if show:
+            plt.show()
+        return plt
+        
