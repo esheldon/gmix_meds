@@ -48,6 +48,7 @@ class MedsFit(object):
                  psf_ntry=LM_MAX_TRY,
                  obj_ntry=2,
                  region='seg_and_sky',
+                 simple_models=['exp','dev'],
                  debug=0):
         """
         parameters
@@ -72,6 +73,9 @@ class MedsFit(object):
         self.meds_meta=self.meds.get_meta()
         self.nobj=self.meds.size
 
+        #self.cen_width=0.27 # ''
+        self.cen_width=1.0 # ''
+
         self.obj_range=obj_range
 
         self.psf_model=psf_model
@@ -85,7 +89,7 @@ class MedsFit(object):
 
         self.region=region
 
-        self.simple_models=['exp','dev']
+        self.simple_models=simple_models
 
         self._set_index_list()
         self._make_struct()
@@ -156,9 +160,9 @@ class MedsFit(object):
                'jacob_list':jacob_list,
                'psf_gmix_list':psf_gmix_list}
 
+        self._fit_psf_flux(index, sdata)
         self._fit_simple_models(index, sdata)
         self._fit_cmodel(index, sdata)
-        self._fit_psf_flux(index, sdata)
         self._fit_match(index, sdata)
 
         if self.debug >= 3:
@@ -243,6 +247,7 @@ class MedsFit(object):
                            ivar,
                            jacob,
                            self.psf_ngauss,
+                           cen_width=self.cen_width,
                            lm_max_try=self.psf_ntry)
         return gm
 
@@ -372,6 +377,7 @@ class MedsFit(object):
                               sdata['jacob_list'],
                               sdata['psf_gmix_list'],
                               model,
+                              cen_width=self.cen_width,
                               lm_max_try=self.obj_ntry)
         return gm
 
@@ -392,12 +398,19 @@ class MedsFit(object):
         exp_gmix = gmix_image.GMix(self.data['exp_pars'][index],type='exp')
         dev_gmix = gmix_image.GMix(self.data['dev_pars'][index],type='dev')
 
+        if (self.data['exp_loglike'][index] 
+            > self.data['dev_loglike'][index]):
+            fracdev_start=0.1
+        else:
+            fracdev_start=0.9
+
         gm=GMixFitMultiCModel(sdata['imlist'],
                               sdata['wtlist'],
                               sdata['jacob_list'],
                               sdata['psf_gmix_list'],
                               exp_gmix,
                               dev_gmix,
+                              fracdev_start,
                               lm_max_try=self.obj_ntry)
         res=gm.get_result()
         self.data['cmodel_flags'][index] = res['flags']
@@ -429,6 +442,7 @@ class MedsFit(object):
                                sdata['wtlist'],
                                sdata['jacob_list'],
                                sdata['psf_gmix_list'],
+                               cen_width=self.cen_width,
                                lm_max_try=self.obj_ntry)
         res=gm.get_result()
         self.data['psf_flags'][index] = res['flags']
@@ -457,30 +471,34 @@ class MedsFit(object):
             print >>stderr,'\tfitting matched flux'
         niter=0
         ntry=0
+        chi2per=PDEFVAL
         flux=DEFVAL
         flux_err=PDEFVAL
         if self.det_cat is None:
             # this is the detection band, just copy some data
-            flags,pars,pcov,niter0,ntry0,mod=\
+            flags,pars,pcov,niter0,ntry0,chi2per0,mod=\
                     self._get_best_simple_pars(self.data,index)
             if flags==0:
                 niter=niter0
                 ntry=ntry0
+                chi2per=chi2per0
                 flux=pars[5]
                 flux_err=sqrt(pcov[5,5])
         else:
-            flags,pars0,pcov0,niter0,ntry0,mod=\
+            flags,pars0,pcov0,niter0,ntry0,chi2per0,mod=\
                     self._get_best_simple_pars(self.det_cat,index)
             # if flags != 0 it is because we could not find a good fit of any
             # model
             if flags==0:
                 match_gmix = gmix_image.GMix(pars0, type=mod)
+                start_counts=self._get_match_start(index, mod, match_gmix)
 
                 gm=GMixFitMultiMatch(sdata['imlist'],
                                      sdata['wtlist'],
                                      sdata['jacob_list'],
                                      sdata['psf_gmix_list'],
                                      match_gmix,
+                                     start_counts,
                                      lm_max_try=self.obj_ntry)
                 res=gm.get_result()
                 flags=res['flags']
@@ -489,16 +507,36 @@ class MedsFit(object):
                     flux_err=res['Ferr']
                     niter=res['numiter']
                     ntry=res['ntry']
+                    chi2per=res['chi2per']
 
         self.data['match_flags'][index] = flags
         self.data['match_model'][index] = mod
         self.data['match_iter'][index] = niter
         self.data['match_tries'][index] = ntry
+        self.data['match_chi2per'][index] = chi2per
         self.data['match_flux'][index] = flux
         self.data['match_flux_err'][index] = flux_err
         if self.debug:
             fmt='\t\t%s[%s]: %g +/- %g'
             print >>stderr,fmt % ('match_flux',mod,flux,flux_err)
+
+    def _get_match_start(self, index, mod, match_gmix):
+        if mod=='exp':
+            altmod='dev'
+        else:
+            altmod='exp'
+
+        flagn = '%s_flags' % mod
+        alt_flagn = '%s_flags' % altmod
+
+        if self.data[flagn][index]==0:
+            fn='%s_flux' % mod
+            return self.data[fn][index]
+        elif self.data[altflagn][index]==0:
+            fn='%s_flux' % altmod
+            return self.data[fn][index]
+        else:
+            return match_gmix.get_psum()
 
 
     def _get_best_simple_pars(self, data, index):
@@ -518,19 +556,21 @@ class MedsFit(object):
             mod='dev'
         else:
             flags |= (EXP_FIT_FAILURE+DEV_FIT_FAILURE)
-            return flags,DEFVAL,PDEFVAL,0,0,'nil'
+            return flags,DEFVAL,PDEFVAL,0,0,PDEFVAL,'nil'
 
         pn='%s_pars' % mod
         pcn='%s_pars_cov' % mod
         itn='%s_iter' % mod
         tn='%s_tries' % mod
+        chn='%s_chi2per' % mod
 
         pars=data[pn][index]
         pcov=data[pcn][index]
         niter=data[itn][index]
         ntry=data[tn][index]
+        chi2per=data[chn][index]
 
-        return flags,pars,pcov,niter,ntry,mod
+        return flags,pars,pcov,niter,ntry,chi2per,mod
 
     def _get_jacobian_list(self, index):
         """
@@ -687,7 +727,7 @@ class MedsFit(object):
             ('time','f8')]
 
         simple_npars=6
-        simple_models=['exp','dev']
+        simple_models=self.simple_models
         for model in simple_models:
             n=get_model_names(model)
 
@@ -743,6 +783,7 @@ class MedsFit(object):
               ('match_tries','i4'),
               ('match_model','S3'),
               ('match_iter','i4'),
+              ('match_chi2per','f8'),
               ('match_flux','f8'),
               ('match_flux_err','f8'),
               ]
@@ -773,6 +814,7 @@ class MedsFit(object):
         data['match_flags'] = NO_ATTEMPT
         data['match_flux'] = DEFVAL
         data['match_flux_err'] = PDEFVAL
+        data['match_chi2per'] = PDEFVAL
         data['match_model'] = 'nil'
 
 
@@ -845,6 +887,10 @@ def get_model_names(model):
            'flux_err',
            'g',
            'g_cov',
+           'g_sens',
+           'P',
+           'Q',
+           'R',
            'iter',
            'tries']
     names += _stat_names

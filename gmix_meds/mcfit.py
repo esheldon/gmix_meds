@@ -13,7 +13,9 @@ class MedsMCMC(MedsFit):
         self.nstep=keys.get('nstep',200)
         self.do_pqr=keys.get("do_pqr",False)
         self.mca_a=keys.get('mca_a',2.0)
-        self.cen_width = 0.27 # ''
+
+        #self.cen_width = 0.27 # ''
+        self.cen_width = 1.0
 
     def fit_obj(self, index):
         """
