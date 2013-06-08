@@ -1,3 +1,5 @@
+fitter: "lm"
+
 psf_ntry: 2
 obj_ntry: 2
 psf_model: "em2"

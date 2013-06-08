@@ -38,18 +38,7 @@ def get_psf_ngauss(psf_model):
     return _psf_ngauss_map[psf_model]
 
 class MedsFit(object):
-    def __init__(self,
-                 meds_file,
-                 seed=None,
-                 obj_range=None,
-                 det_cat=None,
-                 psf_model="lm2",
-                 psf_offset_max=PSF_OFFSET_MAX,
-                 psf_ntry=LM_MAX_TRY,
-                 obj_ntry=2,
-                 region='seg_and_sky',
-                 simple_models=['exp','dev'],
-                 debug=0):
+    def __init__(self, meds_file, **keys):
         """
         parameters
         ----------
@@ -65,8 +54,6 @@ class MedsFit(object):
             Catalog to use as "detection" catalog; an overall flux will be fit
             with best simple model fit from this.
         """
-        
-        numpy.random.seed(seed)
 
         self.meds_file=meds_file
         self.meds=meds.MEDS(meds_file)
@@ -76,23 +63,23 @@ class MedsFit(object):
         #self.cen_width=0.27 # ''
         self.cen_width=1.0 # ''
 
-        self.obj_range=obj_range
+        self.obj_range=keys.get('obj_range',None)
 
-        self.psf_model=psf_model
-        self.psf_offset_max=psf_offset_max
-        self.psf_ngauss=get_psf_ngauss(psf_model)
+        self.psf_model=keys.get('psf_model','em2')
+        self.psf_offset_max=keys.get('psf_offset_max',PSF_OFFSET_MAX)
+        self.psf_ngauss=get_psf_ngauss(self.psf_model)
 
-        self.debug=debug
+        self.debug=keys.get('debug',0)
 
-        self.psf_ntry=psf_ntry
-        self.obj_ntry=obj_ntry
+        self.psf_ntry=keys.get('psf_ntry', LM_MAX_TRY)
+        self.obj_ntry=keys.get('obj_ntry',2)
 
-        self.region=region
+        self.region=keys.get('region','seg_and_sky')
 
-        self.simple_models=simple_models
+        self.simple_models=keys.get('simple_models',['exp','dev'])
 
         self._set_index_list()
-        self._make_struct()
+        det_cat=keys.get('det_cat',None)
         self._set_det_cat(det_cat)
         self._load_all_psfex_objects()
 
@@ -117,12 +104,15 @@ class MedsFit(object):
         """
         Fit all objects in our list
         """
+
+        self._make_struct()
+
         last=self.index_list[-1]
         for index in self.index_list:
             print >>stderr,'index: %d:%d' % (index,last)
-            self.fit_obj(index)
+            self._fit_obj(index)
 
-    def fit_obj(self, index):
+    def _fit_obj(self, index):
         """
         Process the indicated object
 

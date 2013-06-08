@@ -21,8 +21,6 @@ parser.add_option("--obj-range",default=None,
                         "process"))
 parser.add_option("--det-cat", default=None,
                   help="detection cat for matched fluxes")
-parser.add_option("--seed", default=None,
-                  help="A seed for random numbers")
 
 def load_config(fname):
     with open(fname) as fobj:
@@ -38,7 +36,7 @@ def makedir_fromfile(fname):
             # probably a race condition
             pass
 
-def make_meta(conf, meds_meta, meds_file, config_file):
+def make_lm_meta(conf, meds_meta, meds_file, config_file):
 
     dt = meds_meta.dtype.descr
 
@@ -69,6 +67,102 @@ def make_meta(conf, meds_meta, meds_file, config_file):
 
     return meta
 
+def make_mcmc_meta(conf, meds_meta, meds_file, config_file):
+
+    dt = meds_meta.dtype.descr
+
+    clen=len(config_file)
+    flen=len(meds_file)
+    mlen=len(conf['psf_model'])
+    rlen=len(conf['region'])
+
+    gtlen = len(conf['gprior_type'])
+
+    dt += [('gmix_meds_config','S%d' % clen),
+           ('meds_file','S%d' % flen),
+           ('psf_ntry','i2'),
+
+           ('nwalkers','i2'),
+           ('burnin','i2'),
+           ('nstep','i2'),
+           ('mca_a','f8'),
+
+           ('do_pqr','i2'),
+
+           ('psf_model','S%d' % mlen),
+
+           ('gprior_type','S%d' % gtlen),
+
+           ('psf_offset_max','f8'),
+           ('region','S%d' % rlen)]
+
+    meta=numpy.zeros(1, dtype=dt)
+    for n in meds_meta.dtype.names:
+        meta[n] = meds_meta[n]
+
+    meta['gmix_meds_config'] = config_file
+    meta['meds_file'] = meds_file
+
+    meta['psf_ntry'] = conf['psf_ntry']
+
+    meta['nwalkers'] = conf['nwalkers']
+    meta['burnin'] = conf['burnin']
+    meta['nstep'] = conf['nstep']
+
+    if conf['do_pqr']:
+        meta['do_pqr']=1
+    else:
+        meta['do_pqr']=0
+
+    meta['gprior_type'] = conf['gprior_type']
+
+    meta['psf_model'] = conf['psf_model']
+    meta['psf_offset_max'] = conf['psf_offset_max']
+    meta['region'] = conf['region']
+
+    return meta
+
+
+def run_lm(meds_file, conf):
+    gm=gmix_meds.MedsFit(meds_file, **conf)
+    """
+                         obj_range=obj_range,
+                         psf_model=conf['psf_model'],
+                         psf_offset_max=conf['psf_offset_max'],
+                         psf_ntry=conf['psf_ntry'],
+                         obj_ntry=conf['obj_ntry'],
+                         region=conf['region'],
+                         det_cat=det_cat)
+    """
+    gm.do_fits()
+
+    data=gm.get_data()
+    meds_meta=gm.get_meds_meta()
+    meta=make_lm_meta(conf, meds_meta, meds_file, config_file)
+
+    return data, meta
+
+def get_gprior(conf):
+    if conf['gprior_type'] =='flat':
+        import gmix_image
+        return gmix_image.priors.GPriorFlat()
+    else:
+        raise ValueError("implement gprior '%s'")
+
+def run_mcmc(meds_file, conf):
+    gprior=get_gprior(conf)
+
+    gm=gmix_meds.MedsMCMC(meds_file, gprior, **conf)
+    gm.do_fits()
+
+    data=gm.get_data()
+    meds_meta=gm.get_meds_meta()
+    meta=make_mcmc_meta(conf, meds_meta, meds_file, config_file)
+
+    return data, meta
+
+
+
 def main():
     options, args = parser.parse_args(sys.argv[1:])
     if len(args) < 3:
@@ -82,13 +176,11 @@ def main():
     conf=load_config(config_file)
     pprint.pprint(conf,stream=stderr)
 
-    seed=options.seed
-    if seed is not None:
-        seed=int(seed)
     rng=options.obj_range
     if rng is not None:
         rng=rng.split(',')
         rng = [int(i) for i in rng]
+
 
     det_cat_file=options.det_cat
     if det_cat_file is not None and det_cat_file != "":
@@ -97,20 +189,13 @@ def main():
     else:
         det_cat=None
 
-    gm=gmix_meds.MedsFit(meds_file,
-                         obj_range=rng,
-                         seed=seed,
-                         psf_model=conf['psf_model'],
-                         psf_offset_max=conf['psf_offset_max'],
-                         psf_ntry=conf['psf_ntry'],
-                         obj_ntry=conf['obj_ntry'],
-                         region=conf['region'],
-                         det_cat=det_cat)
-    gm.do_fits()
+    conf['obj_range'] = rng
+    conf['det_cat'] = det_cat
 
-    data=gm.get_data()
-    meds_meta=gm.get_meds_meta()
-    meta=make_meta(conf, meds_meta, meds_file, config_file)
+    if conf['fitter'] == 'lm':
+        data, meta = run_lm(meds_file, conf)
+    else:
+        data, meta = run_mcmc(meds_file, conf)
 
     makedir_fromfile(out_file)
     print 'writing:',out_file

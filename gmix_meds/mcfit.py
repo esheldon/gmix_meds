@@ -1,11 +1,15 @@
-from .lmfit import MedsFit, get_model_names, \
-        get_psf_ngauss, add_noise_matched, sigma_clip, \
-        _stat_names
+#import numpy
+#from numpy import sqrt
+
+#from .lmfit import MedsFit, get_model_names, \
+#        get_psf_ngauss, add_noise_matched, sigma_clip, \
+#        _stat_names
+from .lmfit import *
 
 class MedsMCMC(MedsFit):
-    def __init__(self, meds_file, **keys):
+    def __init__(self, meds_file, gprior, **keys):
 
-        super(MedsMCMC,self).__init__(self, meds_file, gprior, **keys)
+        super(MedsMCMC,self).__init__(meds_file, **keys)
 
         self.gprior=gprior
         self.nwalkers=keys.get('nwalkers',20)
@@ -14,10 +18,9 @@ class MedsMCMC(MedsFit):
         self.do_pqr=keys.get("do_pqr",False)
         self.mca_a=keys.get('mca_a',2.0)
 
-        #self.cen_width = 0.27 # ''
-        self.cen_width = 1.0
+        self.cen_width = keys.get('cen_width',1.0)
 
-    def fit_obj(self, index):
+    def _fit_obj(self, index):
         """
         Process the indicated object
 
