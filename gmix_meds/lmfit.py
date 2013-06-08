@@ -532,7 +532,7 @@ class MedsFit(object):
         if self.data[flagn][index]==0:
             fn='%s_flux' % mod
             return self.data[fn][index]
-        elif self.data[altflagn][index]==0:
+        elif self.data[alt_flagn][index]==0:
             fn='%s_flux' % altmod
             return self.data[fn][index]
         else:
