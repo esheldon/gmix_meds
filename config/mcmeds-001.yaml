@@ -19,3 +19,6 @@ region: "seg_and_sky"
 cen_width: 0.27
 
 gprior_type: "flat"
+
+# need both these for cmodel
+simple_models: ['exp','dev']

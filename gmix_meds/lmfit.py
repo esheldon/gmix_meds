@@ -78,6 +78,8 @@ class MedsFit(object):
 
         self.simple_models=keys.get('simple_models',['exp','dev'])
 
+        self.match_use_band_center = keys.get('match_use_band_center',False)
+
         self._set_index_list()
         det_cat=keys.get('det_cat',None)
         self._set_det_cat(det_cat)
@@ -105,12 +107,19 @@ class MedsFit(object):
         Fit all objects in our list
         """
 
+        t0=time.time()
+
         self._make_struct()
+        #self.index_list=self.index_list[0:10]
+        #self.index_list=self.index_list[203:240]
 
         last=self.index_list[-1]
         for index in self.index_list:
-            print >>stderr,'index: %d:%d' % (index,last)
+            print >>stderr,'index: %d:%d' % (index,last),
             self._fit_obj(index)
+
+        tm=time.time()-t0
+        print >>stderr,"time per:",tm/len(self.index_list)
 
     def _fit_obj(self, index):
         """
@@ -123,12 +132,14 @@ class MedsFit(object):
         t0=time.time()
         if self.meds['ncutout'][index] < 2:
             self.data['flags'][index] |= NO_SE_CUTOUTS
+            print >>stderr,'No SE cutouts'
             return
 
         imlist0=self._get_imlist(index)
         wtlist0=self._get_wtlist(index)
         jacob_list0=self._get_jacobian_list(index)
         self.data['nimage_tot'][index] = len(imlist0)
+        print >>stderr,imlist0[0].shape
     
         keep_list,psf_gmix_list=self._fit_psfs(index,jacob_list0)
         if len(psf_gmix_list)==0:
@@ -312,6 +323,7 @@ class MedsFit(object):
             print >>stderr,'\tfitting simple models %s' % bstr
 
         for model in self.simple_models:
+            print >>stderr,'    fitting:',model
             gm=self._fit_simple(model, sdata)
             res=gm.get_result()
             rfc_res=gm.get_rfc_result()
@@ -480,6 +492,10 @@ class MedsFit(object):
             # if flags != 0 it is because we could not find a good fit of any
             # model
             if flags==0:
+
+                if self.match_use_band_center:
+                    pars0=self._set_center_from_band(index,pars0,mod)
+
                 match_gmix = gmix_image.GMix(pars0, type=mod)
                 start_counts=self._get_match_start(index, mod, match_gmix)
 
@@ -509,6 +525,26 @@ class MedsFit(object):
         if self.debug:
             fmt='\t\t%s[%s]: %g +/- %g'
             print >>stderr,fmt % ('match_flux',mod,flux,flux_err)
+
+    def _set_center_from_band(self, index, pars0, mod):
+        """
+        For testing centroid stuff in match
+        """
+        pars=pars0.copy()
+        print >>stderr,"trying band center instead of",pars[0:0+2]
+
+        flagsn = '%s_flags' % mod
+        if self.data[flagsn][index] == 0:
+            parsn='%s_pars' % mod
+            pars[0:0+2] = self.data[parsn][index,0:0+2]
+            print >>stderr,"    using",mod,pars[0:0+2]
+        elif self.data['psf_flags'][index] == 0:
+            pars[0:0+2] = self.data['psf_pars'][index,0:0+2]
+            print >>stderr,"    using psf",pars[0:0+2]
+        else:
+            print >>stderr,"    using det",pars[0:0+2]
+
+        return pars
 
     def _get_match_start(self, index, mod, match_gmix):
         if mod=='exp':
@@ -556,9 +592,14 @@ class MedsFit(object):
 
         pars=data[pn][index]
         pcov=data[pcn][index]
-        niter=data[itn][index]
-        ntry=data[tn][index]
         chi2per=data[chn][index]
+
+        if itn in data.dtype.names:
+            niter=data[itn][index]
+            ntry=data[tn][index]
+        else:
+            niter=int(DEFVAL)
+            ntry=int(DEFVAL)
 
         return flags,pars,pcov,niter,ntry,chi2per,mod
 
@@ -838,6 +879,8 @@ class MedsFit(object):
         """
         imlist=self.meds.get_cutout_list(index,type=type)
         imlist=imlist[1:]
+
+        imlist = [im.astype('f8') for im in imlist]
         return imlist
 
     def _get_wtlist(self, index):
@@ -850,6 +893,8 @@ class MedsFit(object):
         if self.region=='seg_and_sky':
             wtlist=self.meds.get_cweight_cutout_list(index)
             wtlist=wtlist[1:]
+
+            wtlist=[wt.astype('f8') for wt in wtlist]
         else:
             raise ValueError("support other region types")
         return wtlist

@@ -7,3 +7,5 @@ region: "seg_and_sky"
 
 # in arcsec
 psf_offset_max: 0.25
+
+match_use_band_center: True

@@ -36,9 +36,11 @@ def makedir_fromfile(fname):
             # probably a race condition
             pass
 
-def make_lm_meta(conf, meds_meta, meds_file, config_file):
+def make_lm_meta(conf, meds_meta, meds_file):
 
     dt = meds_meta.dtype.descr
+
+    config_file=conf['config_file']
 
     clen=len(config_file)
     flen=len(meds_file)
@@ -67,10 +69,11 @@ def make_lm_meta(conf, meds_meta, meds_file, config_file):
 
     return meta
 
-def make_mcmc_meta(conf, meds_meta, meds_file, config_file):
+def make_mcmc_meta(conf, meds_meta, meds_file):
 
     dt = meds_meta.dtype.descr
 
+    config_file=conf['config_file']
     clen=len(config_file)
     flen=len(meds_file)
     mlen=len(conf['psf_model'])
@@ -108,6 +111,7 @@ def make_mcmc_meta(conf, meds_meta, meds_file, config_file):
     meta['nwalkers'] = conf['nwalkers']
     meta['burnin'] = conf['burnin']
     meta['nstep'] = conf['nstep']
+    meta['mca_a'] = conf['mca_a']
 
     if conf['do_pqr']:
         meta['do_pqr']=1
@@ -138,7 +142,7 @@ def run_lm(meds_file, conf):
 
     data=gm.get_data()
     meds_meta=gm.get_meds_meta()
-    meta=make_lm_meta(conf, meds_meta, meds_file, config_file)
+    meta=make_lm_meta(conf, meds_meta, meds_file)
 
     return data, meta
 
@@ -157,7 +161,7 @@ def run_mcmc(meds_file, conf):
 
     data=gm.get_data()
     meds_meta=gm.get_meds_meta()
-    meta=make_mcmc_meta(conf, meds_meta, meds_file, config_file)
+    meta=make_mcmc_meta(conf, meds_meta, meds_file)
 
     return data, meta
 
@@ -191,6 +195,7 @@ def main():
 
     conf['obj_range'] = rng
     conf['det_cat'] = det_cat
+    conf['config_file']=config_file
 
     if conf['fitter'] == 'lm':
         data, meta = run_lm(meds_file, conf)

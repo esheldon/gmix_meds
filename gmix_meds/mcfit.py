@@ -5,6 +5,9 @@
 #        get_psf_ngauss, add_noise_matched, sigma_clip, \
 #        _stat_names
 from .lmfit import *
+from .lmfit import _stat_names
+
+from gmix_image.gmix_mcmc import MixMCSimple
 
 class MedsMCMC(MedsFit):
     def __init__(self, meds_file, gprior, **keys):
@@ -31,12 +34,15 @@ class MedsMCMC(MedsFit):
         t0=time.time()
         if self.meds['ncutout'][index] < 2:
             self.data['flags'][index] |= NO_SE_CUTOUTS
+            print >>stderr,'No SE cutouts'
             return
 
         imlist0=self._get_imlist(index)
         wtlist0=self._get_wtlist(index)
         jacob_list0=self._get_jacobian_list(index)
         self.data['nimage_tot'][index] = len(imlist0)
+
+        print >>stderr,imlist0[0].shape
     
         keep_list,psf_gmix_list=self._fit_psfs(index,jacob_list0)
         if len(psf_gmix_list)==0:
@@ -92,6 +98,9 @@ class MedsMCMC(MedsFit):
         """
         Fit one of the "simple" models, e.g. exp or dev
         """
+        cen_guess=[0.0, 0.0]
+        sigma_guess=2.0/2.35 # FWHM of 2''
+        T_guess=2*sigma_guess**2
         gm=MixMCSimple(sdata['imlist'],
                        sdata['wtlist'],
                        sdata['psf_gmix_list'],
@@ -103,7 +112,10 @@ class MedsMCMC(MedsFit):
                        cen_width=self.cen_width,
                        nwalkers=self.nwalkers,
                        burnin=self.burnin,
-                       nstep=self.nstep)
+                       nstep=self.nstep,
+                       mca_a=self.mca_a,
+                       do_pqr=self.do_pqr,
+                       make_plots=False)
         return gm
 
     def _copy_simple_pars(self, index, res, n):
@@ -183,6 +195,8 @@ class MedsMCMC(MedsFit):
                 ]
 
         dt += [('cmodel_flags','i4'),
+               ('cmodel_iter','i4'),
+               ('cmodel_tries','i4'),
                ('cmodel_flux','f8'),
                ('cmodel_flux_err','f8'),
                ('frac_dev','f8'),
@@ -190,6 +204,8 @@ class MedsMCMC(MedsFit):
 
         n=get_model_names('psf')
         dt += [('psf_flags','i4'),
+               ('psf_iter','i4'),
+               ('psf_tries','i4'),
                ('psf_pars','f8',3),
                ('psf_pars_cov','f8',(3,3)),
                ('psf_flux','f8'),
@@ -203,7 +219,10 @@ class MedsMCMC(MedsFit):
                (n['bic'],'f8')]
 
         dt +=[('match_flags','i4'),
+              ('match_tries','i4'),
               ('match_model','S3'),
+              ('match_iter','i4'),
+              ('match_chi2per','f8'),
               ('match_flux','f8'),
               ('match_flux_err','f8'),
               ]
@@ -240,11 +259,8 @@ class MedsMCMC(MedsFit):
         for model in simple_models:
             n=get_model_names(model)
 
-            data[n['rfc_flags']] = NO_ATTEMPT
             data[n['flags']] = NO_ATTEMPT
 
-            data[n['rfc_pars']] = DEFVAL
-            data[n['rfc_pars_cov']] = PDEFVAL
             data[n['pars']] = DEFVAL
             data[n['pars_cov']] = PDEFVAL
             data[n['flux']] = DEFVAL
