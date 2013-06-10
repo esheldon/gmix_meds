@@ -56,6 +56,7 @@ class MedsFit(object):
         """
 
         self.meds_file=meds_file
+        print >>stderr,'meds file:',meds_file
         self.meds=meds.MEDS(meds_file)
         self.meds_meta=self.meds.get_meta()
         self.nobj=self.meds.size
@@ -79,10 +80,11 @@ class MedsFit(object):
         self.simple_models=keys.get('simple_models',['exp','dev'])
 
         self.match_use_band_center = keys.get('match_use_band_center',False)
+        self.match_self = keys.get('match_self',False)
 
         self._set_index_list()
         det_cat=keys.get('det_cat',None)
-        self._set_det_cat(det_cat)
+        self._set_det_cat_and_struct(det_cat)
         self._load_all_psfex_objects()
 
     def get_data(self):
@@ -109,7 +111,6 @@ class MedsFit(object):
 
         t0=time.time()
 
-        self._make_struct()
         #self.index_list=self.index_list[0:10]
         #self.index_list=self.index_list[203:240]
 
@@ -476,23 +477,33 @@ class MedsFit(object):
         chi2per=PDEFVAL
         flux=DEFVAL
         flux_err=PDEFVAL
+        bres={'flags':0,
+              'flux':DEFVAL,'flux_err':PDEFVAL,
+              'niter':0,'ntry':0,
+              'chi2per':PDEFVAL, 'loglike':DEFVAL,
+              'model':'nil'}
+
+
         if self.det_cat is None:
             # this is the detection band, just copy some data
-            flags,pars,pcov,niter0,ntry0,chi2per0,mod=\
-                    self._get_best_simple_pars(self.data,index)
-            if flags==0:
-                niter=niter0
-                ntry=ntry0
-                chi2per=chi2per0
-                flux=pars[5]
-                flux_err=sqrt(pcov[5,5])
+            #flags,pars,pcov,niter0,ntry0,chi2per0,mod=\
+
+            bres0=self._get_best_simple_pars(self.data,index)
+            if bres0['flags']==0:
+                bres.update(bres0)
+                bres['flux']=bres['pars'][5]
+                bres['flux_err']=sqrt(bres['pcov'][5,5])
+            else:
+                bres['flags']=flags
         else:
-            flags,pars0,pcov0,niter0,ntry0,chi2per0,mod=\
-                    self._get_best_simple_pars(self.det_cat,index)
+            print >>stderr,"    fitting: match flux"
+            bres0=self._get_best_simple_pars(self.det_cat,index)
             # if flags != 0 it is because we could not find a good fit of any
             # model
-            if flags==0:
+            if bres0['flags']==0:
 
+                mod=bres0['model']
+                pars0=bres0['pars']
                 if self.match_use_band_center:
                     pars0=self._set_center_from_band(index,pars0,mod)
 
@@ -506,39 +517,52 @@ class MedsFit(object):
                                      match_gmix,
                                      start_counts,
                                      lm_max_try=self.obj_ntry)
-                """
-                start_counts_new = gm._result['F']
-                serr = gm._result['Ferr']
-                print >>stderr,'start counts: %g +/- %g' % (start_counts_new,serr)
-                gm2=gmix_image.gmix_mcmc.MixMCMatch(sdata['imlist'],
-                                                    sdata['wtlist'],
-                                                    sdata['psf_gmix_list'],
-                                                    match_gmix,
-                                                    start_counts_new,
-                                                    jacob=sdata['jacob_list'],
-                                                    mca_a=3,
-                                                    make_plots=True)
-                """
+                if False:
+                    #start_counts_new = gm._result['F']
+
+                    lmres = gm._result['F']
+                    serr = gm._result['Ferr']
+                    print >>stderr,'start counts:',start_counts
+                    print >>stderr,'lm Flux: %g +/- %g' % (lmres,serr)
+                    gm2=gmix_image.gmix_mcmc.MixMCMatch(sdata['imlist'],
+                                                        sdata['wtlist'],
+                                                        sdata['psf_gmix_list'],
+                                                        match_gmix,
+                                                        start_counts,
+                                                        jacob=sdata['jacob_list'],
+                                                        nwalkers=20,
+                                                        burnin=200,
+                                                        nstep=400,
+                                                        mca_a=3,
+                                                        make_plots=True)
 
                 res=gm.get_result()
                 flags=res['flags']
                 if flags==0:
-                    flux=res['F']
-                    flux_err=res['Ferr']
-                    niter=res['numiter']
-                    ntry=res['ntry']
-                    chi2per=res['chi2per']
+                    print >>stderr,"        flux: %g match_flux: %g" % (pars0[5],res['F'])
+                    bres['flux']=res['F']
+                    bres['flux_err']=res['Ferr']
+                    bres['niter']=res['numiter']
+                    bres['ntry']=res['ntry']
+                    bres['chi2per']=res['chi2per']
+                    bres['loglike'] = res['loglike']
+                else:
+                    bres['flags']=flags
 
-        self.data['match_flags'][index] = flags
-        self.data['match_model'][index] = mod
-        self.data['match_iter'][index] = niter
-        self.data['match_tries'][index] = ntry
-        self.data['match_chi2per'][index] = chi2per
-        self.data['match_flux'][index] = flux
-        self.data['match_flux_err'][index] = flux_err
+            else:
+                bres['flags']=bres0['flags']
+
+        self.data['match_flags'][index] = bres['flags']
+        self.data['match_model'][index] = bres['model']
+        self.data['match_iter'][index] = bres['niter']
+        self.data['match_tries'][index] = bres['ntry']
+        self.data['match_chi2per'][index] = bres['chi2per']
+        self.data['match_loglike'][index] = bres['loglike']
+        self.data['match_flux'][index] = bres['flux']
+        self.data['match_flux_err'][index] = bres['flux_err']
         if self.debug:
             fmt='\t\t%s[%s]: %g +/- %g'
-            print >>stderr,fmt % ('match_flux',mod,flux,flux_err)
+            print >>stderr,fmt % ('match_flux',mod,bres['flux'],bres['flux_err'])
 
     def _set_center_from_band(self, index, pars0, mod):
         """
@@ -580,6 +604,16 @@ class MedsFit(object):
 
 
     def _get_best_simple_pars(self, data, index):
+        ddict={'flags':None,
+               'pars':None,
+               'pcov':None,
+               'niter':0,
+               'ntry':0,
+               'chi2per':None,
+               'loglike':None,
+               'model':'nil'}
+
+
         expflags=data['exp_flags'][index]
         devflags=data['dev_flags'][index]
 
@@ -596,17 +630,20 @@ class MedsFit(object):
             mod='dev'
         else:
             flags |= (EXP_FIT_FAILURE+DEV_FIT_FAILURE)
-            return flags,DEFVAL,PDEFVAL,0,0,PDEFVAL,'nil'
+            ddict['flags']=flags
+            return ddict
 
         pn='%s_pars' % mod
         pcn='%s_pars_cov' % mod
         itn='%s_iter' % mod
         tn='%s_tries' % mod
         chn='%s_chi2per' % mod
+        ln='%s_loglike' % mod
 
         pars=data[pn][index]
         pcov=data[pcn][index]
         chi2per=data[chn][index]
+        loglike=data[ln][index]
 
         if itn in data.dtype.names:
             niter=data[itn][index]
@@ -615,7 +652,14 @@ class MedsFit(object):
             niter=int(DEFVAL)
             ntry=int(DEFVAL)
 
-        return flags,pars,pcov,niter,ntry,chi2per,mod
+        return {'flags':flags,
+                'pars':pars,
+                'pcov':pcov,
+                'niter':niter,
+                'ntry':ntry,
+                'chi2per':chi2per,
+                'loglike':loglike,
+                'model':mod}
 
     def _get_jacobian_list(self, index):
         """
@@ -753,14 +797,21 @@ class MedsFit(object):
 
         self.index_list = numpy.arange(start,end+1)
 
-    def _set_det_cat(self, det_cat):
+    def _set_det_cat_and_struct(self, det_cat):
+        # this creates self.data
+        self._make_struct()
         if det_cat is not None:
             if det_cat.size != self.meds.size:
                 mess=("det_cat should be collated and match full "
                       "coadd size (%d) got %d")
                 mess=mess % (self.meds.size,det_cat.size)
                 raise ValueError(mess)
-        self.det_cat=det_cat
+            self.det_cat=det_cat
+        elif self.match_self:
+            # do match flux on self!
+            print >>stderr,"Will do match flux on self"
+            self.det_cat = self.data
+
 
     def _make_struct(self):
         nobj=self.meds.size
@@ -829,6 +880,7 @@ class MedsFit(object):
               ('match_model','S3'),
               ('match_iter','i4'),
               ('match_chi2per','f8'),
+              ('match_loglike','f8'),
               ('match_flux','f8'),
               ('match_flux_err','f8'),
               ]
@@ -860,6 +912,7 @@ class MedsFit(object):
         data['match_flux'] = DEFVAL
         data['match_flux_err'] = PDEFVAL
         data['match_chi2per'] = PDEFVAL
+        data['match_loglike'] = DEFVAL
         data['match_model'] = 'nil'
 
 

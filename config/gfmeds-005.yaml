@@ -1,3 +1,4 @@
+# for testing only: match on self
 fitter: "lm"
 
 psf_ntry: 2
@@ -9,3 +10,4 @@ region: "seg_and_sky"
 psf_offset_max: 0.25
 
 match_use_band_center: False
+match_self: True
