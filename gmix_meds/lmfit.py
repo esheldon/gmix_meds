@@ -506,6 +506,20 @@ class MedsFit(object):
                                      match_gmix,
                                      start_counts,
                                      lm_max_try=self.obj_ntry)
+                """
+                start_counts_new = gm._result['F']
+                serr = gm._result['Ferr']
+                print >>stderr,'start counts: %g +/- %g' % (start_counts_new,serr)
+                gm2=gmix_image.gmix_mcmc.MixMCMatch(sdata['imlist'],
+                                                    sdata['wtlist'],
+                                                    sdata['psf_gmix_list'],
+                                                    match_gmix,
+                                                    start_counts_new,
+                                                    jacob=sdata['jacob_list'],
+                                                    mca_a=3,
+                                                    make_plots=True)
+                """
+
                 res=gm.get_result()
                 flags=res['flags']
                 if flags==0:

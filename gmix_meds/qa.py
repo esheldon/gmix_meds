@@ -296,3 +296,65 @@ class CompareSimpleMags(CompareBase):
             plt.show()
         return plt
         
+
+
+class FluxVsFluxErr(CompareBase):
+    """
+    Plot Flux vs Flux_err
+    """
+    def __init__(self, fname, coadd_cat_file=None, scale=SCALE):
+        super(FluxVsFluxErr,self).__init__(fname,
+                                               coadd_cat_file=coadd_cat_file,
+                                               scale=scale)
+
+    def doplot(self, model, show=False, 
+               star_spread_model_max=0.002, **keys):
+        import esutil as eu
+        import biggles
+        
+
+        data=self.data
+        coaddcat_data=self.coaddcat_data
+
+        flags=data['%s_flags' % model]
+        flux=data['%s_flux' % model]
+        flux_err=data['%s_flux_err' % model]
+
+        logic= ( (flags==0) 
+                & (flux > 0.001)
+                & (flux_err > 0.001) )
+
+        w,=numpy.where(logic)
+
+        fscale = flux[w]/( self.scale**2 )
+        fscale_err = flux_err[w]/( self.scale**2 )
+
+        log_fscale = numpy.log10( fscale )
+
+        xlabel=r'$log_{10}( Flux_{%s}$ )' % model
+        ylabel=r'$\sigma( Flux_{%s} )$' % model
+
+        xrng=[1,6]
+        yrng=[0,1000]
+        type='dot'
+        size=1.5
+        plt=eu.plotting.bscatter(log_fscale, fscale_err,
+                                 xrange=xrng,
+                                 yrange=yrng,
+                                 xlabel=xlabel,
+                                 ylabel=ylabel,
+                                 type=type,
+                                 size=size,
+                                 show=False)
+
+
+        plt.title=os.path.basename(self.fname).replace('.fits','')
+
+
+        plt.aspect_ratio=1
+
+
+        if show:
+            plt.show()
+        return plt
+        
