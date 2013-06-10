@@ -1,3 +1,4 @@
+import os
 from sys import stderr
 import time
 import numpy
@@ -731,6 +732,9 @@ class MedsFit(object):
         Load psfex objects for each of the SE images
         include the coadd so we get  the index right
         """
+        desdata=os.environ['DESDATA']
+        meds_desdata=self.meds._meta['DESDATA'][0]
+
         psfex_list=[]
         info=self.meds.get_image_info()
         nimage=info.size
@@ -738,6 +742,10 @@ class MedsFit(object):
         for i in xrange(nimage):
             impath=info['image_path'][i].strip()
             psfpath=impath.replace('.fits.fz','_psfcat.psf')
+
+            if desdata not in psfpath:
+                psfpath=psfpath.replace(meds_desdata,desdata)
+
             pex=psfex.PSFEx(psfpath)
             psfex_list.append(pex)
 
@@ -1120,4 +1128,7 @@ def sigma_clip(arrin, niter=4, nsig=4, get_indices=False, extra={},
 
     return res 
 
+
+def reroot_path(psfpath, old_desdata):
+    desdata=os.environ['DESDATA']
 
