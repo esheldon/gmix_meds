@@ -493,6 +493,8 @@ class MedsFit(object):
                 bres.update(bres0)
                 bres['flux']=bres['pars'][5]
                 bres['flux_err']=sqrt(bres['pcov'][5,5])
+                bres['model'] = bres0['model']
+
             else:
                 bres['flags']=flags
         else:
@@ -502,6 +504,7 @@ class MedsFit(object):
             # model
             if bres0['flags']==0:
 
+                bres['model'] = bres0['model']
                 mod=bres0['model']
                 pars0=bres0['pars']
                 if self.match_use_band_center:
