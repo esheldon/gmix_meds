@@ -497,7 +497,7 @@ class MedsFit(object):
                 bres['model'] = bres0['model']
 
             else:
-                bres['flags']=flags
+                bres['flags']=bres0['flags']
         else:
             print >>stderr,"    fitting: match flux"
             bres0=self._get_best_simple_pars(self.det_cat,index)
@@ -822,6 +822,8 @@ class MedsFit(object):
             # do match flux on self!
             print >>stderr,"Will do match flux on self"
             self.det_cat = self.data
+        else:
+            self.det_cat=None
 
 
     def _make_struct(self):

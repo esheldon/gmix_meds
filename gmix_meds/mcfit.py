@@ -83,8 +83,18 @@ class MedsMCMC(MedsFit):
             bstr='[%d,%d]' % (bsize,bsize)
             print >>stderr,'\tfitting simple models %s' % bstr
 
+        psf_s2n=self.data['psf_flux'][index]/self.data['psf_flux_err'][index]
+        make_plots=False
+
         for model in self.simple_models:
-            gm=self._fit_simple(model, sdata)
+            if False:
+                if psf_s2n < 100 and psf_s2n > 50:
+                    make_plots=True
+                else:
+                    make_plots=False
+                    continue
+
+            gm=self._fit_simple(model, sdata, make_plots=make_plots)
             res=gm.get_result()
 
             n=get_model_names(model)
@@ -94,7 +104,7 @@ class MedsMCMC(MedsFit):
 
             self._copy_simple_pars(index, res, n)
 
-    def _fit_simple(self, model, sdata):
+    def _fit_simple(self, model, sdata, make_plots=False):
         """
         Fit one of the "simple" models, e.g. exp or dev
         """
@@ -115,7 +125,7 @@ class MedsMCMC(MedsFit):
                        nstep=self.nstep,
                        mca_a=self.mca_a,
                        do_pqr=self.do_pqr,
-                       make_plots=False)
+                       make_plots=make_plots)
         return gm
 
     def _copy_simple_pars(self, index, res, n):
@@ -223,9 +233,11 @@ class MedsMCMC(MedsFit):
               ('match_model','S3'),
               ('match_iter','i4'),
               ('match_chi2per','f8'),
+              ('match_loglike','f8'),
               ('match_flux','f8'),
               ('match_flux_err','f8'),
               ]
+
 
 
         data=numpy.zeros(nobj, dtype=dt)
@@ -253,6 +265,8 @@ class MedsMCMC(MedsFit):
         data['match_flags'] = NO_ATTEMPT
         data['match_flux'] = DEFVAL
         data['match_flux_err'] = PDEFVAL
+        data['match_chi2per'] = PDEFVAL
+        data['match_loglike'] = DEFVAL
         data['match_model'] = 'nil'
 
 
