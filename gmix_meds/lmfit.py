@@ -11,6 +11,7 @@ from gmix_image.gmix_fit import LM_MAX_TRY, \
         GMixFitPSFJacob,\
         GMixFitMultiSimple,GMixFitMultiCModel, \
         GMixFitMultiPSFFlux,GMixFitMultiMatch
+from gmix_image.util import print_pars, srandu
 from gmix_image.gmix_em import GMixEMBoot
 import psfex
 
@@ -25,6 +26,8 @@ PSF_FIT_FAILURE=2**1
 PSF_LARGE_OFFSETS=2**2
 EXP_FIT_FAILURE=2**3
 DEV_FIT_FAILURE=2**4
+
+BOX_SIZE_TOO_BIG=2**5
 
 NO_ATTEMPT=2**30
 
@@ -77,6 +80,7 @@ class MedsFit(object):
         self.obj_ntry=keys.get('obj_ntry',2)
 
         self.region=keys.get('region','seg_and_sky')
+        self.max_box_size=keys.get('max_box_size',2048)
 
         self.simple_models=keys.get('simple_models',['exp','dev'])
 
@@ -132,12 +136,12 @@ class MedsFit(object):
         """
 
         t0=time.time()
-        if self.meds['ncutout'][index] < 2:
-            self.data['flags'][index] |= NO_SE_CUTOUTS
-            print >>stderr,'No SE cutouts'
-            return
 
-        imlist0=self._get_imlist(index)
+        self.data['flags'][index] = self._obj_check(index)
+        if self.data['flags'][index] != 0:
+            return 0
+
+        imlist0,self.coadd=self._get_imlist(index)
         wtlist0=self._get_wtlist(index)
         jacob_list0=self._get_jacobian_list(index)
         self.data['nimage_tot'][index] = len(imlist0)
@@ -172,6 +176,18 @@ class MedsFit(object):
             self._debug_image(sdata['imlist'][0],sdata['wtlist'][-1])
 
         self.data['time'][index] = time.time()-t0
+
+    def _obj_check(self, index):
+        flags=0
+        box_size=self.meds['box_size'][index]
+        if box_size > self.max_box_size:
+            print >>stderr,'Box size too big:',box_size
+            flags |= BOX_SIZE_TOO_BIG
+
+        if self.meds['ncutout'][index] < 2:
+            print >>stderr,'No SE cutouts'
+            flags |= NO_SE_CUTOUTS
+        return flags
 
     def _fit_psfs(self,index,jacob_list):
         """
@@ -324,9 +340,11 @@ class MedsFit(object):
             bstr='[%d,%d]' % (bsize,bsize)
             print >>stderr,'\tfitting simple models %s' % bstr
 
+        #pars_guess=self._get_simple_guesses(index,sdata)
+        pars_guess=None
         for model in self.simple_models:
             print >>stderr,'    fitting:',model
-            gm=self._fit_simple(model, sdata)
+            gm=self._fit_simple(index, model, sdata, pars_guess)
             res=gm.get_result()
             rfc_res=gm.get_rfc_result()
 
@@ -338,13 +356,14 @@ class MedsFit(object):
             self._copy_simple_pars(index, rfc_res, res, n )
 
     def _copy_simple_pars(self, index, rfc_res, res, n):
-        self.data[n['rfc_flags']][index] = rfc_res['flags']
-        self.data[n['rfc_iter']][index] = rfc_res['numiter']
-        self.data[n['rfc_tries']][index] = rfc_res['ntry']
+        if rfc_res is not None:
+            self.data[n['rfc_flags']][index] = rfc_res['flags']
+            self.data[n['rfc_iter']][index] = rfc_res['numiter']
+            self.data[n['rfc_tries']][index] = rfc_res['ntry']
 
-        if rfc_res['flags']==0:
-            self.data[n['rfc_pars']][index,:] = rfc_res['pars']
-            self.data[n['rfc_pars_cov']][index,:] = rfc_res['pcov']
+            if rfc_res['flags']==0:
+                self.data[n['rfc_pars']][index,:] = rfc_res['pars']
+                self.data[n['rfc_pars_cov']][index,:] = rfc_res['pcov']
 
         self.data[n['flags']][index] = res['flags']
         self.data[n['iter']][index] = res['numiter']
@@ -372,18 +391,57 @@ class MedsFit(object):
 
 
 
-    def _fit_simple(self, model, sdata):
+    def _fit_simple(self, index, model, sdata, pars_guess):
         """
         Fit one of the "simple" models, e.g. exp or dev
         """
+
+        if pars_guess is None:
+            g_guess=None
+            T_guess=None
+            counts_guess=None
+        else:
+            g_guess=pars_guess[2:2+2]
+            T_guess=pars_guess[4]
+            counts_guess=pars_guess[5]
+
         gm=GMixFitMultiSimple(sdata['imlist'],
                               sdata['wtlist'],
                               sdata['jacob_list'],
                               sdata['psf_gmix_list'],
                               model,
                               cen_width=self.cen_width,
-                              lm_max_try=self.obj_ntry)
+                              lm_max_try=self.obj_ntry,
+                              g_guess=g_guess,
+                              T_guess=T_guess,
+                              counts_guess=counts_guess)
         return gm
+
+    def _get_simple_guesses(self, index, sdata):
+        if self.data['psf_flags'][index]==0:
+            counts_guess=self.data['psf_flux'][index]
+        else:
+            counts_guess=100.0
+
+        T_guess=16.0
+        gm=GMixFitMultiSimple(sdata['imlist'],
+                              sdata['wtlist'],
+                              sdata['jacob_list'],
+                              sdata['psf_gmix_list'],
+                              'coellip',
+                              lm_max_try=2,
+                              cen_width=1.e-5,
+                              T_guess=T_guess,
+                              counts_guess=counts_guess)
+
+        res=gm.get_result()
+        if res['flags']!=0:
+            print >>stderr,'        no good guess found, using rfc'
+            pars=[0.0, 0.0, 0.1*srandu(), 0.1*srandu(), None, None]
+        else:
+            pars=res['pars']
+
+        return pars
 
     def _fit_cmodel(self, index, sdata):
         if self.debug:
@@ -617,25 +675,36 @@ class MedsFit(object):
                'loglike':None,
                'model':'nil'}
 
-
-        expflags=data['exp_flags'][index]
-        devflags=data['dev_flags'][index]
-
         flags=0
-        if expflags==0 and devflags==0:
-            if (data['exp_loglike'][index] 
-                    > data['dev_loglike'][index]):
+        nmod=len(self.simple_models)
+        if nmod==2:
+
+            expflags=data['exp_flags'][index]
+            devflags=data['dev_flags'][index]
+
+            if expflags==0 and devflags==0:
+                if (data['exp_loglike'][index] 
+                        > data['dev_loglike'][index]):
+                    mod='exp'
+                else:
+                    mod='dev'
+            elif expflags==0:
                 mod='exp'
-            else:
+            elif devflags==0:
                 mod='dev'
-        elif expflags==0:
-            mod='exp'
-        elif devflags==0:
-            mod='dev'
+            else:
+                flags |= (EXP_FIT_FAILURE+DEV_FIT_FAILURE)
+                ddict['flags']=flags
+                return ddict
+        elif nmod==1:
+            mod=self.simple_models[0]
+            fn='%s_flags' % mod
+            if data[fn][index] != 0:
+                flags |= (EXP_FIT_FAILURE+DEV_FIT_FAILURE)
+                ddict['flags']=flags
+                return ddict
         else:
-            flags |= (EXP_FIT_FAILURE+DEV_FIT_FAILURE)
-            ddict['flags']=flags
-            return ddict
+            raise ValueError("expected 1 or 2 simple models")
 
         pn='%s_pars' % mod
         pcn='%s_pars_cov' % mod
@@ -958,10 +1027,13 @@ class MedsFit(object):
         get the image list, skipping the coadd
         """
         imlist=self.meds.get_cutout_list(index,type=type)
+
+        coadd=imlist[0].astype('f8')
         imlist=imlist[1:]
 
         imlist = [im.astype('f8') for im in imlist]
-        return imlist
+        return imlist, coadd
+
 
     def _get_wtlist(self, index):
         """
@@ -979,6 +1051,9 @@ class MedsFit(object):
             raise ValueError("support other region types")
         return wtlist
 
+    def _show_coadd(self):
+        import images
+        images.view(self.coadd)
 
 
 _stat_names=['s2n_w',

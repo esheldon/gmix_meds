@@ -23,6 +23,11 @@ class MedsMCMC(MedsFit):
 
         self.cen_width = keys.get('cen_width',1.0)
 
+        self.make_plots=keys.get('make_plots',False)
+
+        self.conf={}
+        self.conf.update(keys)
+
     def _fit_obj(self, index):
         """
         Process the indicated object
@@ -32,12 +37,12 @@ class MedsMCMC(MedsFit):
         """
 
         t0=time.time()
-        if self.meds['ncutout'][index] < 2:
-            self.data['flags'][index] |= NO_SE_CUTOUTS
-            print >>stderr,'No SE cutouts'
-            return
 
-        imlist0=self._get_imlist(index)
+        self.data['flags'][index] = self._obj_check(index)
+        if self.data['flags'][index] != 0:
+            return 0
+
+        imlist0,self.coadd = self._get_imlist(index)
         wtlist0=self._get_wtlist(index)
         jacob_list0=self._get_jacobian_list(index)
         self.data['nimage_tot'][index] = len(imlist0)
@@ -64,10 +69,14 @@ class MedsMCMC(MedsFit):
                'jacob_list':jacob_list,
                'psf_gmix_list':psf_gmix_list}
 
-        self._fit_psf_flux(index, sdata)
-        self._fit_simple_models(index, sdata)
-        self._fit_cmodel(index, sdata)
-        self._fit_match(index, sdata)
+        if 'psf' in self.conf['fit_types']:
+            self._fit_psf_flux(index, sdata)
+        if 'simple' in self.conf['fit_types']:
+            self._fit_simple_models(index, sdata)
+        if 'cmodel' in self.conf['fit_types']:
+            self._fit_cmodel(index, sdata)
+        if 'match' in self.conf['fit_types']:
+            self._fit_match(index, sdata)
 
         if self.debug >= 3:
             self._debug_image(sdata['imlist'][0],sdata['wtlist'][-1])
@@ -88,13 +97,18 @@ class MedsMCMC(MedsFit):
 
         for model in self.simple_models:
             if False:
-                if psf_s2n < 100 and psf_s2n > 50:
+                if 50 < psf_s2n < 75:
                     make_plots=True
                 else:
                     make_plots=False
                     continue
 
-            gm=self._fit_simple(model, sdata, make_plots=make_plots)
+            if make_plots or self.make_plots:
+                self._show_coadd()
+
+            print >>stderr,'    fitting:',model
+
+            gm=self._fit_simple(index, model, sdata, make_plots=make_plots)
             res=gm.get_result()
 
             n=get_model_names(model)
@@ -104,10 +118,18 @@ class MedsMCMC(MedsFit):
 
             self._copy_simple_pars(index, res, n)
 
-    def _fit_simple(self, model, sdata, make_plots=False):
+    def _fit_simple(self, index, model, sdata, make_plots=False):
         """
         Fit one of the "simple" models, e.g. exp or dev
         """
+        if self.data['psf_flags'][index]==0:
+            counts_guess=self.data['psf_flux'][index]
+        else:
+            # will come from median of input images
+            counts_guess=None
+
+        nwalkers,burnin,nstep=self._get_mcmc_pars(index)
+
         cen_guess=[0.0, 0.0]
         sigma_guess=2.0/2.35 # FWHM of 2''
         T_guess=2*sigma_guess**2
@@ -116,17 +138,40 @@ class MedsMCMC(MedsFit):
                        sdata['psf_gmix_list'],
                        self.gprior,
                        T_guess,
+                       counts_guess,
                        cen_guess,
                        model,
                        jacob=sdata['jacob_list'],
                        cen_width=self.cen_width,
-                       nwalkers=self.nwalkers,
-                       burnin=self.burnin,
-                       nstep=self.nstep,
+                       nwalkers=nwalkers,
+                       burnin=burnin,
+                       nstep=nstep,
                        mca_a=self.mca_a,
                        do_pqr=self.do_pqr,
-                       make_plots=make_plots)
+                       make_plots=make_plots or self.make_plots)
         return gm
+
+    def _get_mcmc_pars(self, index):
+        nwalkers=self.nwalkers
+        burnin=self.burnin
+        nstep=self.nstep
+        return nwalkers,burnin,nstep
+
+        """
+        if self.data['psf_flags'][index]==0:
+            psf_s2n=self.data['psf_flux'][index]/self.data['psf_flux_err'][index]
+            if psf_s2n > 50:
+                print '    psf s/n:',psf_s2n
+                nwalkers *= 2
+                burnin *= 2
+                nstep *= 2
+        else:
+            nwalkers *= 2
+            burnin *= 2
+            nstep *= 2
+
+        return nwalkers, burnin, nstep
+        """
 
     def _copy_simple_pars(self, index, res, n):
 
@@ -157,6 +202,91 @@ class MedsMCMC(MedsFit):
                 print >>stderr,'flags != 0, errmsg:',res['errmsg']
             if self.debug > 1 and self.debug < 3:
                 self._debug_image(sdata['imlist'][0],sdata['wtlist'][0])
+
+
+    def _fit_match(self, index, sdata, make_plots=False):
+        if self.debug:
+            print >>stderr,'\tfitting matched flux'
+        chi2per=PDEFVAL
+        flux=DEFVAL
+        flux_err=PDEFVAL
+        bres={'flags':0,
+              'flux':DEFVAL,'flux_err':PDEFVAL,
+              'chi2per':PDEFVAL, 'loglike':DEFVAL,
+              'model':'nil'}
+
+
+        if self.det_cat is None:
+            bres0=self._get_best_simple_pars(self.data,index)
+            if bres0['flags']==0:
+                bres.update(bres0)
+                bres['flux']=bres['pars'][5]
+                bres['flux_err']=sqrt(bres['pcov'][5,5])
+                bres['model'] = bres0['model']
+
+            else:
+                bres['flags']=bres0['flags']
+        else:
+            print >>stderr,"    fitting: match flux"
+            bres0=self._get_best_simple_pars(self.det_cat,index)
+            # if flags != 0 it is because we could not find a good fit of any
+            # model
+            if bres0['flags']==0:
+
+                bres['model'] = bres0['model']
+                mod=bres0['model']
+                pars0=bres0['pars']
+                if self.match_use_band_center:
+                    pars0=self._set_center_from_band(index,pars0,mod)
+
+                match_gmix = gmix_image.GMix(pars0, type=mod)
+                start_counts=self._get_match_start(index, mod, match_gmix)
+
+                if False:
+                    psf_s2n=self.data['psf_flux'][index]/self.data['psf_flux_err'][index]
+                    if psf_s2n < 100 and psf_s2n > 50:
+                        make_plots=True
+                    else:
+                        make_plots=False
+
+
+                gm=gmix_image.gmix_mcmc.MixMCMatch(sdata['imlist'],
+                                                   sdata['wtlist'],
+                                                   sdata['psf_gmix_list'],
+                                                   match_gmix,
+                                                   start_counts,
+                                                   jacob=sdata['jacob_list'],
+                                                   nwalkers=20,
+                                                   burnin=200,
+                                                   nstep=200,
+                                                   mca_a=3,
+                                                   make_plots=make_plots or self.make_plots)
+
+                res=gm.get_result()
+                flags=res['flags']
+                if flags==0:
+                    print >>stderr,"        flux: %g match_flux: %g" % (pars0[5],res['Flux'])
+                    bres['flux']=res['Flux']
+                    bres['flux_err']=res['Ferr']
+                    bres['chi2per']=res['chi2per']
+                    bres['loglike'] = res['loglike']
+                else:
+                    bres['flags']=flags
+
+            else:
+                bres['flags']=bres0['flags']
+
+        self.data['match_flags'][index] = bres['flags']
+        self.data['match_model'][index] = bres['model']
+        self.data['match_chi2per'][index] = bres['chi2per']
+        self.data['match_loglike'][index] = bres['loglike']
+        self.data['match_flux'][index] = bres['flux']
+        self.data['match_flux_err'][index] = bres['flux_err']
+        if self.debug:
+            fmt='\t\t%s[%s]: %g +/- %g'
+            print >>stderr,fmt % ('match_flux',mod,bres['flux'],bres['flux_err'])
+
+
 
     def _print_simple_stats(self, ndict, res):                        
         fmt='\t\t%s: %g +/- %g'
