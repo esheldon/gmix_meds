@@ -1038,7 +1038,7 @@ class MedsFit(object):
 
         if self.reject_outliers:
             nreject=reject_outliers(imlist,wtlist)
-            if True and nreject > 0:
+            if False and nreject > 0:
                 print 'nreject:',nreject
                 _show_used_pixels(imlist,wtlist)
 
