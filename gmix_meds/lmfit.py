@@ -68,8 +68,8 @@ class MedsFit(object):
         self.meds_meta=self.meds.get_meta()
         self.nobj=self.meds.size
 
-        #self.cen_width=0.27 # ''
-        self.cen_width=1.0 # ''
+        # in arcsec (or units of jacobian)
+        self.cen_width=keys.get('cen_width',1.0)
 
         self.obj_range=keys.get('obj_range',None)
 
@@ -531,6 +531,8 @@ class MedsFit(object):
             self.data['psf_flux'][index] = flux
             self.data['psf_flux_err'][index] = flux_err
 
+            print >>stderr,'    psf_flux: %g +/- %g' % (flux,flux_err)
+
             n=get_model_names('psf')
             for sn in _stat_names:
                 self.data[n[sn]][index] = res[sn]
@@ -612,7 +614,7 @@ class MedsFit(object):
                 res=gm.get_result()
                 flags=res['flags']
                 if flags==0:
-                    print >>stderr,"        flux: %g match_flux: %g" % (pars0[5],res['F'])
+                    print >>stderr,"        flux: %g match_flux: %g +/- %g" % (pars0[5],res['F'],res['Ferr'])
                     bres['flux']=res['F']
                     bres['flux_err']=res['Ferr']
                     bres['niter']=res['numiter']

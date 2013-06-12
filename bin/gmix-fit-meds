@@ -147,9 +147,12 @@ def run_lm(meds_file, conf):
     return data, meta
 
 def get_gprior(conf):
+    import gmix_image
     if conf['gprior_type'] =='flat':
-        import gmix_image
         return gmix_image.priors.GPriorFlat()
+    elif conf['gprior_type']=='exp':
+        pars=conf['gprior_pars']
+        return gmix_image.priors.GPriorExp(pars)
     else:
         raise ValueError("implement gprior '%s'")
 

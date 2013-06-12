@@ -1,0 +1,38 @@
+fitter: "mcmc"
+
+psf_model: "em2"
+psf_ntry: 2
+
+# in arcsec
+psf_offset_max: 0.25
+
+
+nwalkers: 20
+nstep: 200
+burnin: 400
+
+do_pqr: False
+mca_a: 3.0
+
+region: "seg_and_sky"
+
+#cen_width: 0.27
+cen_width: 2
+
+gprior_type: "exp"
+gprior_pars: [27.63, 1.25, 0.016, 0.77]
+when_prior: "after"
+
+# need both these for cmodel
+simple_models: ['exp']
+
+match_use_band_center: False
+match_self: True
+max_box_size: 96
+
+#fit_types: ['psf','simple','cmodel','match']
+fit_types: ['psf','simple','match']
+
+make_plots: False
+
+reject_outliers: True

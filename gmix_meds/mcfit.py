@@ -21,6 +21,8 @@ class MedsMCMC(MedsFit):
         self.do_pqr=keys.get("do_pqr",False)
         self.mca_a=keys.get('mca_a',2.0)
 
+        self.when_prior=keys.get('when_prior','during')
+
         self.cen_width = keys.get('cen_width',1.0)
 
         self.make_plots=keys.get('make_plots',False)
@@ -147,6 +149,7 @@ class MedsMCMC(MedsFit):
                        nstep=nstep,
                        mca_a=self.mca_a,
                        do_pqr=self.do_pqr,
+                       when_prior=self.when_prior,
                        make_plots=make_plots or self.make_plots)
         return gm
 
@@ -262,7 +265,9 @@ class MedsMCMC(MedsFit):
                 res=gm.get_result()
                 flags=res['flags']
                 if flags==0:
-                    print >>stderr,"  flux: %g match_flux: %g" % (pars0[5],res['Flux'])
+                    mess="  flux: %g +/- %g match_flux: %g +/- %g"
+                    mess=mess % (pars0[5],sqrt(bres0['pcov'][5,5]), res['Flux'],res['Ferr'])
+                    print >>stderr,mess
                     bres['flux']=res['Flux']
                     bres['flux_err']=res['Ferr']
                     bres['chi2per']=res['chi2per']
