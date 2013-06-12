@@ -12,3 +12,6 @@ psf_offset_max: 0.25
 match_use_band_center: False
 match_self: True
 max_box_size: 96
+
+fit_types: ['psf','simple','cmodel','match']
+reject_outliers: True

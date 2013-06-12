@@ -59,6 +59,9 @@ class MedsFit(object):
             with best simple model fit from this.
         """
 
+        self.conf={}
+        self.conf.update(keys)
+
         self.meds_file=meds_file
         print >>stderr,'meds file:',meds_file
         self.meds=meds.MEDS(meds_file)
@@ -86,6 +89,7 @@ class MedsFit(object):
 
         self.match_use_band_center = keys.get('match_use_band_center',False)
         self.match_self = keys.get('match_self',False)
+        self.reject_outliers=keys.get('reject_outliers',False)
 
         self._set_index_list()
         det_cat=keys.get('det_cat',None)
@@ -141,9 +145,10 @@ class MedsFit(object):
         if self.data['flags'][index] != 0:
             return 0
 
-        imlist0,self.coadd=self._get_imlist(index)
-        wtlist0=self._get_wtlist(index)
+        imlist0,wtlist0 = self._get_imlist_wtlist(index)
         jacob_list0=self._get_jacobian_list(index)
+
+
         self.data['nimage_tot'][index] = len(imlist0)
         print >>stderr,imlist0[0].shape
     
@@ -159,6 +164,8 @@ class MedsFit(object):
 
         imlist = [imlist0[i] for i in keep_list]
         wtlist = [wtlist0[i] for i in keep_list]
+
+
         jacob_list = [jacob_list0[i] for i in keep_list]
         self.data['nimage_use'][index] = len(imlist)
 
@@ -167,10 +174,14 @@ class MedsFit(object):
                'jacob_list':jacob_list,
                'psf_gmix_list':psf_gmix_list}
 
-        self._fit_psf_flux(index, sdata)
-        self._fit_simple_models(index, sdata)
-        self._fit_cmodel(index, sdata)
-        self._fit_match(index, sdata)
+        if 'psf' in self.conf['fit_types']:
+            self._fit_psf_flux(index, sdata)
+        if 'simple' in self.conf['fit_types']:
+            self._fit_simple_models(index, sdata)
+        if 'cmodel' in self.conf['fit_types']:
+            self._fit_cmodel(index, sdata)
+        if 'match' in self.conf['fit_types']:
+            self._fit_match(index, sdata)
 
         if self.debug >= 3:
             self._debug_image(sdata['imlist'][0],sdata['wtlist'][-1])
@@ -1021,6 +1032,17 @@ class MedsFit(object):
         
         self.data=data
 
+    def _get_imlist_wtlist(self, index):
+        imlist,self.coadd=self._get_imlist(index)
+        wtlist=self._get_wtlist(index)
+
+        if self.reject_outliers:
+            nreject=reject_outliers(imlist,wtlist)
+            if True and nreject > 0:
+                print 'nreject:',nreject
+                _show_used_pixels(imlist,wtlist)
+
+        return imlist,wtlist
 
     def _get_imlist(self, index, type='image'):
         """
@@ -1212,3 +1234,64 @@ def sigma_clip(arrin, niter=4, nsig=4, get_indices=False, extra={},
 def reroot_path(psfpath, old_desdata):
     desdata=os.environ['DESDATA']
 
+
+def reject_outliers(imlist, wtlist, nsigma=5.0):
+    """
+    Set the weight for outlier pixels to zero
+
+    We wrongly assume the images all align, but this is ok as long as nsigma is
+    high enough
+
+    If the number of images is < 3 then the weight maps are not modified
+    """
+
+
+    nim=len(imlist)
+    if nim < 3:
+        return
+
+    dims=imlist[0].shape
+    imstack = numpy.zeros( (nim, dims[0], dims[1]) )
+
+    for i,im in enumerate(imlist):
+        imstack[i,:,:] = im
+
+    med=numpy.median(imstack, axis=0)
+
+    nsig2=nsigma**2
+    nreject=0
+    for i in xrange(nim):
+        im=imlist[i]
+        wt=wtlist[i]
+
+        chi2_image = wt*(im-med)**2
+
+        w=numpy.where(chi2_image > nsig2)
+        if w[0].size > 0:
+            wt[w] = 0.0
+            nreject += w[0].size
+
+    return nreject
+
+def _show_used_pixels(imlist0,wtlist):
+    import images
+    plt=images.view_mosaic(imlist0,show=False)
+    plt.title='original'
+    plt.show()
+
+    imlist=[]
+    for i in xrange(len(imlist0)):
+        im0=imlist0[i]
+        wt=wtlist[i]
+
+        im=wt*im0
+
+        imlist.append(im)
+    
+    plt=images.view_mosaic(imlist,show=False)
+    plt.title='image*weight'
+    plt.show()
+
+    key=raw_input('hit a key (q to quit): ')
+    if key.lower()=='q':
+        stop

@@ -25,9 +25,7 @@ class MedsMCMC(MedsFit):
 
         self.make_plots=keys.get('make_plots',False)
 
-        self.conf={}
-        self.conf.update(keys)
-
+    '''
     def _fit_obj(self, index):
         """
         Process the indicated object
@@ -45,8 +43,8 @@ class MedsMCMC(MedsFit):
         imlist0,self.coadd = self._get_imlist(index)
         wtlist0=self._get_wtlist(index)
         jacob_list0=self._get_jacobian_list(index)
-        self.data['nimage_tot'][index] = len(imlist0)
 
+        self.data['nimage_tot'][index] = len(imlist0)
         print >>stderr,imlist0[0].shape
     
         keep_list,psf_gmix_list=self._fit_psfs(index,jacob_list0)
@@ -82,6 +80,7 @@ class MedsMCMC(MedsFit):
             self._debug_image(sdata['imlist'][0],sdata['wtlist'][-1])
 
         self.data['time'][index] = time.time()-t0
+    '''
 
     def _fit_simple_models(self, index, sdata):
         """
