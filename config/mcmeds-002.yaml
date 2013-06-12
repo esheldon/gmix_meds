@@ -31,4 +31,4 @@ max_box_size: 96
 #fit_types: ['psf','simple','cmodel','match']
 fit_types: ['psf','simple','match']
 
-make_plots: True
+make_plots: False

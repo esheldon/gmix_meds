@@ -205,8 +205,6 @@ class MedsMCMC(MedsFit):
 
 
     def _fit_match(self, index, sdata, make_plots=False):
-        if self.debug:
-            print >>stderr,'\tfitting matched flux'
         chi2per=PDEFVAL
         flux=DEFVAL
         flux_err=PDEFVAL
@@ -227,7 +225,7 @@ class MedsMCMC(MedsFit):
             else:
                 bres['flags']=bres0['flags']
         else:
-            print >>stderr,"    fitting: match flux"
+            print >>stderr,"    fitting: match",
             bres0=self._get_best_simple_pars(self.det_cat,index)
             # if flags != 0 it is because we could not find a good fit of any
             # model
@@ -265,12 +263,13 @@ class MedsMCMC(MedsFit):
                 res=gm.get_result()
                 flags=res['flags']
                 if flags==0:
-                    print >>stderr,"        flux: %g match_flux: %g" % (pars0[5],res['Flux'])
+                    print >>stderr,"  flux: %g match_flux: %g" % (pars0[5],res['Flux'])
                     bres['flux']=res['Flux']
                     bres['flux_err']=res['Ferr']
                     bres['chi2per']=res['chi2per']
                     bres['loglike'] = res['loglike']
                 else:
+                    print >>stderr,"failure"
                     bres['flags']=flags
 
             else:
