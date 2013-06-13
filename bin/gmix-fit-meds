@@ -128,16 +128,10 @@ def make_mcmc_meta(conf, meds_meta, meds_file):
 
 
 def run_lm(meds_file, conf):
+    gprior=get_gprior(conf)
+    conf['gprior'] = gprior
+
     gm=gmix_meds.MedsFit(meds_file, **conf)
-    """
-                         obj_range=obj_range,
-                         psf_model=conf['psf_model'],
-                         psf_offset_max=conf['psf_offset_max'],
-                         psf_ntry=conf['psf_ntry'],
-                         obj_ntry=conf['obj_ntry'],
-                         region=conf['region'],
-                         det_cat=det_cat)
-    """
     gm.do_fits()
 
     data=gm.get_data()
@@ -148,9 +142,13 @@ def run_lm(meds_file, conf):
 
 def get_gprior(conf):
     import gmix_image
-    if conf['gprior_type'] =='flat':
+    gprior_type=conf.get('gprior_type',None)
+
+    if gprior_type is None:
+        return None
+    elif gprior_type =='flat':
         return gmix_image.priors.GPriorFlat()
-    elif conf['gprior_type']=='exp':
+    elif gprior_type=='exp':
         pars=conf['gprior_pars']
         return gmix_image.priors.GPriorExp(pars)
     else:

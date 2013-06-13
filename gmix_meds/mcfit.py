@@ -10,11 +10,11 @@ from .lmfit import _stat_names
 from gmix_image.gmix_mcmc import MixMCSimple
 
 class MedsMCMC(MedsFit):
-    def __init__(self, meds_file, gprior, **keys):
+    def __init__(self, meds_file, g_prior, **keys):
 
         super(MedsMCMC,self).__init__(meds_file, **keys)
 
-        self.gprior=gprior
+        self.g_prior=g_prior
         self.nwalkers=keys.get('nwalkers',20)
         self.burnin=keys.get('burnin',400)
         self.nstep=keys.get('nstep',200)
@@ -137,7 +137,7 @@ class MedsMCMC(MedsFit):
         gm=MixMCSimple(sdata['imlist'],
                        sdata['wtlist'],
                        sdata['psf_gmix_list'],
-                       self.gprior,
+                       self.g_prior,
                        T_guess,
                        counts_guess,
                        cen_guess,
@@ -241,6 +241,7 @@ class MedsMCMC(MedsFit):
 
                 match_gmix = gmix_image.GMix(pars0, type=mod)
                 start_counts=self._get_match_start(index, mod, match_gmix)
+                match_gmix.set_psum(start_counts)
 
                 if False:
                     psf_s2n=self.data['psf_flux'][index]/self.data['psf_flux_err'][index]
@@ -254,7 +255,6 @@ class MedsMCMC(MedsFit):
                                                    sdata['wtlist'],
                                                    sdata['psf_gmix_list'],
                                                    match_gmix,
-                                                   start_counts,
                                                    jacob=sdata['jacob_list'],
                                                    nwalkers=20,
                                                    burnin=200,

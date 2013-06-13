@@ -13,6 +13,7 @@ from gmix_image.gmix_fit import LM_MAX_TRY, \
         GMixFitMultiPSFFlux,GMixFitMultiMatch
 from gmix_image.util import print_pars, srandu
 from gmix_image.gmix_em import GMixEMBoot
+from gmix_image.priors import CenPrior
 import psfex
 
 DEFVAL=-9999
@@ -69,7 +70,10 @@ class MedsFit(object):
         self.nobj=self.meds.size
 
         # in arcsec (or units of jacobian)
+        self.use_cenprior=keys.get("use_cenprior",True)
         self.cen_width=keys.get('cen_width',1.0)
+
+        self.gprior=keys.get('gprior',None)
 
         self.obj_range=keys.get('obj_range',None)
 
@@ -273,11 +277,15 @@ class MedsFit(object):
         return gm
 
     def _run_psf_lm_fit(self, im, ivar, jacob):
+        cen_prior=None
+        if self.use_cenprior:
+            cen_prior=CenPrior([0.0]*2, [self.cen_width]*2)
+
         gm=GMixFitPSFJacob(im,
                            ivar,
                            jacob,
                            self.psf_ngauss,
-                           cen_width=self.cen_width,
+                           cen_prior=self.cen_prior,
                            lm_max_try=self.psf_ntry)
         return gm
 
@@ -351,11 +359,10 @@ class MedsFit(object):
             bstr='[%d,%d]' % (bsize,bsize)
             print >>stderr,'\tfitting simple models %s' % bstr
 
-        #pars_guess=self._get_simple_guesses(index,sdata)
         pars_guess=None
         for model in self.simple_models:
             print >>stderr,'    fitting:',model
-            gm=self._fit_simple(index, model, sdata, pars_guess)
+            gm=self._fit_simple(index, model, sdata)
             res=gm.get_result()
             rfc_res=gm.get_rfc_result()
 
@@ -365,6 +372,87 @@ class MedsFit(object):
                 self._print_simple_stats(n, rfc_res, res)
 
             self._copy_simple_pars(index, rfc_res, res, n )
+
+
+    def _fit_simple(self, index, model, sdata):
+        """
+        Fit one of the "simple" models, e.g. exp or dev
+        """
+
+        if self.data['psf_flags'][index]==0:
+            T_guess = 16.0
+            counts_guess=self.data['psf_flux'][index]
+        else:
+            T_guess=None
+            counts_guess=None
+
+        cen_prior=None
+        if self.use_cenprior:
+            cen_prior=self._get_simple_cen_prior(index)
+
+        dim=sdata['imlist'][0].shape[0]
+
+        goal=5
+        if dim <= 64:
+            ntries=20
+        elif dim <= 128:
+            ntries=10
+        else:
+            ntries=5
+
+        gmlist=[]
+        llist=[]
+        for ipass in xrange(ntries):
+
+            gm0=GMixFitMultiSimple(sdata['imlist'],
+                                   sdata['wtlist'],
+                                   sdata['jacob_list'],
+                                   sdata['psf_gmix_list'],
+                                   model,
+                                   cen_prior=cen_prior,
+                                   gprior=self.gprior,
+                                   lm_max_try=self.obj_ntry,
+                                   T_guess=T_guess,
+                                   counts_guess=counts_guess)
+            res=gm0.get_result()
+            if res['flags']!=0:
+                continue
+
+            gmlist.append(gm0)
+            llist.append(res['loglike'])
+
+            T_guess=res['pars'][4]
+            counts_guess=res['pars'][5]
+
+            if counts_guess < 0:
+                counts_guess=0
+            elif abs(counts_guess > 1.e6):
+                counts_guess=100
+            if T_guess < 0:
+                T_guess=8
+            elif abs(T_guess > 1000):
+                T_guess=100
+
+            if len(gmlist) == goal:
+                break
+            
+        print '        ngood:',len(gmlist)
+        if len(gmlist)==0:
+            return gm0
+
+        llist=numpy.array(llist)
+        ibest = llist.argmax()
+        gm = gmlist[ibest]
+        return gm
+
+    def _get_simple_cen_prior(self,index):
+        if self.data['psf_flags'][index]==0:
+            cen=self.data['psf_pars'][index,0:0+2]
+        else:
+            cen=[0.0,0.0]
+
+        cen_prior=CenPrior(cen, [self.cen_width]*2)
+        return cen_prior
 
     def _copy_simple_pars(self, index, rfc_res, res, n):
         if rfc_res is not None:
@@ -401,58 +489,6 @@ class MedsFit(object):
                 self._debug_image(sdata['imlist'][0],sdata['wtlist'][0])
 
 
-
-    def _fit_simple(self, index, model, sdata, pars_guess):
-        """
-        Fit one of the "simple" models, e.g. exp or dev
-        """
-
-        if pars_guess is None:
-            g_guess=None
-            T_guess=None
-            counts_guess=None
-        else:
-            g_guess=pars_guess[2:2+2]
-            T_guess=pars_guess[4]
-            counts_guess=pars_guess[5]
-
-        gm=GMixFitMultiSimple(sdata['imlist'],
-                              sdata['wtlist'],
-                              sdata['jacob_list'],
-                              sdata['psf_gmix_list'],
-                              model,
-                              cen_width=self.cen_width,
-                              lm_max_try=self.obj_ntry,
-                              g_guess=g_guess,
-                              T_guess=T_guess,
-                              counts_guess=counts_guess)
-        return gm
-
-    def _get_simple_guesses(self, index, sdata):
-        if self.data['psf_flags'][index]==0:
-            counts_guess=self.data['psf_flux'][index]
-        else:
-            counts_guess=100.0
-
-        T_guess=16.0
-        gm=GMixFitMultiSimple(sdata['imlist'],
-                              sdata['wtlist'],
-                              sdata['jacob_list'],
-                              sdata['psf_gmix_list'],
-                              'coellip',
-                              lm_max_try=2,
-                              cen_width=1.e-5,
-                              T_guess=T_guess,
-                              counts_guess=counts_guess)
-
-        res=gm.get_result()
-        if res['flags']!=0:
-            print >>stderr,'        no good guess found, using rfc'
-            pars=[0.0, 0.0, 0.1*srandu(), 0.1*srandu(), None, None]
-        else:
-            pars=res['pars']
-
-        return pars
 
     def _fit_cmodel(self, index, sdata):
         if self.debug:
@@ -511,11 +547,16 @@ class MedsFit(object):
     def _fit_psf_flux(self, index, sdata):
         if self.debug:
             print >>stderr,'\tfitting psf flux'
+
+        cen_prior=None
+        if self.use_cenprior:
+            cen_prior=CenPrior([0.0]*2, [self.cen_width]*2)
+
         gm=GMixFitMultiPSFFlux(sdata['imlist'],
                                sdata['wtlist'],
                                sdata['jacob_list'],
                                sdata['psf_gmix_list'],
-                               cen_width=self.cen_width,
+                               cen_prior=cen_prior,
                                lm_max_try=self.obj_ntry)
         res=gm.get_result()
         self.data['psf_flags'][index] = res['flags']
@@ -584,32 +625,14 @@ class MedsFit(object):
 
                 match_gmix = gmix_image.GMix(pars0, type=mod)
                 start_counts=self._get_match_start(index, mod, match_gmix)
+                match_gmix.set_psum(start_counts)
 
                 gm=GMixFitMultiMatch(sdata['imlist'],
                                      sdata['wtlist'],
                                      sdata['jacob_list'],
                                      sdata['psf_gmix_list'],
                                      match_gmix,
-                                     start_counts,
                                      lm_max_try=self.obj_ntry)
-                if False:
-                    #start_counts_new = gm._result['F']
-
-                    lmres = gm._result['F']
-                    serr = gm._result['Ferr']
-                    print >>stderr,'start counts:',start_counts
-                    print >>stderr,'lm Flux: %g +/- %g' % (lmres,serr)
-                    gm2=gmix_image.gmix_mcmc.MixMCMatch(sdata['imlist'],
-                                                        sdata['wtlist'],
-                                                        sdata['psf_gmix_list'],
-                                                        match_gmix,
-                                                        start_counts,
-                                                        jacob=sdata['jacob_list'],
-                                                        nwalkers=20,
-                                                        burnin=200,
-                                                        nstep=400,
-                                                        mca_a=3,
-                                                        make_plots=True)
 
                 res=gm.get_result()
                 flags=res['flags']

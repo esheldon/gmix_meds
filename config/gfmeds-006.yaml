@@ -17,4 +17,9 @@ max_box_size: 96
 fit_types: ['psf','simple','cmodel','match']
 reject_outliers: True
 
-cen_width: 1.0e+09
+use_cenprior: True
+cen_width: 0.27
+
+#gprior_type: null
+gprior_type: "exp"
+gprior_pars: [27.63, 1.25, 0.016, 0.77]
