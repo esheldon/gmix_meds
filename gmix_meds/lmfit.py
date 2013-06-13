@@ -365,7 +365,9 @@ class MedsFit(object):
         pars_guess=None
         for model in self.simple_models:
             print >>stderr,'    fitting:',model
+
             gm=self._fit_simple(index, model, sdata)
+
             res=gm.get_result()
             rfc_res=gm.get_rfc_result()
 
@@ -384,7 +386,37 @@ class MedsFit(object):
 
         if self.data['psf_flags'][index]==0:
             T_guess = 16.0
-            counts_guess=self.data['psf_flux'][index]
+            counts_guess=2*self.data['psf_flux'][index]
+        else:
+            T_guess=None
+            counts_guess=None
+
+        cen_prior=None
+        if self.use_cenprior:
+            cen_prior=self._get_simple_cen_prior(index)
+
+
+        gm=GMixFitMultiSimple(sdata['imlist'],
+                               sdata['wtlist'],
+                               sdata['jacob_list'],
+                               sdata['psf_gmix_list'],
+                               model,
+                               cen_prior=cen_prior,
+                               gprior=self.gprior,
+                               lm_max_try=self.obj_ntry,
+                               T_guess=T_guess,
+                               counts_guess=counts_guess)
+
+        return gm
+
+    def _fit_simple_many_tries(self, index, model, sdata):
+        """
+        Fit one of the "simple" models, e.g. exp or dev
+        """
+
+        if self.data['psf_flags'][index]==0:
+            T_guess = 16.0
+            counts_guess=2*self.data['psf_flux'][index]
         else:
             T_guess=None
             counts_guess=None
@@ -396,12 +428,10 @@ class MedsFit(object):
         dim=sdata['imlist'][0].shape[0]
 
         goal=5
-        if dim <= 64:
+        if dim <= 128:
             ntries=20
-        elif dim <= 128:
-            ntries=10
         else:
-            ntries=5
+            ntries=10
 
         gmlist=[]
         llist=[]
@@ -439,7 +469,7 @@ class MedsFit(object):
             if len(gmlist) == goal:
                 break
             
-        print '        ngood:',len(gmlist)
+        print >>stderr,'        ngood:',len(gmlist)
         if len(gmlist)==0:
             return gm0
 
@@ -614,28 +644,40 @@ class MedsFit(object):
             else:
                 bres['flags']=bres0['flags']
         else:
-            print >>stderr,"    fitting: match flux"
             bres0=self._get_best_simple_pars(self.det_cat,index)
             # if flags != 0 it is because we could not find a good fit of any
             # model
             if bres0['flags']==0:
 
-                bres['model'] = bres0['model']
                 mod=bres0['model']
+                bres['model'] = mod
                 pars0=bres0['pars']
+
+                print >>stderr,"    fitting: match flux (%s)" % mod
+
                 if self.match_use_band_center:
                     pars0=self._set_center_from_band(index,pars0,mod)
 
-                match_gmix = gmix_image.GMix(pars0, type=mod)
-                start_counts=self._get_match_start(index, mod, match_gmix)
-                match_gmix.set_psum(start_counts)
 
-                gm=GMixFitMultiMatch(sdata['imlist'],
-                                     sdata['wtlist'],
-                                     sdata['jacob_list'],
-                                     sdata['psf_gmix_list'],
-                                     match_gmix,
-                                     lm_max_try=self.obj_ntry)
+                if False:
+                    gm=gmix_image.gmix_fit.GMixFitMultiSimpleMatch(sdata['imlist'],
+                                                                   sdata['wtlist'],
+                                                                   sdata['jacob_list'],
+                                                                   sdata['psf_gmix_list'],
+                                                                   pars0,
+                                                                   mod,
+                                                                   lm_max_try=self.obj_ntry)
+                else:
+                    match_gmix = gmix_image.GMix(pars0, type=mod)
+                    start_counts=self._get_match_start(index, mod, match_gmix)
+                    match_gmix.set_psum(start_counts)
+
+                    gm=GMixFitMultiMatch(sdata['imlist'],
+                                         sdata['wtlist'],
+                                         sdata['jacob_list'],
+                                         sdata['psf_gmix_list'],
+                                         match_gmix,
+                                         lm_max_try=self.obj_ntry)
 
                 res=gm.get_result()
                 flags=res['flags']
@@ -686,6 +728,7 @@ class MedsFit(object):
         return pars
 
     def _get_match_start(self, index, mod, match_gmix):
+
         if mod=='exp':
             altmod='dev'
         else:
@@ -696,13 +739,16 @@ class MedsFit(object):
 
         if self.data[flagn][index]==0:
             fn='%s_flux' % mod
-            return self.data[fn][index]
+            flux=self.data[fn][index]
         elif self.data[alt_flagn][index]==0:
             fn='%s_flux' % altmod
-            return self.data[fn][index]
+            flux=self.data[fn][index]
+        elif self.data['psf_flags'][index]==0:
+            flux=self.data['psf_flux'][index]
         else:
-            return match_gmix.get_psum()
+            flux=match_gmix.get_psum()
 
+        return flux
 
     def _get_best_simple_pars(self, data, index):
         ddict={'flags':None,
@@ -752,8 +798,8 @@ class MedsFit(object):
         chn='%s_chi2per' % mod
         ln='%s_loglike' % mod
 
-        pars=data[pn][index]
-        pcov=data[pcn][index]
+        pars=data[pn][index].copy()
+        pcov=data[pcn][index].copy()
         chi2per=data[chn][index]
         loglike=data[ln][index]
 
@@ -1266,9 +1312,17 @@ def reroot_path(psfpath, old_desdata):
     desdata=os.environ['DESDATA']
 
 
-def reject_outliers(imlist, wtlist, nsigma=6.0):
+def reject_outliers(imlist, wtlist, nsigma=5.0, A=0.3):
     """
     Set the weight for outlier pixels to zero
+
+     | im - med | > n*sigma_i + A*|med|
+
+    where mu is the median
+
+    I actually do
+
+        wt*(im-med)**2 > (n + A*|med|*sqrt(wt))**2
 
     We wrongly assume the images all align, but this is ok as long as nsigma is
     high enough
@@ -1276,10 +1330,11 @@ def reject_outliers(imlist, wtlist, nsigma=6.0):
     If the number of images is < 3 then the weight maps are not modified
     """
 
+    nreject=0
 
     nim=len(imlist)
     if nim < 3:
-        return
+        return nreject
 
     dims=imlist[0].shape
     imstack = numpy.zeros( (nim, dims[0], dims[1]) )
@@ -1289,15 +1344,29 @@ def reject_outliers(imlist, wtlist, nsigma=6.0):
 
     med=numpy.median(imstack, axis=0)
 
-    nsig2=nsigma**2
-    nreject=0
     for i in xrange(nim):
         im=imlist[i]
         wt=wtlist[i]
 
-        chi2_image = wt*(im-med)**2
+        wt.clip(0.0, out=wt)
 
-        w=numpy.where(chi2_image > nsig2)
+        ierr = numpy.sqrt(wt)
+
+        # wt*(im-med)**2
+        chi2_image = im.copy()
+        chi2_image -= med
+        chi2_image *= chi2_image
+        chi2_image *= wt
+
+        # ( n + A*|med|*sqrt(wt) )**2
+        maxvals = numpy.abs(med)
+        maxvals *= A
+        maxvals *= ierr
+        maxvals += nsigma
+        maxvals *= maxvals
+
+        w=numpy.where(chi2_image > maxvals)
+
         if w[0].size > 0:
             wt[w] = 0.0
             nreject += w[0].size

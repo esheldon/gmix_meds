@@ -8,4 +8,16 @@ region: "seg_and_sky"
 # in arcsec
 psf_offset_max: 0.25
 
-match_use_band_center: False
+reject_outliers: True
+
+use_cenprior: True
+cen_width: 0.27
+
+gprior_type: null
+
+fit_types: ['psf','simple','cmodel','match']
+reject_outliers: True
+
+gprior_type: null
+#gprior_type: "exp"
+#gprior_pars: [27.63, 1.25, 0.016, 0.77]

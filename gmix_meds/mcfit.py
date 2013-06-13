@@ -26,6 +26,7 @@ class MedsMCMC(MedsFit):
         self.match_nstep=keys.get('match_nstep',200)
 
         self.when_prior=keys.get('when_prior','during')
+        self.draw_gprior = keys.get('draw_gprior',True)
 
         self.cen_width = keys.get('cen_width',1.0)
 
@@ -156,6 +157,7 @@ class MedsMCMC(MedsFit):
                        mca_a=self.mca_a,
                        do_pqr=self.do_pqr,
                        when_prior=self.when_prior,
+                       draw_gprior=self.draw_gprior,
                        prompt=self.prompt,
                        make_plots=make_plots or self.make_plots)
         if hasattr(gm,'tab'):
@@ -168,23 +170,24 @@ class MedsMCMC(MedsFit):
         nwalkers=self.nwalkers
         burnin=self.burnin
         nstep=self.nstep
-        return nwalkers,burnin,nstep
 
-        """
+        #return nwalkers,burnin,nstep
+
         if self.data['psf_flags'][index]==0:
+            from math import ceil
             psf_s2n=self.data['psf_flux'][index]/self.data['psf_flux_err'][index]
-            if psf_s2n > 50:
-                print '    psf s/n:',psf_s2n
-                nwalkers *= 2
-                burnin *= 2
-                nstep *= 2
+            thresh=30.0
+            if psf_s2n > thresh:
+                nwalkers += int( (psf_s2n-thresh)**0.85 )
+                if (nwalkers % 2) != 0:
+                    nwalkers += 1
+                if nwalkers > 100:
+                    nwalkers=100
+                print '    psf s/n:',psf_s2n,'nwalkers:',nwalkers
         else:
             nwalkers *= 2
-            burnin *= 2
-            nstep *= 2
 
         return nwalkers, burnin, nstep
-        """
 
     def _copy_simple_pars(self, index, res, n):
 
