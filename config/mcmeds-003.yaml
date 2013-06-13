@@ -8,8 +8,13 @@ psf_offset_max: 0.25
 
 
 nwalkers: 20
-nstep: 200
-burnin: 400
+nstep: 1000
+burnin: 1000
+
+match_nwalkers: 20
+match_burnin: 200
+match_nstep:  1000
+#match_nstep:  200
 
 do_pqr: False
 mca_a: 3.0
@@ -28,11 +33,12 @@ simple_models: ['exp']
 
 match_use_band_center: False
 match_self: True
-max_box_size: 96
+max_box_size: 256
 
 #fit_types: ['psf','simple','cmodel','match']
 fit_types: ['psf','simple','match']
 
-make_plots: False
+make_plots: True
+prompt: False
 
 reject_outliers: True

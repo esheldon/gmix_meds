@@ -21,11 +21,16 @@ class MedsMCMC(MedsFit):
         self.do_pqr=keys.get("do_pqr",False)
         self.mca_a=keys.get('mca_a',2.0)
 
+        self.match_nwalkers=keys.get('match_nwalkers',20)
+        self.match_burnin=keys.get('match_burnin',200)
+        self.match_nstep=keys.get('match_nstep',200)
+
         self.when_prior=keys.get('when_prior','during')
 
         self.cen_width = keys.get('cen_width',1.0)
 
         self.make_plots=keys.get('make_plots',False)
+        self.prompt=keys.get('prompt',True)
 
     '''
     def _fit_obj(self, index):
@@ -104,7 +109,7 @@ class MedsMCMC(MedsFit):
                     make_plots=False
                     continue
 
-            if make_plots or self.make_plots:
+            if (make_plots or self.make_plots) and self.prompt:
                 self._show_coadd()
 
             print >>stderr,'    fitting:',model
@@ -132,8 +137,9 @@ class MedsMCMC(MedsFit):
         nwalkers,burnin,nstep=self._get_mcmc_pars(index)
 
         cen_guess=[0.0, 0.0]
-        sigma_guess=2.0/2.35 # FWHM of 2''
-        T_guess=2*sigma_guess**2
+        #sigma_guess=2.0/2.35 # FWHM of 2''
+        #T_guess=2*sigma_guess**2
+        T_guess=16.0
         gm=MixMCSimple(sdata['imlist'],
                        sdata['wtlist'],
                        sdata['psf_gmix_list'],
@@ -150,7 +156,12 @@ class MedsMCMC(MedsFit):
                        mca_a=self.mca_a,
                        do_pqr=self.do_pqr,
                        when_prior=self.when_prior,
+                       prompt=self.prompt,
                        make_plots=make_plots or self.make_plots)
+        if hasattr(gm,'tab'):
+            imname='%s-dist-%05d.png' % (model,index)
+            print >>stderr,imname
+            gm.tab.write_img(800,800,imname)
         return gm
 
     def _get_mcmc_pars(self, index):
@@ -256,11 +267,17 @@ class MedsMCMC(MedsFit):
                                                    sdata['psf_gmix_list'],
                                                    match_gmix,
                                                    jacob=sdata['jacob_list'],
-                                                   nwalkers=20,
-                                                   burnin=200,
-                                                   nstep=200,
+                                                   nwalkers=self.match_nwalkers,
+                                                   burnin=self.match_burnin,
+                                                   nstep=self.match_nstep,
                                                    mca_a=3,
+                                                   prompt=self.prompt,
                                                    make_plots=make_plots or self.make_plots)
+
+                if hasattr(gm,'tab'):
+                    imname='match-dist-%05d.png' % index
+                    print >>stderr,imname
+                    gm.tab.write_img(800,800,imname)
 
                 res=gm.get_result()
                 flags=res['flags']

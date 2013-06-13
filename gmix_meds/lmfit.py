@@ -95,6 +95,9 @@ class MedsFit(object):
         self.match_self = keys.get('match_self',False)
         self.reject_outliers=keys.get('reject_outliers',False)
 
+        self.make_plots=keys.get('make_plots',False)
+        self.prompt=keys.get('prompt',True)
+
         self._set_index_list()
         det_cat=keys.get('det_cat',None)
         self._set_det_cat_and_struct(det_cat)
@@ -1063,9 +1066,12 @@ class MedsFit(object):
 
         if self.reject_outliers:
             nreject=reject_outliers(imlist,wtlist)
-            if False and nreject > 0:
+            if self.make_plots:
                 print 'nreject:',nreject
-                _show_used_pixels(imlist,wtlist)
+                plt=_show_used_pixels(imlist,wtlist,prompt=self.prompt)
+                imname='mosaic%05d.png' % index
+                print imname
+                plt.write_img(1100,1100,imname)
 
         return imlist,wtlist
 
@@ -1260,7 +1266,7 @@ def reroot_path(psfpath, old_desdata):
     desdata=os.environ['DESDATA']
 
 
-def reject_outliers(imlist, wtlist, nsigma=5.0):
+def reject_outliers(imlist, wtlist, nsigma=6.0):
     """
     Set the weight for outlier pixels to zero
 
@@ -1298,11 +1304,10 @@ def reject_outliers(imlist, wtlist, nsigma=5.0):
 
     return nreject
 
-def _show_used_pixels(imlist0,wtlist):
+def _show_used_pixels(imlist0,wtlist, prompt=True):
     import images
-    plt=images.view_mosaic(imlist0,show=False)
-    plt.title='original'
-    plt.show()
+    oplt=images.view_mosaic(imlist0,show=False)
+    oplt.title='original'
 
     imlist=[]
     for i in xrange(len(imlist0)):
@@ -1315,8 +1320,12 @@ def _show_used_pixels(imlist0,wtlist):
     
     plt=images.view_mosaic(imlist,show=False)
     plt.title='image*weight'
-    plt.show()
 
-    key=raw_input('hit a key (q to quit): ')
-    if key.lower()=='q':
-        stop
+    if prompt:
+        oplt.show()
+        plt.show()
+        key=raw_input('hit a key (q to quit): ')
+        if key.lower()=='q':
+            stop
+        
+    return plt
