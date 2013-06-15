@@ -1,10 +1,9 @@
 from .lmfit import *
 from .lmfit import _stat_names
 
-from gmix_image.gmix_mcmc import MixMCSimpleMB
+from gmix_image.gmix_fit import GMixFitMultiSimpleMB
 
-
-class MedsFitMB(object):
+class MedsFitMB(MedsFit):
     def __init__(self, meds_files, **keys):
         """
         Multi-band fitting
@@ -62,6 +61,8 @@ class MedsFitMB(object):
         self.make_plots=keys.get('make_plots',False)
         self.prompt=keys.get('prompt',True)
 
+        self._make_struct()
+
     def _fit_obj(self, index):
         """
         Process the indicated object through the requested fits
@@ -69,7 +70,7 @@ class MedsFitMB(object):
 
         t0=time.time()
 
-        self.data['flags'][index] = self._obj_check(index)
+        self.data['flags'][index] = self._mb_obj_check(index)
         if self.data['flags'][index] != 0:
             return 0
 
@@ -105,6 +106,14 @@ class MedsFitMB(object):
             self._fit_mb_simple_models(index, sdata)
 
         self.data['time'][index] = time.time()-t0
+
+    def _mb_obj_check(self, index):
+        for band in self.iband:
+            meds=self.meds_list[band]
+            flags=self._obj_check(meds, index)
+            if flags != 0:
+                break
+        return flags
 
     def _fit_mb_psf_flux(self, index, sdata):
         """
@@ -155,6 +164,109 @@ class MedsFitMB(object):
                 fmt='\t\t%s: %g +/- %g'
                 print >>stderr,fmt % ('psf_flux',flux,flux_err)
 
+
+    def _fit_mb_simple_models(self, index, sdata):
+        """
+        Fit all the simple models
+        """
+
+        for model in self.simple_models:
+            print >>stderr,'    fitting:',model,
+
+            gm=self._fit_mb_simple(index, model, sdata)
+
+            res=gm.get_result()
+
+            print >>stderr,'ntries:',res['ntry']
+
+            self._copy_mb_simple_pars(index, res)
+            self._print_fluxes(res)
+
+    def _fit_mb_simple(self, index, model, sdata):
+        """
+        Fit one of the "simple" models, e.g. exp or dev
+        """
+
+
+        for i in xrange(self.obj_ntry):
+            guess=self._get_simple_guess(index, sdata)
+            cen_prior=None
+            if self.use_cenprior:
+                cen_prior=CenPrior(guess[0:0+2], [self.cen_width]*2)
+
+            gm=GMixFitMultiSimpleMB(sdata['mb_imlist'],
+                                    sdata['mb_wtlist'],
+                                    sdata['mb_jacob_list'],
+                                    sdata['mb_psf_gmix_list'],
+                                    guess,
+                                    model,
+                                    cen_prior=cen_prior,
+                                    gprior=self.gprior)
+            res=gm.get_result()
+            if res['flags']==0:
+                break
+
+        res['ntry'] = i+1
+        return gm
+
+
+    def _get_simple_guess(self, index, sdata):
+        npars=5+self.nband
+        guess=numpy.zeros(npars)
+        guess[0:0+2] = 0.0
+
+        gtot = 0.8*numpy.random.random()
+        theta=numpy.random.random()*numpy.pi
+        g1rand = gtot*numpy.cos(2*theta)
+        g2rand = gtot*numpy.sin(2*theta)
+        guess[2]=g1rand
+        guess[3]=g2rand
+
+        # this is a terrible guess
+        guess[4] = 16.0*(1.0 + srandu())
+
+        for band in self.iband:
+            if self.data['psf_flags'][index,band]==0:
+                counts_guess=2*self.data['psf_flux'][index,band]
+            else:
+                # terrible guess
+                im_list=sdata['mb_imlist'][band]
+                cvals=[im.sum() for im in im_list]
+                counts_guess=median(cvals)
+            guess[5+band] = counts_guess
+
+        return guess
+
+
+    def _copy_mb_simple_pars(self, index, res):
+        model=res['model']
+        n=get_model_names(model)
+
+        self.data[n['flags']][index] = res['flags']
+        self.data[n['iter']][index] = res['numiter']
+        self.data[n['tries']][index] = res['ntry']
+
+        if res['flags'] == 0:
+            self.data[n['pars']][index,:] = res['pars']
+            self.data[n['pars_cov']][index,:,:] = res['pcov']
+
+            self.data[n['flux']][index] = res['Flux']
+            self.data[n['flux_err']][index] = res['Flux_err']
+            self.data[n['flux_cov']][index] = res['Flux_cov']
+
+            self.data[n['g']][index,:] = res['g']
+            self.data[n['g_cov']][index,:,:] = res['g_cov']
+
+            for sn in _stat_names:
+                self.data[n[sn]][index] = res[sn]
+
+    def _print_fluxes(self, res):
+        from gmix_image.util import print_pars
+        if res['flags']==0:
+            print_pars(res['Flux'], stream=stderr, front='        ')
+            print_pars(res['Flux_err'], stream=stderr, front='        ')
+
+
     def _extract_sub_lists(self,
                            mb_keep_list0,
                            mb_imlist0,
@@ -165,7 +277,7 @@ class MedsFitMB(object):
         mb_wtlist=[]
         mb_jacob_list=[]
         len_list=[]
-        for band in xrange(self.band):
+        for band in self.iband:
             keep_list = mb_keep_list0[band]
 
             imlist0 = mb_imlist0[band]
@@ -182,18 +294,19 @@ class MedsFitMB(object):
 
             len_list.append( len(imlist) )
 
-        return mb_imlist, mb_wtlist, mb_jacob_list
+        return mb_imlist, mb_wtlist, mb_jacob_list, len_list
 
     def _fit_mb_psfs(self, index, mb_jacob_list):
         mb_keep_list=[]
         mb_gmix_list=[]
 
-        flags=0
+        flags=[]
         for band in self.iband:
             meds=self.meds_list[band]
             jacob_list=mb_jacob_list[band]
+            psfex_list=self.mb_psfex_list[band]
 
-            keep_list, gmix_list = self._fit_psfs(meds,index,jacob_list)
+            keep_list, gmix_list = self._fit_psfs(meds,index,jacob_list,psfex_list)
 
             mb_keep_list.append( keep_list )
             mb_gmix_list.append( gmix_list )
@@ -272,7 +385,7 @@ class MedsFitMB(object):
         include the coadd so we get  the index right
         """
         desdata=os.environ['DESDATA']
-        meds_desdata=self.meds._meta['DESDATA'][0]
+        meds_desdata=self.meds_list[0]._meta['DESDATA'][0]
 
         mb_psfex_list=[]
 
@@ -290,21 +403,21 @@ class MedsFitMB(object):
         """
 
         self.meds_list=[]
-        self.meta_meta_list=[]
+        self.meds_meta_list=[]
 
         for i,f in enumerate(self.meds_files):
             print >>stderr,f
-            meds=meds.MEDS(f)
-            meds_meta=meds.get_meta()
+            medsi=meds.MEDS(f)
+            medsi_meta=medsi.get_meta()
             if i==0:
-                self.nobj=meds.size
+                self.nobj=medsi.size
             else:
-                nobj=meds.size
+                nobj=medsi.size
                 if nobj != self.nobj:
                     raise ValueError("mismatch in meds "
                                      "sizes: %d/%d" % (self.nobj,nobj))
-            self.meds_list.append(meds)
-            self.meds_meta_list.append(meds_meta)
+            self.meds_list.append(medsi)
+            self.meds_meta_list.append(medsi_meta)
 
     def _make_struct(self):
         nband=self.nband
@@ -319,7 +432,7 @@ class MedsFitMB(object):
         simple_npars=5+nband
         simple_models=self.simple_models
 
-        psf_npars=2+nband
+        psf_npars_perband=3
 
         for model in simple_models:
             n=get_model_names(model)
@@ -349,8 +462,8 @@ class MedsFitMB(object):
         dt += [('psf_flags','i4',nband),
                ('psf_iter','i4',nband),
                ('psf_tries','i4',nband),
-               ('psf_pars','f8',nband,psf_npars),
-               ('psf_pars_cov','f8',(nband,psf_npars,psf_npars)),
+               ('psf_pars','f8',(nband,psf_npars_perband)),
+               ('psf_pars_cov','f8',(nband,psf_npars_perband,psf_npars_perband)),
                ('psf_flux','f8',nband),
                ('psf_flux_err','f8',nband),
                (n['s2n_w'],'f8',nband),

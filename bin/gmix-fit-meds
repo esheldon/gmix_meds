@@ -131,7 +131,11 @@ def run_lm(meds_file, conf):
     gprior=get_gprior(conf)
     conf['gprior'] = gprior
 
-    gm=gmix_meds.MedsFit(meds_file, **conf)
+    mf=meds_file.split(',')
+    if len(mf)==0:
+        gm=gmix_meds.MedsFit(meds_file, **conf)
+    else:
+        gm=gmix_meds.MedsFitMB(mf, **conf)
     gm.do_fits()
 
     data=gm.get_data()
@@ -157,7 +161,12 @@ def get_gprior(conf):
 def run_mcmc(meds_file, conf):
     gprior=get_gprior(conf)
 
-    gm=gmix_meds.MedsMCMC(meds_file, gprior, **conf)
+    mf=meds_file.split(',')
+    if len(mf)==0:
+        gm=gmix_meds.MedsMCMC(meds_file, gprior, **conf)
+    else:
+        raise ValueError("implement mb for mcmc")
+
     gm.do_fits()
 
     data=gm.get_data()
@@ -165,7 +174,6 @@ def run_mcmc(meds_file, conf):
     meta=make_mcmc_meta(conf, meds_meta, meds_file)
 
     return data, meta
-
 
 
 def main():

@@ -128,9 +128,6 @@ class MedsFit(object):
 
         t0=time.time()
 
-        #self.index_list=self.index_list[0:10]
-        #self.index_list=self.index_list[203:240]
-
         last=self.index_list[-1]
         for index in self.index_list:
             print >>stderr,'index: %d:%d' % (index,last),
@@ -149,7 +146,7 @@ class MedsFit(object):
 
         t0=time.time()
 
-        self.data['flags'][index] = self._obj_check(index)
+        self.data['flags'][index] = self._obj_check(self.meds, index)
         if self.data['flags'][index] != 0:
             return 0
 
@@ -160,7 +157,7 @@ class MedsFit(object):
         self.data['nimage_tot'][index] = len(imlist0)
         print >>stderr,imlist0[0].shape
     
-        keep_list,psf_gmix_list=self._fit_psfs(self.meds,index,jacob_list0)
+        keep_list,psf_gmix_list=self._fit_psfs(self.meds,index,jacob_list0,self.psfex_list)
         if len(psf_gmix_list)==0:
             self.data['flags'][index] |= PSF_FIT_FAILURE
             return
@@ -195,24 +192,24 @@ class MedsFit(object):
 
         self.data['time'][index] = time.time()-t0
 
-    def _obj_check(self, index):
+    def _obj_check(self, meds, index):
         flags=0
-        box_size=self.meds['box_size'][index]
+        box_size=meds['box_size'][index]
         if box_size > self.max_box_size:
             print >>stderr,'Box size too big:',box_size
             flags |= BOX_SIZE_TOO_BIG
 
-        if self.meds['ncutout'][index] < 2:
+        if meds['ncutout'][index] < 2:
             print >>stderr,'No SE cutouts'
             flags |= NO_SE_CUTOUTS
         return flags
 
-    def _fit_psfs(self,meds,index,jacob_list):
+    def _fit_psfs(self,meds,index,jacob_list,psfex_list):
         """
         Generate psfex images for all SE images and fit
         them to gaussian mixture models
         """
-        ptuple = self._get_psfex_reclist(meds, self.psfex_list, index)
+        ptuple = self._get_psfex_reclist(meds, psfex_list, index)
         imlist,ivarlist,cenlist,siglist,flist,cenpix=ptuple
 
         keep_list=[]
@@ -357,10 +354,6 @@ class MedsFit(object):
         """
         Fit all the simple models
         """
-        if self.debug:
-            bsize=self.meds['box_size'][index]
-            bstr='[%d,%d]' % (bsize,bsize)
-            print >>stderr,'\tfitting simple models %s' % bstr
 
         pars_guess=None
         for model in self.simple_models:
