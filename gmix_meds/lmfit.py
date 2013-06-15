@@ -101,7 +101,8 @@ class MedsFit(object):
         self._set_index_list()
         det_cat=keys.get('det_cat',None)
         self._set_det_cat_and_struct(det_cat)
-        self._load_all_psfex_objects()
+
+        self.psfex_list = self._get_all_psfex_objects(self.meds)
 
     def get_data(self):
         """
@@ -152,14 +153,14 @@ class MedsFit(object):
         if self.data['flags'][index] != 0:
             return 0
 
-        imlist0,wtlist0 = self._get_imlist_wtlist(index)
-        jacob_list0=self._get_jacobian_list(index)
+        imlist0,wtlist0,self.coadd = self._get_imlist_wtlist(self.meds,index)
+        jacob_list0=self._get_jacobian_list(self.meds,index)
 
 
         self.data['nimage_tot'][index] = len(imlist0)
         print >>stderr,imlist0[0].shape
     
-        keep_list,psf_gmix_list=self._fit_psfs(index,jacob_list0)
+        keep_list,psf_gmix_list=self._fit_psfs(self.meds,index,jacob_list0)
         if len(psf_gmix_list)==0:
             self.data['flags'][index] |= PSF_FIT_FAILURE
             return
@@ -171,9 +172,8 @@ class MedsFit(object):
 
         imlist = [imlist0[i] for i in keep_list]
         wtlist = [wtlist0[i] for i in keep_list]
-
-
         jacob_list = [jacob_list0[i] for i in keep_list]
+
         self.data['nimage_use'][index] = len(imlist)
 
         sdata={'imlist':imlist,
@@ -207,12 +207,12 @@ class MedsFit(object):
             flags |= NO_SE_CUTOUTS
         return flags
 
-    def _fit_psfs(self,index,jacob_list):
+    def _fit_psfs(self,meds,index,jacob_list):
         """
         Generate psfex images for all SE images and fit
         them to gaussian mixture models
         """
-        ptuple = self._get_psfex_reclist(index)
+        ptuple = self._get_psfex_reclist(meds, self.psfex_list, index)
         imlist,ivarlist,cenlist,siglist,flist,cenpix=ptuple
 
         keep_list=[]
@@ -819,54 +819,35 @@ class MedsFit(object):
                 'loglike':loglike,
                 'model':mod}
 
-    def _get_jacobian_list(self, index):
+    def _get_jacobian_list(self, meds, index):
         """
         Get a list of the jocobians for this object
         skipping the coadd
         """
-        jacob_list=self.meds.get_jacobian_list(index)
+        jacob_list=meds.get_jacobian_list(index)
         jacob_list=jacob_list[1:]
         return jacob_list
-    
-    '''
-    def _get_cenlist(self, index):
-        """
-        Get the median of the cutout row,col centers,
-        skipping the coadd
-        """
-        ncut=self.meds['ncutout'][index]
-        cenlist=[]
-        # start at 1 to skip coadd
-        for icut in xrange(1,ncut):
 
-            row0 = self.meds['cutout_row'][index,icut]
-            col0 = self.meds['cutout_col'][index,icut]
-            cen0 = [row0, col0]
-            cenlist.append(cen0)
-
-        return cenlist
-    '''
-
-    def _get_psfex_reclist(self, index):
+    def _get_psfex_reclist(self, meds, psfex_list, index):
         """
         Generate psfex reconstructions for the SE images
         associated with the cutouts, skipping the coadd
 
         add a little noise for the fitter
         """
-        ncut=self.meds['ncutout'][index]
+        ncut=meds['ncutout'][index]
         imlist=[]
         ivarlist=[]
         cenlist=[]
         siglist=[]
         flist=[]
         for icut in xrange(1,ncut):
-            file_id=self.meds['file_id'][index,icut]
-            pex=self.psfex_list[file_id]
+            file_id=meds['file_id'][index,icut]
+            pex=psfex_list[file_id]
             fname=pex['filename']
 
-            row=self.meds['orig_row'][index,icut]
-            col=self.meds['orig_col'][index,icut]
+            row=meds['orig_row'][index,icut]
+            col=meds['orig_col'][index,icut]
 
             im0=pex.get_rec(row,col)
             cen0=pex.get_center(row,col)
@@ -884,16 +865,16 @@ class MedsFit(object):
 
 
 
-    def _load_all_psfex_objects(self):
+    def _get_all_psfex_objects(self, meds):
         """
         Load psfex objects for each of the SE images
         include the coadd so we get  the index right
         """
         desdata=os.environ['DESDATA']
-        meds_desdata=self.meds._meta['DESDATA'][0]
+        meds_desdata=meds._meta['DESDATA'][0]
 
         psfex_list=[]
-        info=self.meds.get_image_info()
+        info=meds.get_image_info()
         nimage=info.size
 
         for i in xrange(nimage):
@@ -906,7 +887,7 @@ class MedsFit(object):
             pex=psfex.PSFEx(psfpath)
             psfex_list.append(pex)
 
-        self.psfex_list=psfex_list
+        return psfex_list
 
 
     def _show(self, image):
@@ -1106,9 +1087,9 @@ class MedsFit(object):
         
         self.data=data
 
-    def _get_imlist_wtlist(self, index):
-        imlist,self.coadd=self._get_imlist(index)
-        wtlist=self._get_wtlist(index)
+    def _get_imlist_wtlist(self, meds, index):
+        imlist,coadd=self._get_imlist(meds,index)
+        wtlist=self._get_wtlist(meds,index)
 
         if self.reject_outliers:
             nreject=reject_outliers(imlist,wtlist)
@@ -1119,13 +1100,13 @@ class MedsFit(object):
                 print imname
                 plt.write_img(1100,1100,imname)
 
-        return imlist,wtlist
+        return imlist,wtlist,coadd
 
-    def _get_imlist(self, index, type='image'):
+    def _get_imlist(self, meds, index, type='image'):
         """
         get the image list, skipping the coadd
         """
-        imlist=self.meds.get_cutout_list(index,type=type)
+        imlist=meds.get_cutout_list(index,type=type)
 
         coadd=imlist[0].astype('f8')
         imlist=imlist[1:]
@@ -1134,7 +1115,7 @@ class MedsFit(object):
         return imlist, coadd
 
 
-    def _get_wtlist(self, index):
+    def _get_wtlist(self, meds, index):
         """
         get the weight list.
 
@@ -1142,7 +1123,7 @@ class MedsFit(object):
         zero weight
         """
         if self.region=='seg_and_sky':
-            wtlist=self.meds.get_cweight_cutout_list(index)
+            wtlist=meds.get_cweight_cutout_list(index)
             wtlist=wtlist[1:]
 
             wtlist=[wt.astype('f8') for wt in wtlist]
@@ -1153,6 +1134,8 @@ class MedsFit(object):
     def _show_coadd(self):
         import images
         images.view(self.coadd)
+
+
 
 
 _stat_names=['s2n_w',
@@ -1174,6 +1157,7 @@ def get_model_names(model):
            'pars_cov',
            'flux',
            'flux_err',
+           'flux_cov',
            'g',
            'g_cov',
            'g_sens',
