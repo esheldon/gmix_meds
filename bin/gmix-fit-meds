@@ -36,14 +36,14 @@ def makedir_fromfile(fname):
             # probably a race condition
             pass
 
-def make_lm_meta(conf, meds_meta, meds_file):
+def make_lm_meta(conf, meds_meta_list, meds_files):
 
-    dt = meds_meta.dtype.descr
+    dt = meds_meta_list[0].dtype.descr
 
     config_file=conf['config_file']
 
     clen=len(config_file)
-    flen=len(meds_file)
+    flen=max( [len(mf) for mf in meds_files] )
     mlen=len(conf['psf_model'])
     rlen=len(conf['region'])
 
@@ -55,21 +55,31 @@ def make_lm_meta(conf, meds_meta, meds_file):
            ('psf_offset_max','f8'),
            ('region','S%d' % rlen)]
 
-    meta=numpy.zeros(1, dtype=dt)
-    for n in meds_meta.dtype.names:
-        meta[n] = meds_meta[n]
+    nband=len(meds_meta_list)
+    meta=numpy.zeros(nband, dtype=dt)
 
-    meta['gmix_meds_config'] = config_file
-    meta['meds_file'] = meds_file
-    meta['psf_ntry'] = conf['psf_ntry']
-    meta['obj_ntry'] = conf['obj_ntry']
-    meta['psf_model'] = conf['psf_model']
-    meta['psf_offset_max'] = conf['psf_offset_max']
-    meta['region'] = conf['region']
+    for band in xrange(nband):
+
+        meds_file=meds_files[band]
+        meds_meta=meds_meta_list[band]
+        mf=meds_files[band]
+
+        for n in meds_meta.dtype.names:
+            meta[n][band] = meds_meta[n][0]
+
+        meta['gmix_meds_config'][band] = config_file
+        meta['meds_file'][band] = meds_file
+        meta['psf_ntry'][band] = conf['psf_ntry']
+        meta['obj_ntry'][band] = conf['obj_ntry']
+        meta['psf_model'][band] = conf['psf_model']
+        meta['psf_offset_max'][band] = conf['psf_offset_max']
+        meta['region'][band] = conf['region']
 
     return meta
 
 def make_mcmc_meta(conf, meds_meta, meds_file):
+
+    raise ValueError("fix for multi-band")
 
     dt = meds_meta.dtype.descr
 
@@ -132,15 +142,18 @@ def run_lm(meds_file, conf):
     conf['gprior'] = gprior
 
     mf=meds_file.split(',')
-    if len(mf)==0:
+    if len(mf)==1:
         gm=gmix_meds.MedsFit(meds_file, **conf)
+        gm.do_fits()
+        data=gm.get_data()
+        meds_meta=[gm.get_meds_meta()]
     else:
         gm=gmix_meds.MedsFitMB(mf, **conf)
-    gm.do_fits()
+        gm.do_fits()
+        data=gm.get_data()
+        meds_meta=gm.get_meds_meta_list()
 
-    data=gm.get_data()
-    meds_meta=gm.get_meds_meta()
-    meta=make_lm_meta(conf, meds_meta, meds_file)
+    meta=make_lm_meta(conf, meds_meta, mf)
 
     return data, meta
 

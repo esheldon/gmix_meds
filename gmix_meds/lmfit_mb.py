@@ -63,6 +63,10 @@ class MedsFitMB(MedsFit):
 
         self._make_struct()
 
+    def get_meds_meta_list(self):
+        return [m.copy() for m in self.meds_meta_list]
+
+
     def _fit_obj(self, index):
         """
         Process the indicated object through the requested fits
@@ -181,6 +185,9 @@ class MedsFitMB(MedsFit):
 
             self._copy_mb_simple_pars(index, res)
             self._print_fluxes(res)
+            if self.debug:
+                self._print_pcov(res)
+
 
     def _fit_mb_simple(self, index, model, sdata):
         """
@@ -188,7 +195,12 @@ class MedsFitMB(MedsFit):
         """
 
 
-        for i in xrange(self.obj_ntry):
+        if sdata['mb_imlist'][0][0].shape[0] >= 128:
+            ntry=2
+        else:
+            ntry=self.obj_ntry
+
+        for i in xrange(ntry):
             guess=self._get_simple_guess(index, sdata)
             cen_prior=None
             if self.use_cenprior:
@@ -232,7 +244,7 @@ class MedsFitMB(MedsFit):
                 # terrible guess
                 im_list=sdata['mb_imlist'][band]
                 cvals=[im.sum() for im in im_list]
-                counts_guess=median(cvals)
+                counts_guess=numpy.median(cvals)
             guess[5+band] = counts_guess*(1.0 + srandu())
 
         return guess
@@ -266,6 +278,11 @@ class MedsFitMB(MedsFit):
             print_pars(res['Flux'], stream=stderr, front='        ')
             print_pars(res['Flux_err'], stream=stderr, front='        ')
 
+    def _print_pcov(self, res):
+        if res['flags']==0:
+            import images
+            import esutil as eu
+            images.imprint(eu.stat.cov2cor( res['pcov']) , fmt='%10f')
 
     def _extract_sub_lists(self,
                            mb_keep_list0,

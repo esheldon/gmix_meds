@@ -1,7 +1,8 @@
 fitter: "lm"
 
 psf_ntry: 2
-obj_ntry: 10
+obj_ntry: 10 # we limit 2 for box_size >= 128
+
 psf_model: "em2"
 region: "seg_and_sky"
 
@@ -21,3 +22,5 @@ gprior_type: null
 #gprior_pars: [27.63, 1.25, 0.016, 0.77]
 
 make_plots: False
+
+debug: False
