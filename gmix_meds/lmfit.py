@@ -2,7 +2,7 @@ import os
 from sys import stderr
 import time
 import numpy
-from numpy import sqrt
+from numpy import sqrt, diag
 from numpy.random import randn
 import fitsio
 import meds
@@ -675,9 +675,9 @@ class MedsFit(object):
                 res=gm.get_result()
                 flags=res['flags']
                 if flags==0:
-                    print >>stderr,"        flux: %g match_flux: %g +/- %g" % (pars0[5],res['F'],res['Ferr'])
+                    print >>stderr,"        flux: %g match_flux: %g +/- %g" % (pars0[5],res['F'],res['flux_err'])
                     bres['flux']=res['F']
-                    bres['flux_err']=res['Ferr']
+                    bres['flux_err']=res['flux_err']
                     bres['niter']=res['numiter']
                     bres['ntry']=res['ntry']
                     bres['chi2per']=res['chi2per']

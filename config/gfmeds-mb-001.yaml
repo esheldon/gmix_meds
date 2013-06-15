@@ -23,4 +23,4 @@ gprior_type: null
 
 make_plots: False
 
-debug: False
+debug: 0
