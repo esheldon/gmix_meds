@@ -233,7 +233,7 @@ class MedsFitMB(MedsFit):
                 im_list=sdata['mb_imlist'][band]
                 cvals=[im.sum() for im in im_list]
                 counts_guess=median(cvals)
-            guess[5+band] = counts_guess
+            guess[5+band] = counts_guess*(1.0 + srandu())
 
         return guess
 
