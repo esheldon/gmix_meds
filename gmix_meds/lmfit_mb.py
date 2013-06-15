@@ -290,10 +290,14 @@ class MedsFitMB(MedsFit):
 
         print >>stderr,'    fitting: bd'
 
-        if sdata['mb_imlist'][0][0].shape[0] >= 128:
+        box_size=sdata['mb_imlist'][0][0].shape[0]
+        if box_size >= 128:
             ntry=2
+        elif box_size >= 96:
+            ntry=4
         else:
             ntry=self.obj_ntry
+
 
         for i in xrange(ntry):
             guess=self._get_bd_guess(index, sdata)
