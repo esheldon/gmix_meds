@@ -178,19 +178,34 @@ class MedsFit(object):
                'jacob_list':jacob_list,
                'psf_gmix_list':psf_gmix_list}
 
+        self._do_all_fits(index, sdata)
+
+        self.data['time'][index] = time.time()-t0
+
+    def _do_all_fits(self, index, sdata):
+
         if 'psf' in self.conf['fit_types']:
             self._fit_psf_flux(index, sdata)
-        if 'simple' in self.conf['fit_types']:
-            self._fit_simple_models(index, sdata)
-        if 'cmodel' in self.conf['fit_types']:
-            self._fit_cmodel(index, sdata)
-        if 'match' in self.conf['fit_types']:
-            self._fit_match(index, sdata)
+        else:
+            raise ValueError("you should do a psf_flux fit")
+
+        psf_s2n=self.data['psf_flux_s2n'][index]
+        if psf_s2n >= self.conf['min_psf_s2n']:
+            if 'simple' in self.conf['fit_types']:
+                self._fit_simple_models(index, sdata)
+            if 'cmodel' in self.conf['fit_types']:
+                self._fit_cmodel(index, sdata)
+            if 'match' in self.conf['fit_types']:
+                self._fit_match(index, sdata)
+        else:
+            mess="    psf s/n too low: %s (%s)"
+            mess=mess % (psf_s2n,self.conf['min_psf_s2n'])
+            print >>stderr,mess
 
         if self.debug >= 3:
             self._debug_image(sdata['imlist'][0],sdata['wtlist'][-1])
 
-        self.data['time'][index] = time.time()-t0
+
 
     def _obj_check(self, meds, index):
         flags=0
@@ -597,6 +612,7 @@ class MedsFit(object):
             flux_err=sqrt(res['pcov'][2,2])
             self.data['psf_flux'][index] = flux
             self.data['psf_flux_err'][index] = flux_err
+            self.data['psf_flux_s2n'][index] = flux/flux_err
 
             print >>stderr,'    psf_flux: %g +/- %g' % (flux,flux_err)
 
@@ -1008,6 +1024,7 @@ class MedsFit(object):
                ('psf_pars_cov','f8',(3,3)),
                ('psf_flux','f8'),
                ('psf_flux_err','f8'),
+               ('psf_flux_s2n','f8'),
                (n['s2n_w'],'f8'),
                (n['loglike'],'f8'),
                (n['chi2per'],'f8'),
@@ -1041,6 +1058,7 @@ class MedsFit(object):
         data['psf_pars_cov'] = PDEFVAL
         data['psf_flux'] = DEFVAL
         data['psf_flux_err'] = PDEFVAL
+        data['psf_flux_s2n'] = DEFVAL
 
         data['psf_s2n_w'] = DEFVAL
         data['psf_loglike'] = BIG_DEFVAL

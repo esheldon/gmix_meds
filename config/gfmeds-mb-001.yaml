@@ -23,4 +23,11 @@ gprior_type: null
 
 make_plots: False
 
+# at least one band must have psf s/n > this
+# we won't fit other models if the s/n is too low
+# this should be tweaked depending on how many bands
+# and images you have in the stack.  I'm going pretty
+# low here anticipating g,r,i,z and ~5-10 in the stack
+min_psf_s2n: 3
+
 debug: 0

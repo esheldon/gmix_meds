@@ -106,15 +106,26 @@ class MedsFitMB(MedsFit):
                'mb_jacob_list':mb_jacob_list,
                'mb_psf_gmix_list':mb_psf_gmix_list}
 
-        if 'psf' in self.conf['fit_types']:
-            self._fit_mb_psf_flux(index, sdata)
-        if 'simple' in self.conf['fit_types']:
-            self._fit_mb_simple_models(index, sdata)
-        if 'bd' in self.conf['fit_types']:
-            self._fit_bd(index, sdata)
+        self._do_all_fits(index, sdata)
 
         self.data['time'][index] = time.time()-t0
 
+    def _do_all_fits(self, index, sdata):
+        if 'psf' in self.conf['fit_types']:
+            self._fit_mb_psf_flux(index, sdata)
+        else:
+            raise ValueError("you should do a psf_flux fit")
+
+        max_psf_s2n=self.data['psf_flux_s2n'][index,:].max()
+        if max_psf_s2n >= self.conf['min_psf_s2n']:
+            if 'simple' in self.conf['fit_types']:
+                self._fit_mb_simple_models(index, sdata)
+            if 'bd' in self.conf['fit_types']:
+                self._fit_bd(index, sdata)
+        else:
+            mess="    psf s/n too low: %s (%s)"
+            mess=mess % (max_psf_s2n,self.conf['min_psf_s2n'])
+            print >>stderr,mess
 
     def _mb_obj_check(self, index):
         for band in self.iband:
@@ -148,12 +159,17 @@ class MedsFitMB(MedsFit):
         if self.use_cenprior:
             cen_prior=CenPrior([0.0]*2, [self.cen_width]*2)
 
+        counts_guess=self.median_im_sums[band]
+        if counts_guess < 0:
+            counts_guess=1.0
+
         gm=GMixFitMultiPSFFlux(sdata['mb_imlist'][band],
                                sdata['mb_wtlist'][band],
                                sdata['mb_jacob_list'][band],
                                sdata['mb_psf_gmix_list'][band],
                                cen_prior=cen_prior,
-                               lm_max_try=self.obj_ntry)
+                               lm_max_try=self.obj_ntry,
+                               counts_guess=counts_guess)
         res=gm.get_result()
         self.data['psf_flags'][index,band] = res['flags']
         self.data['psf_iter'][index,band] = res['numiter']
@@ -167,6 +183,9 @@ class MedsFitMB(MedsFit):
             flux_err=sqrt(res['pcov'][2,2])
             self.data['psf_flux'][index,band] = flux
             self.data['psf_flux_err'][index,band] = flux_err
+
+            self.data['psf_flux_s2n'][index,band] = flux/flux_err
+
 
             n=get_model_names('psf')
             for sn in _stat_names:
@@ -248,7 +267,7 @@ class MedsFitMB(MedsFit):
         guess[3]=g2rand
 
         # this is a terrible guess
-        guess[4] = 16.0*(1.0 + srandu())
+        guess[4] = 16.0*(1.0 + 0.2*srandu())
 
         for band in self.iband:
             if self.data['psf_flags'][index,band]==0:
@@ -256,8 +275,10 @@ class MedsFitMB(MedsFit):
             else:
                 # terrible guess
                 counts_guess=self.median_im_sums[band]
+                if counts_guess < 0:
+                    counts_guess=1.0
 
-            guess[5+band] = counts_guess*(1.0 + srandu())
+            guess[5+band] = counts_guess*(1.0 + 0.2*srandu())
 
         return guess
 
@@ -658,6 +679,7 @@ class MedsFitMB(MedsFit):
                ('psf_pars_cov','f8',(nband,psf_npars_perband,psf_npars_perband)),
                ('psf_flux','f8',nband),
                ('psf_flux_err','f8',nband),
+               ('psf_flux_s2n','f8',nband),
                (n['s2n_w'],'f8',nband),
                (n['loglike'],'f8',nband),
                (n['chi2per'],'f8',nband),
@@ -694,6 +716,7 @@ class MedsFitMB(MedsFit):
         data['psf_pars_cov'] = PDEFVAL
         data['psf_flux'] = DEFVAL
         data['psf_flux_err'] = PDEFVAL
+        data['psf_flux_s2n'] = DEFVAL
 
         data['psf_s2n_w'] = DEFVAL
         data['psf_loglike'] = BIG_DEFVAL
