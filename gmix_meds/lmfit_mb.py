@@ -103,7 +103,8 @@ class MedsFitMB(MedsFit):
 
         self.data['nimage_use'][index, :] = len_list
 
-        sdata={'mb_imlist':mb_imlist,
+        sdata={'mb_keep_list':mb_keep_list,
+               'mb_imlist':mb_imlist,
                'mb_wtlist':mb_wtlist,
                'mb_jacob_list':mb_jacob_list,
                'mb_psf_gmix_list':mb_psf_gmix_list}
@@ -223,6 +224,9 @@ class MedsFitMB(MedsFit):
 
         # im_index does not include coadd currently
         im_index0 = im_index-1
+        if im_index0 not in sdata['mb_keep_list'][band]:
+            self.data['psf1_flags'][index,band] = PSF1_NOT_KEPT
+            return
 
         imlist = [sdata['mb_imlist'][band][im_index0]]
         wtlist = [sdata['mb_wtlist'][band][im_index0]]

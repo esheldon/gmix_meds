@@ -32,6 +32,8 @@ BOX_SIZE_TOO_BIG=2**5
 
 ALGO_TIMEOUT=2**6
 
+PSF1_NOT_KEPT=2**7
+
 NO_ATTEMPT=2**30
 
 PSF_S2N=1.e6
@@ -175,7 +177,8 @@ class MedsFit(object):
 
         self.data['nimage_use'][index] = len(imlist)
 
-        sdata={'imlist':imlist,
+        sdata={'keep_list':keep_list,
+               'imlist':imlist,
                'wtlist':wtlist,
                'jacob_list':jacob_list,
                'psf_gmix_list':psf_gmix_list}
