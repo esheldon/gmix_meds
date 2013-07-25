@@ -162,7 +162,7 @@ class MedsFitMB(MedsFit):
         im_index = self.conf['psf1_index']
         print >>stderr,'    fitting: psf1 at index',im_index
         for band in self.iband:
-            self._fit_psf1_flux(index, sdata, band)
+            self._fit_psf1_flux(index, sdata, band, im_index)
 
         print_pars(self.data['psf1_flux'][index], stream=stderr, front='        ')
 
