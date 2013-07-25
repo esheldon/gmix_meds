@@ -11,8 +11,10 @@ psf_offset_max: 0.25
 
 max_box_size: 256
 
-fit_types: ['psf','simple']
+fit_types: ['psf','psf1','simple']
 reject_outliers: True
+
+psf1_index: 1
 
 use_cenprior: True
 cen_width: 0.27

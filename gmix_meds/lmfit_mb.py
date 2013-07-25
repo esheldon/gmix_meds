@@ -47,6 +47,8 @@ class MedsFitMB(MedsFit):
         self.psf_offset_max=keys.get('psf_offset_max',PSF_OFFSET_MAX)
         self.psf_ngauss=get_psf_ngauss(self.psf_model)
 
+        self.max_simple_time=self.conf.get('max_simple_time', 125.0)
+
         self.debug=keys.get('debug',0)
 
         self.psf_ntry=keys.get('psf_ntry', LM_MAX_TRY)
@@ -115,7 +117,10 @@ class MedsFitMB(MedsFit):
             self._fit_mb_psf_flux(index, sdata)
         else:
             raise ValueError("you should do a psf_flux fit")
-
+        
+        if 'psf1' in self.conf['fit_types']:
+            self._fit_mb_psf1_flux(index, sdata)
+ 
         max_psf_s2n=self.data['psf_flux_s2n'][index,:].max()
         if max_psf_s2n >= self.conf['min_psf_s2n']:
             if 'simple' in self.conf['fit_types']:
@@ -148,6 +153,22 @@ class MedsFitMB(MedsFit):
 
         if any( map(lambda x: not x, self.data['psf_flags'][index]) ):
             print_pars(self.data['psf_flux_err'][index], stream=stderr, front='        ')
+
+    def _fit_mb_psf1_flux(self, index, sdata):
+        """
+        Perform PSF flux fits on a single SE image in each band separately
+        """
+
+        im_index = self.conf['psf1_index']
+        print >>stderr,'    fitting: psf1 at index',im_index
+        for band in self.iband:
+            self._fit_psf1_flux(index, sdata, band)
+
+        print_pars(self.data['psf1_flux'][index], stream=stderr, front='        ')
+
+        if any( map(lambda x: not x, self.data['psf1_flags'][index]) ):
+            print_pars(self.data['psf1_flux_err'][index], stream=stderr, front='        ')
+
 
 
     def _fit_single_psf_flux(self, index, sdata, band):
@@ -191,6 +212,54 @@ class MedsFitMB(MedsFit):
             for sn in _stat_names:
                 self.data[n[sn]][index,band] = res[sn]
 
+    def _fit_psf1_flux(self, index, sdata, band, im_index):
+        """
+        Fit a single band to the psf model
+        """
+
+        cen_prior=None
+        if self.use_cenprior:
+            cen_prior=CenPrior([0.0]*2, [self.cen_width]*2)
+
+        # im_index does not include coadd currently
+        im_index0 = im_index-1
+
+        imlist = [sdata['mb_imlist'][band][im_index0]]
+        wtlist = [sdata['mb_wtlist'][band][im_index0]]
+        jlist = [sdata['mb_jacob_list'][band][im_index0]]
+        psflist = [sdata['mb_psf_gmix_list'][band][im_index0]]
+
+        counts_guess = imlist[0].sum()
+        if counts_guess < 0:
+            counts_guess=1.0
+
+        gm=GMixFitMultiPSFFlux(imlist,
+                               wtlist,
+                               jlist,
+                               psflist,
+                               cen_prior=cen_prior,
+                               lm_max_try=self.obj_ntry,
+                               counts_guess=counts_guess)
+        res=gm.get_result()
+        self.data['psf1_flags'][index,band] = res['flags']
+        self.data['psf1_iter'][index,band] = res['numiter']
+        self.data['psf1_tries'][index,band] = res['ntry']
+
+        if res['flags']==0:
+            self.data['psf1_pars'][index,band,:]=res['pars']
+            self.data['psf1_pars_cov'][index,band,:,:] = res['pcov']
+
+            flux=res['pars'][2]
+            flux_err=sqrt(res['pcov'][2,2])
+            self.data['psf1_flux'][index,band] = flux
+            self.data['psf1_flux_err'][index,band] = flux_err
+
+            self.data['psf1_flux_s2n'][index,band] = flux/flux_err
+
+            n=get_model_names('psf1')
+            for sn in _stat_names:
+                self.data[n[sn]][index,band] = res[sn]
+
 
     def _fit_mb_simple_models(self, index, sdata):
         """
@@ -217,6 +286,7 @@ class MedsFitMB(MedsFit):
         Fit one of the "simple" models, e.g. exp or dev
         """
 
+        tm0=time.time()
 
         box_size=sdata['mb_imlist'][0][0].shape[0]
         if box_size >= 128:
@@ -242,6 +312,11 @@ class MedsFitMB(MedsFit):
                                     gprior=self.gprior)
             res=gm.get_result()
             if res['flags']==0:
+                break
+
+            t=time.time()-tm0
+            if t > self.max_simple_time:
+                res['flags'] |= ALGO_TIMEOUT
                 break
 
         res['ntry'] = i+1
@@ -688,6 +763,26 @@ class MedsFitMB(MedsFit):
                (n['aic'],'f8',nband),
                (n['bic'],'f8',nband)]
 
+        # fit to one of the SE images or coadd
+        if 'psf1' in self.conf['fit_types']:
+            n=get_model_names('psf1')
+            dt += [('psf1_flags','i4',nband),
+                   ('psf1_iter','i4',nband),
+                   ('psf1_tries','i4',nband),
+                   ('psf1_pars','f8',(nband,psf_npars_perband)),
+                   ('psf1_pars_cov','f8',(nband,psf_npars_perband,psf_npars_perband)),
+                   ('psf1_flux','f8',nband),
+                   ('psf1_flux_err','f8',nband),
+                   ('psf1_flux_s2n','f8',nband),
+                   (n['s2n_w'],'f8',nband),
+                   (n['loglike'],'f8',nband),
+                   (n['chi2per'],'f8',nband),
+                   (n['dof'],'f8',nband),
+                   (n['fit_prob'],'f8',nband),
+                   (n['aic'],'f8',nband),
+                   (n['bic'],'f8',nband)]
+
+
         data=numpy.zeros(self.nobj, dtype=dt)
         data['id'] = 1+numpy.arange(self.nobj)
 
@@ -724,5 +819,19 @@ class MedsFitMB(MedsFit):
         data['psf_aic'] = BIG_PDEFVAL
         data['psf_bic'] = BIG_PDEFVAL
        
+        if 'psf1' in self.conf['fit_types']:
+            data['psf1_flags'] = NO_ATTEMPT
+            data['psf1_pars'] = DEFVAL
+            data['psf1_pars_cov'] = PDEFVAL
+            data['psf1_flux'] = DEFVAL
+            data['psf1_flux_err'] = PDEFVAL
+            data['psf1_flux_s2n'] = DEFVAL
+
+            data['psf1_s2n_w'] = DEFVAL
+            data['psf1_loglike'] = BIG_DEFVAL
+            data['psf1_chi2per'] = PDEFVAL
+            data['psf1_aic'] = BIG_PDEFVAL
+            data['psf1_bic'] = BIG_PDEFVAL
+     
         self.data=data
 
