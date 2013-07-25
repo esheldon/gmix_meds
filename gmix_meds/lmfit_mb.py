@@ -225,6 +225,7 @@ class MedsFitMB(MedsFit):
         # im_index does not include coadd currently
         im_index0 = im_index-1
         if im_index0 not in sdata['mb_keep_list'][band]:
+            print >>stderr,'    image at index',im_index,'not used for band',band
             self.data['psf1_flags'][index,band] = PSF1_NOT_KEPT
             return
 
