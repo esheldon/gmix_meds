@@ -1055,7 +1055,7 @@ class MedsFit(object):
 
 
         data=numpy.zeros(nobj, dtype=dt)
-        data['id'] = 1+numpy.arange(nobj)
+        data['id'] = 1+self.index_list
 
         data['cmodel_flags'] = NO_ATTEMPT
         data['cmodel_flux'] = DEFVAL
