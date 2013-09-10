@@ -136,7 +136,7 @@ class MedsFit(object):
         num=len(self.index_list)
 
         for dindex in xrange(num):
-            mindex = self.index_list[index]
+            mindex = self.index_list[dindex]
             print >>stderr,'index: %d:%d' % (mindex,last),
             self._fit_obj(dindex)
 

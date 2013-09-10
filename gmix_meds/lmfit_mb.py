@@ -662,6 +662,7 @@ class MedsFitMB(MedsFit):
         Load psfex objects for each of the SE images
         include the coadd so we get  the index right
         """
+        print 'loading psfex'
         desdata=os.environ['DESDATA']
         meds_desdata=self.meds_list[0]._meta['DESDATA'][0]
 
