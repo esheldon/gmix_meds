@@ -1136,7 +1136,7 @@ class MedsFit(object):
         return imlist, coadd
 
 
-    def _get_wtlist(self, meds, index):
+    def _get_wtlist(self, meds, mindex):
         """
         get the weight list.
 
@@ -1144,7 +1144,7 @@ class MedsFit(object):
         zero weight
         """
         if self.region=='seg_and_sky':
-            wtlist=meds.get_cweight_cutout_list(index)
+            wtlist=meds.get_cweight_cutout_list(mindex)
             wtlist=wtlist[1:]
 
             wtlist=[wt.astype('f8') for wt in wtlist]
