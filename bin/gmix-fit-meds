@@ -7,6 +7,7 @@ Process the input meds file.
 
 import os,sys
 from sys import stderr
+import shutil
 import numpy
 import yaml
 import fitsio
@@ -23,6 +24,11 @@ parser.add_option("--obj-range",default=None,
                         "process"))
 parser.add_option("--det-cat", default=None,
                   help="detection cat for matched fluxes")
+
+parser.add_option("--work-dir", default=None,
+                  help=("copy files local for processing.  "
+                        "Also write to local files and copy out."
+                        "The local files are removed."))
 
 def load_config(fname):
     with open(fname) as fobj:
@@ -141,23 +147,22 @@ def make_mcmc_meta(conf, meds_meta, meds_file):
     return meta
 
 
-def run_lm(meds_file, conf):
+def run_lm(meds_files, conf):
     gprior=get_gprior(conf)
     conf['gprior'] = gprior
 
-    mf=meds_file.split(',')
-    if len(mf)==1:
-        gm=gmix_meds.MedsFit(meds_file, **conf)
+    if len(meds_files)==1:
+        gm=gmix_meds.MedsFit(meds_files[0], **conf)
         gm.do_fits()
         data=gm.get_data()
         meds_meta=[gm.get_meds_meta()]
     else:
-        gm=gmix_meds.MedsFitMB(mf, **conf)
+        gm=gmix_meds.MedsFitMB(meds_files, **conf)
         gm.do_fits()
         data=gm.get_data()
         meds_meta=gm.get_meds_meta_list()
 
-    meta=make_lm_meta(conf, meds_meta, mf)
+    meta=make_lm_meta(conf, meds_meta, meds_files)
 
     return data, meta
 
@@ -175,12 +180,11 @@ def get_gprior(conf):
     else:
         raise ValueError("implement gprior '%s'")
 
-def run_mcmc(meds_file, conf):
+def run_mcmc(meds_files, conf):
     gprior=get_gprior(conf)
 
-    mf=meds_file.split(',')
-    if len(mf)==0:
-        gm=gmix_meds.MedsMCMC(meds_file, gprior, **conf)
+    if len(meds_files)==1:
+        gm=gmix_meds.MedsMCMC(meds_files[0], gprior, **conf)
     else:
         raise ValueError("implement mb for mcmc")
 
@@ -188,21 +192,94 @@ def run_mcmc(meds_file, conf):
 
     data=gm.get_data()
     meds_meta=gm.get_meds_meta()
-    meta=make_mcmc_meta(conf, meds_meta, meds_file)
+    meta=make_mcmc_meta(conf, meds_meta, meds_files[0])
 
     return data, meta
 
 
-def main():
-    options, args = parser.parse_args(sys.argv[1:])
-    if len(args) < 3:
-        parser.print_help()
-        sys.exit(45)
+def reroot_file(fname, newdir):
+    bname=os.path.basename(fname)
+    return os.path.join(newdir, bname)
 
-    config_file=args[0]
-    meds_file=args[1]
-    out_file=args[2]
+class WorkFiles(object):
+    def __init__(self, work_dir, flist, mode='r'):
+        self.work_dir=work_dir
+        self.mode=mode
 
+        if not os.path.exists(work_dir):
+            os.makedirs(work_dir)
+
+        self.init(flist)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exception_type, exception_value, traceback):
+        self.close()
+
+    def init(self, flist):
+        """
+        remote files we copy local temporarily.
+        """
+
+        self.remote_files=self.as_string_list(flist)
+
+        self.local_files=[]
+        for remote_file in self.remote_files:
+            local_file=reroot_file(remote_file, self.work_dir)
+            self.local_files.append(local_file)
+
+            if self.mode=='r':
+                print '%s -> %s' % (remote_file,local_file)
+                shutil.copy2(remote_file, local_file)
+
+
+    def close(self):
+        """
+
+        If reading, remove the files we copied locally, or copy remote if we
+        were writing
+
+        """
+        try:
+            if self.mode=='w':
+                self.copy_to_remote()
+        finally:
+            for local_file in self.local_files:
+                print 'removing local file:',local_file
+                os.remove(local_file)
+
+
+    def copy_to_remote(self):
+        """
+        If mode is 'w', we copy the local files to their
+        destination
+        """
+        if self.mode=='r':
+            return
+
+        for i in xrange(len(self.local_files)):
+            local_file=self.local_files[i]
+            remote_file=self.remote_files[i]
+
+            print '%s -> %s' % (local_file,remote_file)
+            shutil.copy2(local_file, remote_file)
+
+    def as_string_list(self, data):
+        if isinstance(data, basestring):
+            out_data=[data]
+        else:
+            if not isinstance(data, (list,tuple)):
+                raise ValueError("input must be string or seq of strings")
+            for s in data:
+                if not isinstance(s, basestring):
+                    raise ValueError("input must be string or seq of strings")
+            out_data=list(data)
+
+        return out_data
+
+
+def go(config_file, meds_files, out_file, options):
     conf=load_config(config_file)
     pprint.pprint(conf,stream=stderr)
 
@@ -224,14 +301,38 @@ def main():
     conf['config_file']=config_file
 
     if conf['fitter'] == 'lm':
-        data, meta = run_lm(meds_file, conf)
+        data, meta = run_lm(meds_files, conf)
     else:
-        data, meta = run_mcmc(meds_file, conf)
+        data, meta = run_mcmc(meds_files, conf)
 
     makedir_fromfile(out_file)
     print 'writing:',out_file
     with fitsio.FITS(out_file,'rw',clobber=True) as fobj:
         fobj.write(data,extname="model_fits")
         fobj.write(meta,extname="meta_data")
+
+
+def go_local(config_file, meds_files, out_file, options):
+    with WorkFiles(options.work_dir, meds_files, mode='r') as rf:
+        with WorkFiles(options.work_dir, [out_file], mode='w') as wf:
+            meds_local=rf.local_files
+            out_local = wf.local_files[0]
+            go(config_file, meds_local, out_local, options)
+
+def main():
+    options, args = parser.parse_args(sys.argv[1:])
+    if len(args) < 3:
+        parser.print_help()
+        sys.exit(45)
+
+    config_file=args[0]
+    meds_files=args[1].split(',')
+    out_file=args[2]
+
+    if options.work_dir is not None:
+        go_local(config_file, meds_files, out_file, options)
+    else:
+        go(config_file, meds_files, out_file, options)
+
 
 main()
