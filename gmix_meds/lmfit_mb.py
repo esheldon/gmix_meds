@@ -218,16 +218,17 @@ class MedsFitMB(MedsFit):
         Fit a single band to the psf model
         """
 
-        cen_prior=None
-        if self.use_cenprior:
-            cen_prior=CenPrior([0.0]*2, [self.cen_width]*2)
-
         # im_index does not include coadd currently
         im_index0 = im_index-1
         if im_index0 not in sdata['mb_keep_list'][band]:
             print >>stderr,'    image at index',im_index,'not used for band',band
             self.data['psf1_flags'][index,band] = PSF1_NOT_KEPT
             return
+
+        cen_prior=None
+        if self.use_cenprior:
+            cen_prior=CenPrior([0.0]*2, [self.cen_width]*2)
+
 
         imlist = [sdata['mb_imlist'][band][im_index0]]
         wtlist = [sdata['mb_wtlist'][band][im_index0]]

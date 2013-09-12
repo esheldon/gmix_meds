@@ -320,10 +320,6 @@ class MedsFit(object):
 
 
     def _compare_psf_model(self, im, gm, index, i,fname,cenpix):
-        """
-        Since we work in sky coords, can only generate the
-        diff image currently
-        """
         import os
         import images
 
