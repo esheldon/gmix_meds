@@ -29,7 +29,7 @@ parser.add_option("--det-cat", default=None,
 parser.add_option("--work-dir", default=None,
                   help=("copy files local for processing.  "
                         "Also write to local files and copy out."
-                        "The local files are removed."))
+                        "The local files are not removed."))
 
 def load_config(fname):
     with open(fname) as fobj:
@@ -280,9 +280,15 @@ class WorkFiles(object):
         return out_data
 
 def get_sub(meds_files, rng, work_dir):
-    local_files=[]
+    """
+    Local files will get cleaned up
+    """
+    extracted=[]
     for f in meds_files:
-        meds.extract_range(f, rng[0], rng[1], newf)
+        ex=meds.MEDSExtractor(f, rng[0], rng[1], newf, cleanup=True)
+        extracted.append(ex)
+
+    return extracted
 
 def go(config_file, meds_files, out_file, options):
     conf=load_config(config_file)
@@ -294,7 +300,10 @@ def go(config_file, meds_files, out_file, options):
         rng = [int(i) for i in rng]
 
         if options.work_dir is not None:
-            meds_files=get_sub(meds_files, rng, options.work_dir)
+            # note extracted get cleaned up when MedsExtractors
+            # get garbage collected
+            extracted=get_sub(meds_files, rng, options.work_dir)
+            meds_files=[ex.sub_file for ex in extracted]
 
 
     det_cat_file=options.det_cat
