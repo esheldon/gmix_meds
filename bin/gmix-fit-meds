@@ -11,6 +11,7 @@ import shutil
 import numpy
 import yaml
 import fitsio
+import meds
 import gmix_meds
 import pprint
 
@@ -278,6 +279,10 @@ class WorkFiles(object):
 
         return out_data
 
+def get_sub(meds_files, rng, work_dir):
+    local_files=[]
+    for f in meds_files:
+        meds.extract_range(f, rng[0], rng[1], newf)
 
 def go(config_file, meds_files, out_file, options):
     conf=load_config(config_file)
@@ -288,6 +293,9 @@ def go(config_file, meds_files, out_file, options):
         rng=rng.split(',')
         rng = [int(i) for i in rng]
 
+        if options.work_dir is not None:
+            meds_files=get_sub(meds_files, rng, options.work_dir)
+
 
     det_cat_file=options.det_cat
     if det_cat_file is not None and det_cat_file != "":
@@ -296,7 +304,8 @@ def go(config_file, meds_files, out_file, options):
     else:
         det_cat=None
 
-    conf['obj_range'] = rng
+    # we now do range by extracting it, see above
+    conf['obj_range'] = None
     conf['det_cat'] = det_cat
     conf['config_file']=config_file
 
@@ -312,13 +321,17 @@ def go(config_file, meds_files, out_file, options):
         fobj.write(meta,extname="meta_data")
 
 
-def go_local(config_file, meds_files, out_file, options):
+def go_local_old(config_file, meds_files, out_file, options):
+    """
+    copying full files local
+    """
     with WorkFiles(options.work_dir, meds_files, mode='r') as rf:
         with WorkFiles(options.work_dir, [out_file], mode='w') as wf:
             meds_local=rf.local_files
             out_local = wf.local_files[0]
             go(config_file, meds_local, out_local, options)
 
+    
 def main():
     options, args = parser.parse_args(sys.argv[1:])
     if len(args) < 3:
@@ -329,10 +342,12 @@ def main():
     meds_files=args[1].split(',')
     out_file=args[2]
 
+    go(config_file, meds_files, out_file, options)
+    """
     if options.work_dir is not None:
         go_local(config_file, meds_files, out_file, options)
     else:
         go(config_file, meds_files, out_file, options)
-
+    """
 
 main()

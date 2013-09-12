@@ -154,6 +154,8 @@ class MedsFit(object):
         t0=time.time()
         mindex=self.index_list[dindex]
 
+        self.data['id'][dindex] = self.meds['number'][mindex]
+
         self.data['flags'][dindex] = self._obj_check(self.meds, mindex)
         if self.data['flags'][dindex] != 0:
             return 0
@@ -1055,7 +1057,7 @@ class MedsFit(object):
 
 
         data=numpy.zeros(nobj, dtype=dt)
-        data['id'] = 1+self.index_list
+        #data['id'] = 1+self.index_list
 
         data['cmodel_flags'] = NO_ATTEMPT
         data['cmodel_flux'] = DEFVAL
