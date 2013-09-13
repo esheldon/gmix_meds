@@ -279,12 +279,27 @@ class WorkFiles(object):
 
         return out_data
 
+def get_sub_fname(fname, rng, work_dir):
+    rng_string = '%s-%s' % (rng[0], rng[1])
+
+    bname = os.path.basename(fname)
+
+    bname = bname.replace('.fits.fz','').replace('.fits','')
+    bname = '%s-%s.fits' % (bname, rng_string)
+
+    newf = os.path.join(work_dir, bname)
+
+    return newf
+
 def get_sub(meds_files, rng, work_dir):
     """
     Local files will get cleaned up
     """
     extracted=[]
+
     for f in meds_files:
+
+        newf = get_sub_fname(f, rng, work_dir)
         ex=meds.MEDSExtractor(f, rng[0], rng[1], newf, cleanup=True)
         extracted.append(ex)
 
