@@ -700,6 +700,8 @@ class MedsFitMB(MedsFit):
             self.meds_list.append(medsi)
             self.meds_meta_list.append(medsi_meta)
 
+        self.nobj = self.meds_list[0].size
+
     def _make_struct(self):
         nband=self.nband
 

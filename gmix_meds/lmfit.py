@@ -957,7 +957,7 @@ class MedsFit(object):
         """
         if self.obj_range is None:
             start=0
-            end=self.meds.size-1
+            end=self.nobj-1
         else:
             start=self.obj_range[0]
             end=self.obj_range[1]
