@@ -79,7 +79,7 @@ class MedsFitMB(MedsFit):
 
         mindex = self.index_list[dindex]
 
-        self.data['id'][dindex] = self.meds['number'][mindex]
+        self.data['id'][dindex] = self.meds_list[0]['number'][mindex]
 
         self.data['flags'][dindex] = self._mb_obj_check(mindex)
         if self.data['flags'][dindex] != 0:
