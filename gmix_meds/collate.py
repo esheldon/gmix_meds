@@ -6,24 +6,95 @@ class TileConcat(object):
     """
     Concatenate the split files for a single tile
     """
-    def __init__(self, flist):
-        self.flist=flist
-        self._set_out_file()
+    def __init__(self, run, tilename, ftype):
+        import desdb
+        import deswl
+
+        self.run=run
+        self.tilename=tilename
+        self.ftype=ftype
+
+
+        self.rc=deswl.files.Runconfig(run)
+        self.nper=self.rc['nper']
+
+        self.df=desdb.files.DESFiles()
+
+        self.set_output_file()
+        self.find_coadd_run()
+        self.set_nrows()
+
+    def find_coadd_run(self):
+        """
+        Get the coadd run from tilename and medsconf
+        """
+        import glob
+        meds_dir = self.df.dir('meds_run',medsconf=self.rc['medsconf'])
+        pattern = os.path.join(meds_dir,'*%s*' % self.tilename)
+
+        print pattern
+        flist=glob.glob(pattern)
+        print flist
+        if len(flist) != 1:
+            raise RuntimeError("expected 1 dir, found %d" % len(flist))
+
+        self.coadd_run = os.path.basename(flist[0])
+
+
+    def set_nrows(self):
+        nper=self.rc['nper']
+
+        meds_filename=self.df.url('meds',
+                                  tilename=self.tilename,
+                                  band='i',
+                                  medsconf=self.rc['medsconf'],
+                                  coadd_run=self.coadd_run)
+        with fitsio.FITS(meds_filename) as fobj:
+            self.nrows=fobj['object_data'].get_nrows()
+
+    def set_output_file(self):
+        import desdb
+
+        out_dir = self.df.dir('wlpipe_collated', run=self.run)
+        if not os.path.exists(out_dir):
+            os.makedirs(out_dir)
+
+        self.out_file = self.df.url('wlpipe_me_collated',
+                                    run=self.run,
+                                    tilename=self.tilename,
+                                    filetype=self.ftype,
+                                    ext='fits')
 
     def concat(self):
+        from deswl.generic import get_chunks, extract_start_end
         out_file=self.out_file
         print 'writing:',out_file
 
-        first=self.flist[0]
-        meta=fitsio.read(first, ext="meta_data")
+        nper=self.rc['nper']
+        startlist,endlist=get_chunks(self.nrows,nper)
+        nchunk=len(startlist)
 
         with fitsio.FITS(out_file,'rw',clobber=True) as fobj:
-            nf=len(self.flist)
-            for i,fname in enumerate(self.flist):
-                print '\t%d/%d %s' %(i+1,nf,fname)
+
+            for i in xrange(nchunk):
+
+                start=startlist[i]
+                end=endlist[i]
+                sstr,estr = extract_start_end(start=start, end=end)
+
+                fname=self.df.url('wlpipe_me_split',
+                                  run=self.run,
+                                  tilename=self.tilename,
+                                  start=sstr,
+                                  end=estr,
+                                  filetype=self.ftype,
+                                  ext='fits')
+
+                print '\t%d/%d %s' %(i+1,nchunk,fname)
                 data = fitsio.read(fname, ext="model_fits")
 
                 if i==0:
+                    meta=fitsio.read(fname, ext="meta_data")
                     fobj.write(data,extname="model_fits")
                 else:
                     fobj["model_fits"].append(data)
@@ -32,24 +103,6 @@ class TileConcat(object):
 
         print 'output is in:',out_file
 
-    def _set_out_file(self):
-        """
-        fname is one of the split file names
-        """
-
-        fname=self.flist[0]
-
-        dname=os.path.dirname(fname)
-        bname=os.path.basename(fname)
-
-        fs=bname.split('-')
-        if len(fs) != 7:
-            raise ValueError("name in wrong format: '%s'" % bname)
-
-        out_file = '-'.join( fs[0:4] + fs[6:] )
-        out_file = os.path.join(dname,out_file)
-        
-        self.out_file=out_file
 
 def concat_all(goodlist_file, badlist_file, ftype):
     """
