@@ -93,11 +93,11 @@ class MedsFitMB(MedsFit):
     
         mb_keep_list,mb_psf_gmix_list,flags=self._fit_mb_psfs(mindex,mb_jacob_list)
         if any(flags):
-            self.data['flags'][dindex,:] = flags
+            self.data['flags'][dindex] = PSF_FIT_FAILURE 
             return
         mb_keep_list,mb_psf_gmix_list,flags=self._remove_mb_bad_psfs(mb_keep_list,mb_psf_gmix_list)
         if any(flags):
-            self.data['flags'][dindex,:] = flags
+            self.data['flags'][dindex] = PSF_LARGE_OFFSETS 
             return
 
         mb_imlist, mb_wtlist, mb_jacob_list, len_list = \
