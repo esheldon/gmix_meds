@@ -305,15 +305,21 @@ def get_sub(meds_files, rng, work_dir):
 
     return extracted
 
+def get_range(rng_string):
+    if rng_string is not None:
+        rng = rng_string.split(',')
+        rng = [int(i) for i in rng]
+    else:
+        rng=None
+
+    return rng
+
 def go(config_file, meds_files, out_file, options):
     conf=load_config(config_file)
     pprint.pprint(conf,stream=stderr)
 
-    rng=options.obj_range
+    rng=get_range( options.obj_range )
     if rng is not None:
-        rng=rng.split(',')
-        rng = [int(i) for i in rng]
-
         if options.work_dir is not None:
             # note extracted get cleaned up when MedsExtractors
             # get garbage collected
@@ -328,7 +334,8 @@ def go(config_file, meds_files, out_file, options):
     else:
         det_cat=None
 
-    # we now do range by extracting it, see above
+    # we now do range by extracting it, see above, so
+    # this is always None
     conf['obj_range'] = None
     conf['det_cat'] = det_cat
     conf['config_file']=config_file
