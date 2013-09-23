@@ -28,6 +28,9 @@ class MedsFitMB(MedsFit):
         self.conf.update(keys)
 
         self.meds_files=meds_files
+        self.checkpoint = self.conf.get('checkpoint',172800)
+        self.checkpoint_file = self.conf.get('checkpoint_file',None)
+
         self.nband=len(meds_files)
         self.iband = range(self.nband)
 
@@ -64,7 +67,13 @@ class MedsFitMB(MedsFit):
         self.make_plots=keys.get('make_plots',False)
         self.prompt=keys.get('prompt',True)
 
-        self._make_struct()
+        self._checkpoint_data=keys.get('checkpoint_data',None)
+
+        if self._checkpoint_data is not None:
+            self.data=self._checkpoint_data
+        else:
+            self._make_struct()
+
 
     def get_meds_meta_list(self):
         return [m.copy() for m in self.meds_meta_list]
@@ -76,6 +85,9 @@ class MedsFitMB(MedsFit):
         """
 
         t0=time.time()
+
+        # for checkpointing
+        self.data['processed'][dindex]=1
 
         mindex = self.index_list[dindex]
 
@@ -706,6 +718,7 @@ class MedsFitMB(MedsFit):
         nband=self.nband
 
         dt=[('id','i4'),
+            ('processed','i1'),
             ('flags','i4'),
             ('nimage_tot','i4',nband),
             ('nimage_use','i4',nband),

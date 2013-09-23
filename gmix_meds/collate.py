@@ -14,7 +14,6 @@ class TileConcat(object):
         self.tilename=tilename
         self.ftype=ftype
 
-
         self.rc=deswl.files.Runconfig(run)
         self.nper=self.rc['nper']
 
@@ -91,7 +90,7 @@ class TileConcat(object):
                                   ext='fits')
 
                 print '\t%d/%d %s' %(i+1,nchunk,fname)
-                data = fitsio.read(fname, ext="model_fits")
+                data = self.read_data(fname)
 
                 if i==0:
                     meta=fitsio.read(fname, ext="meta_data")
@@ -102,6 +101,18 @@ class TileConcat(object):
             fobj.write(meta,extname="meta_data")
 
         print 'output is in:',out_file
+
+    def read_data(self, fname):
+        data = fitsio.read(fname, ext="model_fits")
+        if 'exp_T_s2n' not in data.dtype.names:
+            import  esutil as eu
+            fadd=[('exp_T_s2n','f8'),('dev_T_s2n','f8')]
+            newdata=eu.numpy_util.add_fields(data, fadd, 
+                                             defaults=[-9999,-9999])
+            
+
+
+
 
 
 def concat_all(goodlist_file, badlist_file, ftype):

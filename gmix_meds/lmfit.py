@@ -68,6 +68,10 @@ class MedsFit(object):
         self.conf.update(keys)
 
         self.meds_file=meds_file
+        self.checkpoint = self.conf.get('checkpoint',172800)
+        self.checkpoint_file = self.conf.get('checkpoint_file',None)
+        self._checkpoint_data=keys.get('checkpoint_data',None)
+
         print >>stderr,'meds file:',meds_file
         self.meds=meds.MEDS(meds_file)
         self.meds_meta=self.meds.get_meta()
@@ -134,14 +138,32 @@ class MedsFit(object):
 
         last=self.index_list[-1]
         num=len(self.index_list)
+        self.checkpointed=False
 
         for dindex in xrange(num):
+            if self.data['processed'][dindex]==1:
+                # checkpointing
+                continue
+
             mindex = self.index_list[dindex]
             print >>stderr,'index: %d:%d' % (mindex,last),
             self._fit_obj(dindex)
 
+            tm=time.time()-t0
+
+            if self._should_checkpoint(tm):
+                self._write_checkpoint(tm)
+
         tm=time.time()-t0
         print >>stderr,"time per:",tm/num
+    
+    def _should_checkpoint(self, tm):
+        if (tm > self.checkpoint
+                and self.checkpoint_file is not None
+                and not self.checkpointed):
+            return True
+        else:
+            return False
 
     def _fit_obj(self, dindex):
         """
@@ -152,6 +174,10 @@ class MedsFit(object):
         """
 
         t0=time.time()
+
+        # for checkpointing
+        self.data['processed'][dindex]=1
+
         mindex=self.index_list[dindex]
 
         self.data['id'][dindex] = self.meds['number'][mindex]
@@ -966,7 +992,12 @@ class MedsFit(object):
 
     def _set_det_cat_and_struct(self, det_cat):
         # this creates self.data
-        self._make_struct()
+
+        if self._checkpoint_data is not None:
+            self.data=self._checkpoint_data
+        else:
+            self._make_struct()
+
         if det_cat is not None:
             if det_cat.size != self.meds.size:
                 mess=("det_cat should be collated and match full "
@@ -982,10 +1013,20 @@ class MedsFit(object):
             self.det_cat=None
 
 
+    def _write_checkpoint(self, tm):
+        print >>stderr,'checkpointing at',tm,'seconds'
+        print >>stderr,self.checkpoint_file
+        fitsio.write(self.checkpoint_file,
+                     self.data,
+                     clobber=True)
+        self.checkpointed=True
+
     def _make_struct(self):
+
         nobj=self.index_list.size
 
         dt=[('id','i4'),
+            ('processed','i1'),
             ('flags','i4'),
             ('nimage_tot','i4'),
             ('nimage_use','i4'),

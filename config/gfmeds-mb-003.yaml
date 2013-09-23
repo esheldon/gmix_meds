@@ -34,5 +34,12 @@ min_psf_s2n: 4
 # this is allowed for each algorithm
 max_simple_time: 125.0
 
+# checkpoint time in seconds, needed for condor in case we pass
+# a batch system limit such as in the condor scavenge
+#
+# 1.5 hours
+
+checkpoint: 5400
+
 make_plots: False
 debug: 0

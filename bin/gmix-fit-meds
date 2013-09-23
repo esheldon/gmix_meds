@@ -148,17 +148,21 @@ def make_mcmc_meta(conf, meds_meta, meds_file):
     return meta
 
 
-def run_lm(meds_files, conf):
+def run_lm(meds_files, conf, checkpoint_data=None):
     gprior=get_gprior(conf)
     conf['gprior'] = gprior
 
     if len(meds_files)==1:
-        gm=gmix_meds.MedsFit(meds_files[0], **conf)
+        gm=gmix_meds.MedsFit(meds_files[0],
+                             checkpoint_data=checkpoint_data,
+                             **conf)
         gm.do_fits()
         data=gm.get_data()
         meds_meta=[gm.get_meds_meta()]
     else:
-        gm=gmix_meds.MedsFitMB(meds_files, **conf)
+        gm=gmix_meds.MedsFitMB(meds_files,
+                               checkpoint_data=checkpoint_data,
+                               **conf)
         gm.do_fits()
         data=gm.get_data()
         meds_meta=gm.get_meds_meta_list()
@@ -315,6 +319,14 @@ def get_range(rng_string):
     return rng
 
 def go(config_file, meds_files, out_file, options):
+
+    checkpoint_file=out_file.replace('.fits','-checkpoint.fits')
+    if os.path.exists(checkpoint_file):
+        print >>stderr,'reading checkpoint data:',checkpoint_file
+        checkpoint_data=fitsio.read(checkpoint_file,extname='model_fits')
+    else:
+        checkpoint_data=None
+
     conf=load_config(config_file)
     pprint.pprint(conf,stream=stderr)
 
@@ -324,7 +336,11 @@ def go(config_file, meds_files, out_file, options):
             # note extracted get cleaned up when MedsExtractors
             # get garbage collected
             extracted=get_sub(meds_files, rng, options.work_dir)
+            meds_files_full=meds_files
             meds_files=[ex.sub_file for ex in extracted]
+            rng_send=None
+        else:
+            rng_send=rng
 
 
     det_cat_file=options.det_cat
@@ -336,14 +352,21 @@ def go(config_file, meds_files, out_file, options):
 
     # we now do range by extracting it, see above, so
     # this is always None
-    conf['obj_range'] = None
+    conf['obj_range'] = rng_send
     conf['det_cat'] = det_cat
     conf['config_file']=config_file
+    conf['checkpoint_file']=checkpoint_file
 
     if conf['fitter'] == 'lm':
-        data, meta = run_lm(meds_files, conf)
+        data, meta = run_lm(meds_files, conf,
+                            checkpoint_data=checkpoint_data)
     else:
-        data, meta = run_mcmc(meds_files, conf)
+        data, meta = run_mcmc(meds_files, conf,
+                              checkpoint_data=checkpoint_data)
+
+    if options.work_dir is not None:
+        meta['meds_file'] = meds_files_full
+
 
     makedir_fromfile(out_file)
     print 'writing:',out_file
