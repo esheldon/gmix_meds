@@ -39,6 +39,8 @@ NO_ATTEMPT=2**30
 PSF_S2N=1.e6
 PSF_OFFSET_MAX=0.25
 
+SIMPLE_MODELS_DEFAULT = ['exp','dev']
+
 _psf_ngauss_map={'lm1':1, 'lm2':2, 'lm3':3,
                  'em1':1, 'em2':2, 'em3':3}
 def get_psf_ngauss(psf_model):
@@ -97,7 +99,7 @@ class MedsFit(object):
         self.region=keys.get('region','seg_and_sky')
         self.max_box_size=keys.get('max_box_size',2048)
 
-        self.simple_models=keys.get('simple_models',['exp','dev'])
+        self.simple_models=keys.get('simple_models',SIMPLE_MODELS_DEFAULT )
 
         self.match_use_band_center = keys.get('match_use_band_center',False)
         self.match_self = keys.get('match_self',False)

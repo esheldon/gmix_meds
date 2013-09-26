@@ -1,20 +1,38 @@
 import os
+import numpy
 import fitsio
 import json
+from . import lmfit
+
+def load_config(name):
+    path = '$GMIX_MEDS_DIR/share/config/%s.yaml' % name
+    path = os.path.expandvars(path)
+
+    return load_config_path(path)
+
+def load_config_path(fname):
+    import yaml
+    with open(fname) as fobj:
+        data=yaml.load(fobj)
+    return data
 
 class TileConcat(object):
     """
     Concatenate the split files for a single tile
     """
-    def __init__(self, run, tilename, ftype):
+    def __init__(self, run, tilename, ftype, blind=False, clobber=False):
         import desdb
         import deswl
 
         self.run=run
         self.tilename=tilename
         self.ftype=ftype
+        self.blind=blind
+        self.clobber=clobber
 
         self.rc=deswl.files.Runconfig(run)
+        self.config = load_config(self.rc['config'])
+
         self.nper=self.rc['nper']
 
         self.df=desdb.files.DESFiles()
@@ -22,6 +40,9 @@ class TileConcat(object):
         self.set_output_file()
         self.find_coadd_run()
         self.set_nrows()
+
+        if self.blind:
+            self.blind_factor = get_blind_factor()
 
     def find_coadd_run(self):
         """
@@ -31,9 +52,7 @@ class TileConcat(object):
         meds_dir = self.df.dir('meds_run',medsconf=self.rc['medsconf'])
         pattern = os.path.join(meds_dir,'*%s*' % self.tilename)
 
-        print pattern
         flist=glob.glob(pattern)
-        print flist
         if len(flist) != 1:
             raise RuntimeError("expected 1 dir, found %d" % len(flist))
 
@@ -52,13 +71,17 @@ class TileConcat(object):
             self.nrows=fobj['object_data'].get_nrows()
 
     def set_output_file(self):
-        import desdb
 
         out_dir = self.df.dir('wlpipe_collated', run=self.run)
         if not os.path.exists(out_dir):
             os.makedirs(out_dir)
 
-        self.out_file = self.df.url('wlpipe_me_collated',
+        if self.blind:
+            out_ftype='wlpipe_me_collated_blinded'
+        else:
+            out_ftype='wlpipe_me_collated'
+            
+        self.out_file = self.df.url(out_ftype,
                                     run=self.run,
                                     tilename=self.tilename,
                                     filetype=self.ftype,
@@ -72,6 +95,10 @@ class TileConcat(object):
         nper=self.rc['nper']
         startlist,endlist=get_chunks(self.nrows,nper)
         nchunk=len(startlist)
+
+        if os.path.exists(out_file) and not self.clobber:
+            print 'file already exists, skipping'
+            return
 
         with fitsio.FITS(out_file,'rw',clobber=True) as fobj:
 
@@ -92,6 +119,9 @@ class TileConcat(object):
                 print '\t%d/%d %s' %(i+1,nchunk,fname)
                 data = self.read_data(fname)
 
+                if self.blind:
+                    self.blind_data(data)
+
                 if i==0:
                     meta=fitsio.read(fname, ext="meta_data")
                     fobj.write(data,extname="model_fits")
@@ -102,14 +132,90 @@ class TileConcat(object):
 
         print 'output is in:',out_file
 
+    def blind_data(self,data):
+        simple_models=self.config.get('simple_models',lmfit.SIMPLE_MODELS_DEFAULT )
+
+        for fit_type in simple_models:
+            g_name='%s_g' % fit_type
+            flag_name='%s_flags' % fit_type
+
+            if flag_name in data.dtype.names:
+                w,=numpy.where(data[flag_name] == 0)
+                if w.size > 0:
+                    data[g_name][w,:] *= self.blind_factor
+
+    def pick_fields(self, data0):
+        import esutil
+        dt=[]
+        names=[]
+        ftypes=[]
+        for d in data0.dtype.descr:
+            n=d[0]
+            if ('psf1' not in n 
+                    and n != 'processed'
+                    and 'loglike' not in n
+                    and 'aic' not in n
+                    and 'bic' not in n
+                    and 'dof' not in n
+                    and 'fit_prob' not in n):
+                dt.append(d)
+                names.append(n)
+
+        
+        simple_models=self.config.get('simple_models',lmfit.SIMPLE_MODELS_DEFAULT )
+
+        do_T=False
+        if 'simple' in self.config['fit_types']:
+            for ft in simple_models:
+                Tn = '%s_T' % ft
+                Ten = '%s_err' % Tn
+                Ts2n = '%s_s2n' % Tn
+
+                if Tn not in data0.dtype.names:
+                    fadd=[(Tn,'f8'),
+                          (Ten,'f8'),
+                          (Ts2n,'f8')]
+                    ind = names.index('%s_flux_cov' % ft)
+                    for f in fadd:
+                        dt.insert(ind+1, f)
+                        names.insert(ind+1, f[0])
+                        ind += 1
+
+                    do_T=True
+
+
+        data=numpy.zeros(data0.size, dtype=dt)
+        esutil.numpy_util.copy_fields(data0, data)
+
+        if do_T:
+            for ft in simple_models:
+                pn = '%s_pars' % ft
+                pcn = '%s_pars_cov' % ft
+
+                Tn = '%s_T' % ft
+                Ten = '%s_err' % Tn
+                Ts2n = '%s_s2n' % Tn
+                fn='%s_flags' % ft
+
+                data[Tn][:]   = -9999.0
+                data[Ten][:]  =  9999.0
+                data[Ts2n][:] = -9999.0
+
+                w,=numpy.where(data[fn] == 0)
+                if w.size > 0:
+                    data[Tn][w]   = data[pn][w, 4]
+                    data[Ten][w]  =  numpy.sqrt(data[pcn][w,4,4])
+                    data[Ts2n][w] = data[Tn][w]/data[Ten][w]
+
+
+        return data
+
     def read_data(self, fname):
-        data = fitsio.read(fname, ext="model_fits")
-        if 'exp_T_s2n' not in data.dtype.names:
-            import  esutil as eu
-            fadd=[('exp_T_s2n','f8'),('dev_T_s2n','f8')]
-            newdata=eu.numpy_util.add_fields(data, fadd, 
-                                             defaults=[-9999,-9999])
+        data0 = fitsio.read(fname, ext="model_fits")
+
+        data = self.pick_fields(data0)
             
+        return data
 
 
 
@@ -171,36 +277,6 @@ def key_by_tile_band(data0, ftype):
 
     return data
 
-def concat_tile(goodlist_file, tilename, band, ftype):
-    """
-    concatenate the files from a single band
-
-    Only works when you have a goodlist obviously!  If
-    you just want to concatenate a know file list, use
-    the standalone gmix-meds-concat
-
-    parameters
-    ----------
-    goodlist_file:
-        The file holding the "good" processing data.  The
-        file list will be extracted.
-    tilename:
-        coadd tile name
-    band:
-        filter
-    ftype:
-        e.g. 'lmfit'
-    """
-    with open(goodlist_file) as fobj:
-        data0=json.load(fobj)
-
-    data=key_by_tile_band(data0, ftype)
-
-    key=get_tile_key(tilename, band)
-    flist=data[key]
-
-    tc=TileConcat(flist)
-    tc.concat()
 
 def _load_and_check_lists(goodlist,badlist):
     with open(goodlist) as fobj:
@@ -216,3 +292,22 @@ def _load_and_check_lists(goodlist,badlist):
     return good_data
 
 
+def get_blind_factor():
+    """
+    by joe zuntz
+    """
+    import sys
+    import hashlib
+
+    code_phrase = "DES is blinded"
+
+    #hex number derived from code phrase
+    m = hashlib.md5(code_phrase).hexdigest()
+    #convert to decimal
+    s = int(m, 16)
+    # last 8 digits
+    f = s%100000000
+    # turn 8 digit number into value between 0 and 1
+    g = f*1e-8
+    #get value between 0.9 and 1
+    return 0.9 + 0.1*g

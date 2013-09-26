@@ -60,7 +60,7 @@ class MedsFitMB(MedsFit):
         self.region=keys.get('region','seg_and_sky')
         self.max_box_size=keys.get('max_box_size',2048)
 
-        self.simple_models=keys.get('simple_models',['exp','dev'])
+        self.simple_models=keys.get('simple_models',SIMPLE_MODELS_DEFAULT )
 
         self.reject_outliers=keys.get('reject_outliers',False)
 
