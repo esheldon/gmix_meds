@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-    %prog [options] config_file meds_file out_file
+    %prog [options] config_file meds_file(s) out_file
 
 Process the input meds file.
 """
@@ -44,6 +44,77 @@ def makedir_fromfile(fname):
         except:
             # probably a race condition
             pass
+
+def make_ngmix_meta(conf, meds_meta_list, meds_files):
+
+    dt = meds_meta_list[0].dtype.descr
+
+    config_file=conf['config_file']
+
+    clen=len(config_file)
+    flen=max( [len(mf) for mf in meds_files] )
+    mlen=len(conf['psf_model'])
+    rlen=len(conf['region'])
+    gtlen = len(conf['g_prior_type'])
+
+    dt += [('gmix_meds_config','S%d' % clen),
+           ('meds_file','S%d' % flen),
+           ('psf_ntry','i2'),
+           ('psf_model','S%d' % mlen),
+           ('psf_offset_max','f8'),
+           ('region','S%d' % rlen),
+           ('nwalkers','i2'),
+           ('burnin','i2'),
+           ('nstep','i2'),
+           ('mca_a','f8'),
+
+           ('do_pqr','i2'),
+           ('do_lensfit','i2'),
+
+           ('g_prior_type','S%d' % gtlen)]
+
+    nband=len(meds_meta_list)
+
+    mlist=[]
+    for band in xrange(nband):
+
+        meta=numpy.zeros(1, dtype=dt)
+        meds_file=meds_files[band]
+        meds_meta=meds_meta_list[band]
+        mf=meds_files[band]
+
+        eu.numpy_util.copy_fields(meds_meta, meta)
+
+        meta['gmix_meds_config'] = config_file
+        meta['meds_file'] = meds_file
+        meta['psf_ntry'] = conf['psf_ntry']
+        meta['psf_model'] = conf['psf_model']
+        meta['psf_offset_max'] = conf['psf_offset_max']
+        meta['region'] = conf['region']
+
+        meta['nwalkers'] = conf['nwalkers']
+        meta['burnin'] = conf['burnin']
+        meta['nstep'] = conf['nstep']
+        meta['mca_a'] = conf['mca_a']
+
+        if conf['do_pqr']:
+            meta['do_pqr']=1
+        else:
+            meta['do_pqr']=0
+
+        if conf['do_lensfit']:
+            meta['do_lensfit']=1
+        else:
+            meta['do_lensfit']=0
+
+
+        meta['g_prior_type'] = conf['g_prior_type']
+
+        mlist.append(meta)
+
+    meta=eu.numpy_util.combine_arrlist(mlist)
+    return meta
+
 
 def make_lm_meta(conf, meds_meta_list, meds_files):
 
@@ -171,11 +242,36 @@ def run_lm(meds_files, conf, checkpoint_data=None):
 
     return data, meta
 
+def run_ngmix(meds_files, conf, checkpoint_data=None):
+    import ngmix
+    import gmix_meds.nfit
+
+    gprior=get_gprior(conf)
+    conf['g_prior'] = gprior
+
+    gm=gmix_meds.nfit.MedsFit(meds_files,
+                             checkpoint_data=checkpoint_data,
+                             **conf)
+    gm.do_fits()
+    data=gm.get_data()
+    meds_meta=[gm.get_meds_meta()]
+
+
+    meta=make_ngmix_meta(conf, meds_meta, meds_files)
+
+    return data, meta
+
+
 def get_gprior(conf):
     import gmix_image
-    gprior_type=conf.get('gprior_type',None)
+    if 'g_prior_type' in conf:
+        gprior_type=conf['g_prior_type']
+    elif 'gprior_type' in conf:
+        gprior_type=conf['gprior_type']
+    else:
+        gprior_type=None
 
-    if gprior_type is None:
+    if gprior_type is None or gprior_type=='None':
         return None
     elif gprior_type =='flat':
         return gmix_image.priors.GPriorFlat()
@@ -332,6 +428,7 @@ def go(config_file, meds_files, out_file, options):
     pprint.pprint(conf,stream=stderr)
 
     rng=get_range( options.obj_range )
+    rng_send=None
     if rng is not None:
         if options.work_dir is not None:
             # note extracted get cleaned up when MedsExtractors
@@ -361,6 +458,9 @@ def go(config_file, meds_files, out_file, options):
     if conf['fitter'] == 'lm':
         data, meta = run_lm(meds_files, conf,
                             checkpoint_data=checkpoint_data)
+    elif conf['fitter'] == 'ngmix':
+        data, meta = run_ngmix(meds_files, conf,
+                               checkpoint_data=checkpoint_data)
     else:
         data, meta = run_mcmc(meds_files, conf,
                               checkpoint_data=checkpoint_data)

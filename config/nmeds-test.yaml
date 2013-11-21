@@ -1,0 +1,41 @@
+fitter: "ngmix"
+
+nwalkers: 20
+burnin: 400
+nstep: 200
+mca_a: 3.0
+
+psf_ntry: 2
+
+psf_model: "em2"
+region: "seg_and_sky"
+
+# in arcsec
+psf_offset_max: 0.25
+
+max_box_size: 256
+
+#fit_types: ['psf','psf1','simple']
+fit_types: ['psf']
+reject_outliers: True
+
+use_cenprior: True
+cen_width: 0.27
+
+g_prior_type: "None"
+#gprior_type: "exp"
+#gprior_pars: [27.63, 1.25, 0.016, 0.77]
+
+
+# checkpoint time in seconds, needed for condor in case we pass
+# a batch system limit such as in the condor scavenge
+#
+# 1.5 hours
+
+do_pqr: False
+do_lensfit: False
+
+checkpoint: 5400
+
+make_plots: False
+debug: 0
