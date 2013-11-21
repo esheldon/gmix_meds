@@ -179,7 +179,6 @@ class MedsFit(object):
         if any(flags):
             self.data['flags'][dindex] = PSF_FIT_FAILURE 
             return
-        stop
 
         im_lol, wt_lol, jacob_lol, len_list = \
             self._extract_sub_lists(keep_lol,im_lol,wt_lol,jacob_lol)
@@ -193,6 +192,7 @@ class MedsFit(object):
                'jacob_lol':jacob_lol,
                'psf_gmix_lol':psf_gmix_lol}
 
+        stop
         self._do_all_fits(dindex, sdata)
 
         self.data['time'][dindex] = time.time()-t0
@@ -318,7 +318,7 @@ class MedsFit(object):
         """
         keep_lol=[]
         gmix_lol=[]
-        flags_list=[]
+        flag_list=[]
 
         for band in self.iband:
             meds=self.meds_list[band]
@@ -332,12 +332,12 @@ class MedsFit(object):
 
             # only care about flags if we have no psfs left
             if len(keep_list) == 0:
-                flags_list.append( flags )
+                flag_list.append( flags )
             else:
-                flags_list.append( 0 )
+                flag_list.append( 0 )
 
        
-        return keep_lol, gmix_lol, flags
+        return keep_lol, gmix_lol, flag_list
 
 
     def _fit_psfs_oneband(self,meds,mindex,jacob_list,psfex_list):
@@ -451,6 +451,8 @@ class MedsFit(object):
                 if i == (self.psf_ntry-1):
                     raise
 
+        print 'found good fit:'
+        print fitter.get_gmix()
         return fitter
 
     def _get_em_guess(self, sigma2):
@@ -459,26 +461,24 @@ class MedsFit(object):
         """
         if self.psf_ngauss==1:
             pars=numpy.array( [1.0, 0.0, 0.0, 
-                               0.5*sigma2*(1.0 + 0.1*srandu()),
+                               sigma2*(1.0 + 0.1*srandu()),
                                0.0,
-                               0.5*sigma2*(1.0 + 0.1*srandu())] )
+                               sigma2*(1.0 + 0.1*srandu())] )
         else:
-            em2_fguess=numpy.array([0.5793612389470884,1.621860687127999])
-            em2_pguess=numpy.array([0.596510042804182,0.4034898268889178])
 
-            pars=numpy.array( [em2_pguess[0],
+            pars=numpy.array( [_em2_pguess[0],
                                0.1*srandu(),
                                0.1*srandu(),
-                               0.5*em2_fguess[0]*sigma2*(1.0 + 0.1*srandu()),
+                               _em2_fguess[0]*sigma2*(1.0 + 0.1*srandu()),
                                0.0,
-                               0.5*em2_fguess[0]*sigma2*(1.0 + 0.1*srandu()),
+                               _em2_fguess[0]*sigma2*(1.0 + 0.1*srandu()),
 
-                               em2_pguess[1],
+                               _em2_pguess[1],
                                0.1*srandu(),
                                0.1*srandu(),
-                               0.5*em2_fguess[1]*sigma2*(1.0 + 0.1*srandu()),
+                               _em2_fguess[1]*sigma2*(1.0 + 0.1*srandu()),
                                0.0,
-                               0.5*em2_fguess[1]*sigma2*(1.0 + 0.1*srandu())] )
+                               _em2_fguess[1]*sigma2*(1.0 + 0.1*srandu())] )
 
         return ngmix.gmix.GMix(pars=pars)
 
@@ -515,6 +515,40 @@ class MedsFit(object):
             len_list.append( len(imlist) )
 
         return im_lol, wt_lol, jacob_lol, len_list
+
+
+    def _do_all_fits(self, dindex, sdata):
+        if 'psf' in self.conf['fit_types']:
+            self._fit_psf_flux(dindex, sdata)
+        else:
+            raise ValueError("you should do a psf_flux fit")
+ 
+        max_psf_s2n=self.data['psf_flux_s2n'][dindex,:].max()
+        if max_psf_s2n >= self.conf['min_psf_s2n']:
+            if 'simple' in self.conf['fit_types']:
+                self._fit_mb_simple_models(dindex, sdata)
+            if 'bd' in self.conf['fit_types']:
+                self._fit_bd(dindex, sdata)
+        else:
+            mess="    psf s/n too low: %s (%s)"
+            mess=mess % (max_psf_s2n,self.conf['min_psf_s2n'])
+            print >>stderr,mess
+
+
+    def _fit_psf_flux(self, dindex, sdata):
+        """
+        Perform PSF flux fits on each band separately
+        """
+
+        print >>stderr,'    fitting: psf'
+        for band in self.iband:
+            self._fit_psf_flux_oneband(dindex, sdata, band)
+
+        print_pars(self.data['psf_flux'][dindex], stream=stderr, front='        ')
+
+
+    def _fit_psf_flux_oneband(self, dindex, sdata, band):
+        pass
 
     def _load_meds_files(self):
         """
@@ -649,7 +683,8 @@ class MedsFit(object):
         n=get_model_names('psf')
         dt += [(n['flags'],   'i4',bshape),
                (n['flux'],    'f8',bshape),
-               (n['flux_err'],'f8',bshape)]
+               (n['flux_err'],'f8',bshape),
+               (n['flux_s2n'],'f8',bshape)]
 
         num=self.index_list.size
         data=numpy.zeros(num, dtype=dt)
@@ -706,12 +741,14 @@ def _get_as_list(data_in):
         out=data_in
     return out
 
-def calc_offset_arcsec(gm):
+def calc_offset_arcsec(gm, scale=1.0):
     data=gm.get_data()
 
-    offset=sqrt( (data['row'][0]-data['row'][1])**2 + 
-                 (data['col'][0]-data['col'][1])**2 )
-    offset_arcsec=offset*PIXEL_SCALE
+    offset=numpy.sqrt( (data['row'][0]-data['row'][1])**2 + 
+                       (data['col'][0]-data['col'][1])**2 )
+    offset_arcsec=offset*scale
     return offset_arcsec
 
 
+_em2_fguess=numpy.array([0.5793612389470884,1.621860687127999])
+_em2_pguess=numpy.array([0.596510042804182,0.4034898268889178])
