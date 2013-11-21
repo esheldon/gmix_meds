@@ -326,6 +326,7 @@ class MedsMCMC(MedsFit):
         nobj=self.meds.size
 
         dt=[('id','i4'),
+            ('processed','i1'),
             ('flags','i4'),
             ('nimage_tot','i4'),
             ('nimage_use','i4'),

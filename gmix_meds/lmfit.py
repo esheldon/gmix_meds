@@ -39,6 +39,8 @@ NO_ATTEMPT=2**30
 PSF_S2N=1.e6
 PSF_OFFSET_MAX=0.25
 
+SIMPLE_MODELS_DEFAULT = ['exp','dev']
+
 _psf_ngauss_map={'lm1':1, 'lm2':2, 'lm3':3,
                  'em1':1, 'em2':2, 'em3':3}
 def get_psf_ngauss(psf_model):
@@ -68,6 +70,10 @@ class MedsFit(object):
         self.conf.update(keys)
 
         self.meds_file=meds_file
+        self.checkpoint = self.conf.get('checkpoint',172800)
+        self.checkpoint_file = self.conf.get('checkpoint_file',None)
+        self._checkpoint_data=keys.get('checkpoint_data',None)
+
         print >>stderr,'meds file:',meds_file
         self.meds=meds.MEDS(meds_file)
         self.meds_meta=self.meds.get_meta()
@@ -93,7 +99,7 @@ class MedsFit(object):
         self.region=keys.get('region','seg_and_sky')
         self.max_box_size=keys.get('max_box_size',2048)
 
-        self.simple_models=keys.get('simple_models',['exp','dev'])
+        self.simple_models=keys.get('simple_models',SIMPLE_MODELS_DEFAULT )
 
         self.match_use_band_center = keys.get('match_use_band_center',False)
         self.match_self = keys.get('match_self',False)
@@ -113,7 +119,7 @@ class MedsFit(object):
         Get the data structure.  If a subset was requested, only those rows are
         returned.
         """
-        return self.data[self.index_list]
+        return self.data
 
     def get_meds_meta(self):
         return self.meds_meta.copy()
@@ -133,14 +139,35 @@ class MedsFit(object):
         t0=time.time()
 
         last=self.index_list[-1]
-        for index in self.index_list:
-            print >>stderr,'index: %d:%d' % (index,last),
-            self._fit_obj(index)
+        num=len(self.index_list)
+        self.checkpointed=False
+
+        for dindex in xrange(num):
+            if self.data['processed'][dindex]==1:
+                # checkpointing
+                continue
+
+            mindex = self.index_list[dindex]
+            print >>stderr,'index: %d:%d' % (mindex,last),
+            self._fit_obj(dindex)
+
+            tm=time.time()-t0
+
+            if self._should_checkpoint(tm):
+                self._write_checkpoint(tm)
 
         tm=time.time()-t0
-        print >>stderr,"time per:",tm/len(self.index_list)
+        print >>stderr,"time per:",tm/num
+    
+    def _should_checkpoint(self, tm):
+        if (tm > self.checkpoint
+                and self.checkpoint_file is not None
+                and not self.checkpointed):
+            return True
+        else:
+            return False
 
-    def _fit_obj(self, index):
+    def _fit_obj(self, dindex):
         """
         Process the indicated object
 
@@ -150,32 +177,39 @@ class MedsFit(object):
 
         t0=time.time()
 
-        self.data['flags'][index] = self._obj_check(self.meds, index)
-        if self.data['flags'][index] != 0:
+        # for checkpointing
+        self.data['processed'][dindex]=1
+
+        mindex=self.index_list[dindex]
+
+        self.data['id'][dindex] = self.meds['number'][mindex]
+
+        self.data['flags'][dindex] = self._obj_check(self.meds, mindex)
+        if self.data['flags'][dindex] != 0:
             return 0
 
-        imlist0,wtlist0,self.coadd = self._get_imlist_wtlist(self.meds,index)
-        jacob_list0=self._get_jacobian_list(self.meds,index)
+        imlist0,wtlist0,self.coadd = self._get_imlist_wtlist(self.meds,mindex)
+        jacob_list0=self._get_jacobian_list(self.meds,mindex)
 
 
-        self.data['nimage_tot'][index] = len(imlist0)
+        self.data['nimage_tot'][dindex] = len(imlist0)
         print >>stderr,imlist0[0].shape
     
-        keep_list,psf_gmix_list=self._fit_psfs(self.meds,index,jacob_list0,self.psfex_list)
+        keep_list,psf_gmix_list=self._fit_psfs(self.meds,mindex,jacob_list0,self.psfex_list)
         if len(psf_gmix_list)==0:
-            self.data['flags'][index] |= PSF_FIT_FAILURE
+            self.data['flags'][dindex] |= PSF_FIT_FAILURE
             return
 
         keep_list,psf_gmix_list=self._remove_bad_psfs(keep_list,psf_gmix_list)
         if len(psf_gmix_list)==0:
-            self.data['flags'][index] |= PSF_LARGE_OFFSETS
+            self.data['flags'][dindex] |= PSF_LARGE_OFFSETS
             return
 
         imlist = [imlist0[i] for i in keep_list]
         wtlist = [wtlist0[i] for i in keep_list]
         jacob_list = [jacob_list0[i] for i in keep_list]
 
-        self.data['nimage_use'][index] = len(imlist)
+        self.data['nimage_use'][dindex] = len(imlist)
 
         sdata={'keep_list':keep_list,
                'imlist':imlist,
@@ -183,25 +217,25 @@ class MedsFit(object):
                'jacob_list':jacob_list,
                'psf_gmix_list':psf_gmix_list}
 
-        self._do_all_fits(index, sdata)
+        self._do_all_fits(dindex, sdata)
 
-        self.data['time'][index] = time.time()-t0
+        self.data['time'][dindex] = time.time()-t0
 
-    def _do_all_fits(self, index, sdata):
+    def _do_all_fits(self, dindex, sdata):
 
         if 'psf' in self.conf['fit_types']:
-            self._fit_psf_flux(index, sdata)
+            self._fit_psf_flux(dindex, sdata)
         else:
             raise ValueError("you should do a psf_flux fit")
 
-        psf_s2n=self.data['psf_flux_s2n'][index]
+        psf_s2n=self.data['psf_flux_s2n'][dindex]
         if psf_s2n >= self.conf['min_psf_s2n']:
             if 'simple' in self.conf['fit_types']:
-                self._fit_simple_models(index, sdata)
+                self._fit_simple_models(dindex, sdata)
             if 'cmodel' in self.conf['fit_types']:
-                self._fit_cmodel(index, sdata)
+                self._fit_cmodel(dindex, sdata)
             if 'match' in self.conf['fit_types']:
-                self._fit_match(index, sdata)
+                self._fit_match(dindex, sdata)
         else:
             mess="    psf s/n too low: %s (%s)"
             mess=mess % (psf_s2n,self.conf['min_psf_s2n'])
@@ -212,24 +246,25 @@ class MedsFit(object):
 
 
 
-    def _obj_check(self, meds, index):
+    def _obj_check(self, meds, mindex):
         flags=0
-        box_size=meds['box_size'][index]
+
+        box_size=meds['box_size'][mindex]
         if box_size > self.max_box_size:
             print >>stderr,'Box size too big:',box_size
             flags |= BOX_SIZE_TOO_BIG
 
-        if meds['ncutout'][index] < 2:
+        if meds['ncutout'][mindex] < 2:
             print >>stderr,'No SE cutouts'
             flags |= NO_SE_CUTOUTS
         return flags
 
-    def _fit_psfs(self,meds,index,jacob_list,psfex_list):
+    def _fit_psfs(self,meds,mindex,jacob_list,psfex_list):
         """
         Generate psfex images for all SE images and fit
         them to gaussian mixture models
         """
-        ptuple = self._get_psfex_reclist(meds, psfex_list, index)
+        ptuple = self._get_psfex_reclist(meds, psfex_list, mindex)
         imlist,ivarlist,cenlist,siglist,flist,cenpix=ptuple
 
         keep_list=[]
@@ -259,7 +294,7 @@ class MedsFit(object):
                 gmix_list.append( gmix_psf )
 
                 if False:
-                    self._compare_psf_model(im, gm, index, i, flist[i], cenpix)
+                    self._compare_psf_model(im, gm, mindex, i, flist[i], cenpix)
             else:
                 print >>stderr,'psf fail',flist[i]
 
@@ -319,12 +354,16 @@ class MedsFit(object):
         return gm
 
 
-    def _compare_psf_model(self, im, gm, index, i,fname,cenpix):
+    def _compare_psf_model(self, im, gm, mindex, i,fname,cenpix):
+        """
+        Since we work in sky coords, can only generate the
+        diff image currently
+        """
         import os
         import images
 
         print fname
-        name='%s_%06d_%02d' % (self.psf_model,index,i)
+        name='%s_%06d_%02d' % (self.psf_model,mindex,i)
 
         imsum=im.sum()
         model=gm.get_model()
@@ -366,7 +405,7 @@ class MedsFit(object):
 
 
 
-    def _fit_simple_models(self, index, sdata):
+    def _fit_simple_models(self, dindex, sdata):
         """
         Fit all the simple models
         """
@@ -375,7 +414,7 @@ class MedsFit(object):
         for model in self.simple_models:
             print >>stderr,'    fitting:',model
 
-            gm=self._fit_simple(index, model, sdata)
+            gm=self._fit_simple(dindex, model, sdata)
 
             res=gm.get_result()
             rfc_res=gm.get_rfc_result()
@@ -385,54 +424,54 @@ class MedsFit(object):
             if self.debug:
                 self._print_simple_stats(n, rfc_res, res)
 
-            self._copy_simple_pars(index, rfc_res, res, n )
+            self._copy_simple_pars(dindex, rfc_res, res, n )
 
 
-    def _fit_simple(self, index, model, sdata):
+    def _fit_simple(self, dindex, model, sdata):
         """
         Fit one of the "simple" models, e.g. exp or dev
         """
 
-        if self.data['psf_flags'][index]==0:
+        if self.data['psf_flags'][dindex]==0:
             T_guess = 16.0
-            counts_guess=2*self.data['psf_flux'][index]
+            counts_guess=2*self.data['psf_flux'][dindex]
         else:
             T_guess=None
             counts_guess=None
 
         cen_prior=None
         if self.use_cenprior:
-            cen_prior=self._get_simple_cen_prior(index)
+            cen_prior=self._get_simple_cen_prior(dindex)
 
 
         gm=GMixFitMultiSimple(sdata['imlist'],
-                               sdata['wtlist'],
-                               sdata['jacob_list'],
-                               sdata['psf_gmix_list'],
-                               model,
-                               cen_prior=cen_prior,
-                               gprior=self.gprior,
-                               lm_max_try=self.obj_ntry,
-                               T_guess=T_guess,
-                               counts_guess=counts_guess)
+                              sdata['wtlist'],
+                              sdata['jacob_list'],
+                              sdata['psf_gmix_list'],
+                              model,
+                              cen_prior=cen_prior,
+                              gprior=self.gprior,
+                              lm_max_try=self.obj_ntry,
+                              T_guess=T_guess,
+                              counts_guess=counts_guess)
 
         return gm
 
-    def _fit_simple_many_tries(self, index, model, sdata):
+    def _fit_simple_many_tries(self, dindex, model, sdata):
         """
         Fit one of the "simple" models, e.g. exp or dev
         """
 
-        if self.data['psf_flags'][index]==0:
+        if self.data['psf_flags'][dindex]==0:
             T_guess = 16.0
-            counts_guess=2*self.data['psf_flux'][index]
+            counts_guess=2*self.data['psf_flux'][dindex]
         else:
             T_guess=None
             counts_guess=None
 
         cen_prior=None
         if self.use_cenprior:
-            cen_prior=self._get_simple_cen_prior(index)
+            cen_prior=self._get_simple_cen_prior(dindex)
 
         dim=sdata['imlist'][0].shape[0]
 
@@ -487,43 +526,43 @@ class MedsFit(object):
         gm = gmlist[ibest]
         return gm
 
-    def _get_simple_cen_prior(self,index):
-        if self.data['psf_flags'][index]==0:
-            cen=self.data['psf_pars'][index,0:0+2]
+    def _get_simple_cen_prior(self,dindex):
+        if self.data['psf_flags'][dindex]==0:
+            cen=self.data['psf_pars'][dindex,0:0+2]
         else:
             cen=[0.0,0.0]
 
         cen_prior=CenPrior(cen, [self.cen_width]*2)
         return cen_prior
 
-    def _copy_simple_pars(self, index, rfc_res, res, n):
+    def _copy_simple_pars(self, dindex, rfc_res, res, n):
         if rfc_res is not None:
-            self.data[n['rfc_flags']][index] = rfc_res['flags']
-            self.data[n['rfc_iter']][index] = rfc_res['numiter']
-            self.data[n['rfc_tries']][index] = rfc_res['ntry']
+            self.data[n['rfc_flags']][dindex] = rfc_res['flags']
+            self.data[n['rfc_iter']][dindex] = rfc_res['numiter']
+            self.data[n['rfc_tries']][dindex] = rfc_res['ntry']
 
             if rfc_res['flags']==0:
-                self.data[n['rfc_pars']][index,:] = rfc_res['pars']
-                self.data[n['rfc_pars_cov']][index,:] = rfc_res['pcov']
+                self.data[n['rfc_pars']][dindex,:] = rfc_res['pars']
+                self.data[n['rfc_pars_cov']][dindex,:] = rfc_res['pcov']
 
-        self.data[n['flags']][index] = res['flags']
-        self.data[n['iter']][index] = res['numiter']
-        self.data[n['tries']][index] = res['ntry']
+        self.data[n['flags']][dindex] = res['flags']
+        self.data[n['iter']][dindex] = res['numiter']
+        self.data[n['tries']][dindex] = res['ntry']
 
         if res['flags'] == 0:
-            self.data[n['pars']][index,:] = res['pars']
-            self.data[n['pars_cov']][index,:,:] = res['pcov']
+            self.data[n['pars']][dindex,:] = res['pars']
+            self.data[n['pars_cov']][dindex,:,:] = res['pcov']
 
             flux=res['pars'][5]
             flux_err=sqrt(res['pcov'][5,5])
-            self.data[n['flux']][index] = flux
-            self.data[n['flux_err']][index] = flux_err
+            self.data[n['flux']][dindex] = flux
+            self.data[n['flux_err']][dindex] = flux_err
 
-            self.data[n['g']][index,:] = res['pars'][2:2+2]
-            self.data[n['g_cov']][index,:,:] = res['pcov'][2:2+2,2:2+2]
+            self.data[n['g']][dindex,:] = res['pars'][2:2+2]
+            self.data[n['g_cov']][dindex,:,:] = res['pcov'][2:2+2,2:2+2]
 
             for sn in _stat_names:
-                self.data[n[sn]][index] = res[sn]
+                self.data[n[sn]][dindex] = res[sn]
         else:
             if self.debug:
                 print >>stderr,'flags != 0, errmsg:',res['errmsg']
@@ -532,25 +571,25 @@ class MedsFit(object):
 
 
 
-    def _fit_cmodel(self, index, sdata):
+    def _fit_cmodel(self, dindex, sdata):
         if self.debug:
             print >>stderr,'\tfitting frac_dev'
 
-        self.data['cmodel_flags'][index]=0
+        self.data['cmodel_flags'][dindex]=0
 
-        if self.data['exp_flags'][index]!=0:
-            self.data['cmodel_flags'][index] |= EXP_FIT_FAILURE
-        if self.data['dev_flags'][index]!=0:
-            self.data['cmodel_flags'][index] |= DEV_FIT_FAILURE
+        if self.data['exp_flags'][dindex]!=0:
+            self.data['cmodel_flags'][dindex] |= EXP_FIT_FAILURE
+        if self.data['dev_flags'][dindex]!=0:
+            self.data['cmodel_flags'][dindex] |= DEV_FIT_FAILURE
 
-        if self.data['cmodel_flags'][index] != 0:
+        if self.data['cmodel_flags'][dindex] != 0:
             return
 
-        exp_gmix = gmix_image.GMix(self.data['exp_pars'][index],type='exp')
-        dev_gmix = gmix_image.GMix(self.data['dev_pars'][index],type='dev')
+        exp_gmix = gmix_image.GMix(self.data['exp_pars'][dindex],type='exp')
+        dev_gmix = gmix_image.GMix(self.data['dev_pars'][dindex],type='dev')
 
-        if (self.data['exp_loglike'][index] 
-            > self.data['dev_loglike'][index]):
+        if (self.data['exp_loglike'][dindex] 
+            > self.data['dev_loglike'][dindex]):
             fracdev_start=0.1
         else:
             fracdev_start=0.9
@@ -564,29 +603,29 @@ class MedsFit(object):
                               fracdev_start,
                               lm_max_try=self.obj_ntry)
         res=gm.get_result()
-        self.data['cmodel_flags'][index] = res['flags']
-        self.data['cmodel_iter'][index] = res['numiter']
-        self.data['cmodel_tries'][index] = res['ntry']
+        self.data['cmodel_flags'][dindex] = res['flags']
+        self.data['cmodel_iter'][dindex] = res['numiter']
+        self.data['cmodel_tries'][dindex] = res['ntry']
 
         if res['flags']==0:
             f=res['fracdev']
             ferr=res['fracdev_err']
-            self.data['frac_dev'][index] = f
-            self.data['frac_dev_err'][index] = ferr
-            flux=(1.-f)*self.data['exp_flux'][index] \
-                    + f*self.data['dev_flux'][index]
-            flux_err2=(1.-f)**2*self.data['exp_flux_err'][index]**2 \
-                         + f**2*self.data['dev_flux_err'][index]**2
+            self.data['frac_dev'][dindex] = f
+            self.data['frac_dev_err'][dindex] = ferr
+            flux=(1.-f)*self.data['exp_flux'][dindex] \
+                    + f*self.data['dev_flux'][dindex]
+            flux_err2=(1.-f)**2*self.data['exp_flux_err'][dindex]**2 \
+                         + f**2*self.data['dev_flux_err'][dindex]**2
             flux_err=sqrt(flux_err2)
-            self.data['cmodel_flux'][index] = flux
-            self.data['cmodel_flux_err'][index] = flux_err
+            self.data['cmodel_flux'][dindex] = flux
+            self.data['cmodel_flux_err'][dindex] = flux_err
 
             if self.debug:
                 fmt='\t\t%s: %g +/- %g'
                 print >>stderr,fmt % ('frac_dev',f,ferr)
                 print >>stderr,fmt % ('cmodel_flux',flux,flux_err)
                     
-    def _fit_psf_flux(self, index, sdata):
+    def _fit_psf_flux(self, dindex, sdata):
         if self.debug:
             print >>stderr,'\tfitting psf flux'
 
@@ -601,31 +640,31 @@ class MedsFit(object):
                                cen_prior=cen_prior,
                                lm_max_try=self.obj_ntry)
         res=gm.get_result()
-        self.data['psf_flags'][index] = res['flags']
-        self.data['psf_iter'][index] = res['numiter']
-        self.data['psf_tries'][index] = res['ntry']
+        self.data['psf_flags'][dindex] = res['flags']
+        self.data['psf_iter'][dindex] = res['numiter']
+        self.data['psf_tries'][dindex] = res['ntry']
 
         if res['flags']==0:
-            self.data['psf_pars'][index,:]=res['pars']
-            self.data['psf_pars_cov'][index,:,:] = res['pcov']
+            self.data['psf_pars'][dindex,:]=res['pars']
+            self.data['psf_pars_cov'][dindex,:,:] = res['pcov']
 
             flux=res['pars'][2]
             flux_err=sqrt(res['pcov'][2,2])
-            self.data['psf_flux'][index] = flux
-            self.data['psf_flux_err'][index] = flux_err
-            self.data['psf_flux_s2n'][index] = flux/flux_err
+            self.data['psf_flux'][dindex] = flux
+            self.data['psf_flux_err'][dindex] = flux_err
+            self.data['psf_flux_s2n'][dindex] = flux/flux_err
 
             print >>stderr,'    psf_flux: %g +/- %g' % (flux,flux_err)
 
             n=get_model_names('psf')
             for sn in _stat_names:
-                self.data[n[sn]][index] = res[sn]
+                self.data[n[sn]][dindex] = res[sn]
 
             if self.debug:
                 fmt='\t\t%s: %g +/- %g'
                 print >>stderr,fmt % ('psf_flux',flux,flux_err)
 
-    def _fit_match(self, index, sdata):
+    def _fit_match(self, dindex, sdata):
         if self.debug:
             print >>stderr,'\tfitting matched flux'
         niter=0
@@ -644,7 +683,7 @@ class MedsFit(object):
             # this is the detection band, just copy some data
             #flags,pars,pcov,niter0,ntry0,chi2per0,mod=\
 
-            bres0=self._get_best_simple_pars(self.data,index)
+            bres0=self._get_best_simple_pars(self.data,dindex)
             if bres0['flags']==0:
                 bres.update(bres0)
                 bres['flux']=bres['pars'][5]
@@ -654,7 +693,7 @@ class MedsFit(object):
             else:
                 bres['flags']=bres0['flags']
         else:
-            bres0=self._get_best_simple_pars(self.det_cat,index)
+            bres0=self._get_best_simple_pars(self.det_cat,dindex)
             # if flags != 0 it is because we could not find a good fit of any
             # model
             if bres0['flags']==0:
@@ -666,7 +705,7 @@ class MedsFit(object):
                 print >>stderr,"    fitting: match flux (%s)" % mod
 
                 if self.match_use_band_center:
-                    pars0=self._set_center_from_band(index,pars0,mod)
+                    pars0=self._set_center_from_band(dindex,pars0,mod)
 
 
                 if False:
@@ -679,7 +718,7 @@ class MedsFit(object):
                                                                    lm_max_try=self.obj_ntry)
                 else:
                     match_gmix = gmix_image.GMix(pars0, type=mod)
-                    start_counts=self._get_match_start(index, mod, match_gmix)
+                    start_counts=self._get_match_start(dindex, mod, match_gmix)
                     match_gmix.set_psum(start_counts)
 
                     gm=GMixFitMultiMatch(sdata['imlist'],
@@ -705,19 +744,19 @@ class MedsFit(object):
             else:
                 bres['flags']=bres0['flags']
 
-        self.data['match_flags'][index] = bres['flags']
-        self.data['match_model'][index] = bres['model']
-        self.data['match_iter'][index] = bres['niter']
-        self.data['match_tries'][index] = bres['ntry']
-        self.data['match_chi2per'][index] = bres['chi2per']
-        self.data['match_loglike'][index] = bres['loglike']
-        self.data['match_flux'][index] = bres['flux']
-        self.data['match_flux_err'][index] = bres['flux_err']
+        self.data['match_flags'][dindex] = bres['flags']
+        self.data['match_model'][dindex] = bres['model']
+        self.data['match_iter'][dindex] = bres['niter']
+        self.data['match_tries'][dindex] = bres['ntry']
+        self.data['match_chi2per'][dindex] = bres['chi2per']
+        self.data['match_loglike'][dindex] = bres['loglike']
+        self.data['match_flux'][dindex] = bres['flux']
+        self.data['match_flux_err'][dindex] = bres['flux_err']
         if self.debug:
             fmt='\t\t%s[%s]: %g +/- %g'
             print >>stderr,fmt % ('match_flux',mod,bres['flux'],bres['flux_err'])
 
-    def _set_center_from_band(self, index, pars0, mod):
+    def _set_center_from_band(self, dindex, pars0, mod):
         """
         For testing centroid stuff in match
         """
@@ -725,19 +764,19 @@ class MedsFit(object):
         print >>stderr,"trying band center instead of",pars[0:0+2]
 
         flagsn = '%s_flags' % mod
-        if self.data[flagsn][index] == 0:
+        if self.data[flagsn][dindex] == 0:
             parsn='%s_pars' % mod
-            pars[0:0+2] = self.data[parsn][index,0:0+2]
+            pars[0:0+2] = self.data[parsn][dindex,0:0+2]
             print >>stderr,"    using",mod,pars[0:0+2]
-        elif self.data['psf_flags'][index] == 0:
-            pars[0:0+2] = self.data['psf_pars'][index,0:0+2]
+        elif self.data['psf_flags'][dindex] == 0:
+            pars[0:0+2] = self.data['psf_pars'][dindex,0:0+2]
             print >>stderr,"    using psf",pars[0:0+2]
         else:
             print >>stderr,"    using det",pars[0:0+2]
 
         return pars
 
-    def _get_match_start(self, index, mod, match_gmix):
+    def _get_match_start(self, dindex, mod, match_gmix):
 
         if mod=='exp':
             altmod='dev'
@@ -747,20 +786,20 @@ class MedsFit(object):
         flagn = '%s_flags' % mod
         alt_flagn = '%s_flags' % altmod
 
-        if self.data[flagn][index]==0:
+        if self.data[flagn][dindex]==0:
             fn='%s_flux' % mod
-            flux=self.data[fn][index]
-        elif self.data[alt_flagn][index]==0:
+            flux=self.data[fn][dindex]
+        elif self.data[alt_flagn][dindex]==0:
             fn='%s_flux' % altmod
-            flux=self.data[fn][index]
-        elif self.data['psf_flags'][index]==0:
-            flux=self.data['psf_flux'][index]
+            flux=self.data[fn][dindex]
+        elif self.data['psf_flags'][dindex]==0:
+            flux=self.data['psf_flux'][dindex]
         else:
             flux=match_gmix.get_psum()
 
         return flux
 
-    def _get_best_simple_pars(self, data, index):
+    def _get_best_simple_pars(self, data, dindex):
         ddict={'flags':None,
                'pars':None,
                'pcov':None,
@@ -774,12 +813,12 @@ class MedsFit(object):
         nmod=len(self.simple_models)
         if nmod==2:
 
-            expflags=data['exp_flags'][index]
-            devflags=data['dev_flags'][index]
+            expflags=data['exp_flags'][dindex]
+            devflags=data['dev_flags'][dindex]
 
             if expflags==0 and devflags==0:
-                if (data['exp_loglike'][index] 
-                        > data['dev_loglike'][index]):
+                if (data['exp_loglike'][dindex] 
+                        > data['dev_loglike'][dindex]):
                     mod='exp'
                 else:
                     mod='dev'
@@ -794,7 +833,7 @@ class MedsFit(object):
         elif nmod==1:
             mod=self.simple_models[0]
             fn='%s_flags' % mod
-            if data[fn][index] != 0:
+            if data[fn][dindex] != 0:
                 flags |= (EXP_FIT_FAILURE+DEV_FIT_FAILURE)
                 ddict['flags']=flags
                 return ddict
@@ -808,14 +847,14 @@ class MedsFit(object):
         chn='%s_chi2per' % mod
         ln='%s_loglike' % mod
 
-        pars=data[pn][index].copy()
-        pcov=data[pcn][index].copy()
-        chi2per=data[chn][index]
-        loglike=data[ln][index]
+        pars=data[pn][dindex].copy()
+        pcov=data[pcn][dindex].copy()
+        chi2per=data[chn][dindex]
+        loglike=data[ln][dindex]
 
         if itn in data.dtype.names:
-            niter=data[itn][index]
-            ntry=data[tn][index]
+            niter=data[itn][dindex]
+            ntry=data[tn][dindex]
         else:
             niter=int(DEFVAL)
             ntry=int(DEFVAL)
@@ -829,35 +868,35 @@ class MedsFit(object):
                 'loglike':loglike,
                 'model':mod}
 
-    def _get_jacobian_list(self, meds, index):
+    def _get_jacobian_list(self, meds, mindex):
         """
         Get a list of the jocobians for this object
         skipping the coadd
         """
-        jacob_list=meds.get_jacobian_list(index)
+        jacob_list=meds.get_jacobian_list(mindex)
         jacob_list=jacob_list[1:]
         return jacob_list
 
-    def _get_psfex_reclist(self, meds, psfex_list, index):
+    def _get_psfex_reclist(self, meds, psfex_list, mindex):
         """
         Generate psfex reconstructions for the SE images
         associated with the cutouts, skipping the coadd
 
         add a little noise for the fitter
         """
-        ncut=meds['ncutout'][index]
+        ncut=meds['ncutout'][mindex]
         imlist=[]
         ivarlist=[]
         cenlist=[]
         siglist=[]
         flist=[]
         for icut in xrange(1,ncut):
-            file_id=meds['file_id'][index,icut]
+            file_id=meds['file_id'][mindex,icut]
             pex=psfex_list[file_id]
             fname=pex['filename']
 
-            row=meds['orig_row'][index,icut]
-            col=meds['orig_col'][index,icut]
+            row=meds['orig_row'][mindex,icut]
+            col=meds['orig_col'][mindex,icut]
 
             im0=pex.get_rec(row,col)
             cen0=pex.get_center(row,col)
@@ -946,7 +985,7 @@ class MedsFit(object):
         """
         if self.obj_range is None:
             start=0
-            end=self.meds.size-1
+            end=self.nobj-1
         else:
             start=self.obj_range[0]
             end=self.obj_range[1]
@@ -955,7 +994,12 @@ class MedsFit(object):
 
     def _set_det_cat_and_struct(self, det_cat):
         # this creates self.data
-        self._make_struct()
+
+        if self._checkpoint_data is not None:
+            self.data=self._checkpoint_data
+        else:
+            self._make_struct()
+
         if det_cat is not None:
             if det_cat.size != self.meds.size:
                 mess=("det_cat should be collated and match full "
@@ -971,10 +1015,20 @@ class MedsFit(object):
             self.det_cat=None
 
 
+    def _write_checkpoint(self, tm):
+        print >>stderr,'checkpointing at',tm,'seconds'
+        print >>stderr,self.checkpoint_file
+        fitsio.write(self.checkpoint_file,
+                     self.data,
+                     clobber=True)
+        self.checkpointed=True
+
     def _make_struct(self):
-        nobj=self.meds.size
+
+        nobj=self.index_list.size
 
         dt=[('id','i4'),
+            ('processed','i1'),
             ('flags','i4'),
             ('nimage_tot','i4'),
             ('nimage_use','i4'),
@@ -1046,7 +1100,7 @@ class MedsFit(object):
 
 
         data=numpy.zeros(nobj, dtype=dt)
-        data['id'] = 1+numpy.arange(nobj)
+        #data['id'] = 1+self.index_list
 
         data['cmodel_flags'] = NO_ATTEMPT
         data['cmodel_flux'] = DEFVAL
@@ -1099,26 +1153,26 @@ class MedsFit(object):
         
         self.data=data
 
-    def _get_imlist_wtlist(self, meds, index):
-        imlist,coadd=self._get_imlist(meds,index)
-        wtlist=self._get_wtlist(meds,index)
+    def _get_imlist_wtlist(self, meds, mindex):
+        imlist,coadd=self._get_imlist(meds,mindex)
+        wtlist=self._get_wtlist(meds,mindex)
 
         if self.reject_outliers:
             nreject=reject_outliers(imlist,wtlist)
             if self.make_plots:
                 print 'nreject:',nreject
                 plt=_show_used_pixels(imlist,wtlist,prompt=self.prompt)
-                imname='mosaic%05d.png' % index
+                imname='mosaic%05d.png' % mindex
                 print imname
                 plt.write_img(1100,1100,imname)
 
         return imlist,wtlist,coadd
 
-    def _get_imlist(self, meds, index, type='image'):
+    def _get_imlist(self, meds, mindex, type='image'):
         """
         get the image list, skipping the coadd
         """
-        imlist=meds.get_cutout_list(index,type=type)
+        imlist=meds.get_cutout_list(mindex,type=type)
 
         coadd=imlist[0].astype('f8')
         imlist=imlist[1:]
@@ -1127,7 +1181,7 @@ class MedsFit(object):
         return imlist, coadd
 
 
-    def _get_wtlist(self, meds, index):
+    def _get_wtlist(self, meds, mindex):
         """
         get the weight list.
 
@@ -1135,7 +1189,7 @@ class MedsFit(object):
         zero weight
         """
         if self.region=='seg_and_sky':
-            wtlist=meds.get_cweight_cutout_list(index)
+            wtlist=meds.get_cweight_cutout_list(mindex)
             wtlist=wtlist[1:]
 
             wtlist=[wt.astype('f8') for wt in wtlist]

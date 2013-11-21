@@ -1,15 +1,9 @@
 #!/usr/bin/env python
 """
-    %prog [options] flist
+    %prog [options] run tilename ftype
 
-The combined output name will be derived from the input files, e.g.
-
-    gfme001it-DES0700-5457-i-020000-020999-lmfit.fits
-
-is converted to
-
-    gfme001it-DES0700-5457-i-lmfit.fits
-    
+e.g.
+    gfme004grizt DES0043-4457 i lmfit
 """
 
 import sys
@@ -18,15 +12,24 @@ import gmix_meds
 from optparse import OptionParser
 parser = OptionParser(__doc__)
 
+parser.add_option('--blind',action='store_true',
+                  help="blind the catalog")
+parser.add_option('--clobber',action='store_true',
+                  help="clobber existing catalog, else skip over")
+
 def main():
     options, args = parser.parse_args(sys.argv[1:])
-    if len(args) < 1:
+    if len(args) < 3:
         parser.print_help()
         sys.exit(45)
 
-    flist=args
-    tc=gmix_meds.collate.TileConcat(flist)
+    run=args[0]
+    tilename=args[1]
+    ftype=args[2]
 
+    tc=gmix_meds.collate.TileConcat(run, tilename, ftype,
+                                    blind=options.blind,
+                                    clobber=options.clobber)
     tc.concat()
 
 main()

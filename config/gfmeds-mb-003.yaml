@@ -1,0 +1,45 @@
+fitter: "lm"
+
+psf_ntry: 2
+obj_ntry: 10 # we limit 2 for box_size >= 128
+
+psf_model: "em2"
+region: "seg_and_sky"
+
+# in arcsec
+psf_offset_max: 0.25
+
+max_box_size: 256
+
+fit_types: ['psf','psf1','simple']
+reject_outliers: True
+
+psf1_index: 1
+
+use_cenprior: True
+cen_width: 0.27
+
+gprior_type: null
+#gprior_type: "exp"
+#gprior_pars: [27.63, 1.25, 0.016, 0.77]
+
+
+# at least one band must have psf s/n > this
+# we won't fit other models if the s/n is too low
+# this might be tweaked depending on how many bands
+# and images you have in the stack.
+min_psf_s2n: 4
+
+# max time per object per band in seconds
+# this is allowed for each algorithm
+max_simple_time: 125.0
+
+# checkpoint time in seconds, needed for condor in case we pass
+# a batch system limit such as in the condor scavenge
+#
+# 1.5 hours
+
+checkpoint: 5400
+
+make_plots: False
+debug: 0
