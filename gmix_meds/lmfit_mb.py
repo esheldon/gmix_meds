@@ -565,7 +565,9 @@ class MedsFitMB(MedsFit):
                            mb_imlist0,
                            mb_wtlist0,
                            mb_jacob_list0):
-
+        """
+        extract those that passed some previous cuts
+        """
         mb_imlist=[]
         mb_wtlist=[]
         mb_jacob_list=[]

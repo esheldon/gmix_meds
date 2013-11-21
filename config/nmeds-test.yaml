@@ -6,8 +6,10 @@ nstep: 200
 mca_a: 3.0
 
 psf_ntry: 2
-
 psf_model: "em2"
+psf_maxiter: 200
+psf_tol: 1.0e-5
+
 region: "seg_and_sky"
 
 # in arcsec
