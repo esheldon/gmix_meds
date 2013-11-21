@@ -5,6 +5,8 @@ import meds
 import psfex
 import ngmix
 
+from .lmfit import get_model_names
+
 # starting new values for these
 DEFVAL=-9999
 PDEFVAL=9999
@@ -19,8 +21,6 @@ EXP_FIT_FAILURE=2**3
 DEV_FIT_FAILURE=2**4
 
 BOX_SIZE_TOO_BIG=2**5
-
-PSF1_NOT_KEPT=2**7
 
 NO_ATTEMPT=2**30
 
@@ -76,7 +76,7 @@ class MedsFit(object):
         self.checkpoint_file = self.conf.get('checkpoint_file',None)
         self._checkpoint_data=keys.get('checkpoint_data',None)
 
-        self.nband=len(meds_files)
+        self.nband=len(self.meds_files)
         self.iband = range(self.nband)
 
         self._load_meds_files()
@@ -193,6 +193,92 @@ class MedsFit(object):
 
         self.index_list = numpy.arange(start,end+1)
 
+    def _make_struct(self):
+        nband=self.nband
+
+        dt=[('id','i4'),
+            ('processed','i1'),
+            ('flags','i4'),
+            ('nimage_tot','i4',nband),
+            ('nimage_use','i4',nband),
+            ('time','f8')]
+
+        
+        simple_npars=5+nband
+        simple_models=self.simple_models
+
+        if nband==1:
+            cov_shape=1
+        else:
+            cov_shape=(nband,nband)
+
+        for model in simple_models:
+            n=get_model_names(model)
+
+            np=simple_npars
+
+
+            dt+=[(n['flags'],'i4'),
+                 (n['iter'],'i4'),
+                 (n['pars'],'f8',np),
+                 (n['pars_cov'],'f8',(np,np)),
+                 (n['flux'],'f8',nband),
+                 (n['flux_cov'],'f8',cov_shape),
+                 (n['g'],'f8',2),
+                 (n['g_cov'],'f8',(2,2)),
+                
+                 (n['s2n_w'],'f8'),
+                 (n['chi2per'],'f8'),
+                 (n['dof'],'f8'),
+                 (n['aic'],'f8'),
+                 (n['bic'],'f8'),
+                ]
+            if self.do_lensfit:
+                dt += [(n['g_sens'], 'f8', 2)]
+            if self.do_pqr:
+                dt += [(n['P'], 'f8'),
+                       (n['Q'], 'f8', 2),
+                       (n['R'], 'f8', (2,2))]
+
+
+        # the psf fits are done for each band separately
+        n=get_model_names('psf')
+        dt += [(n['flags'],   'i4',nband),
+               (n['flux'],    'f8',nband),
+               (n['flux_err'],'f8',nband)]
+
+        num=self.index_list.size
+        data=numpy.zeros(num, dtype=dt)
+
+        for model in simple_models:
+            n=get_model_names(model)
+
+            data[n['flags']] = NO_ATTEMPT
+
+            data[n['pars']] = DEFVAL
+            data[n['pars_cov']] = PDEFVAL
+            data[n['flux']] = DEFVAL
+            data[n['flux_cov']] = PDEFVAL
+            data[n['g']] = DEFVAL
+            data[n['g_cov']] = PDEFVAL
+
+            data[n['s2n_w']] = DEFVAL
+            data[n['chi2per']] = PDEFVAL
+            data[n['aic']] = BIG_PDEFVAL
+            data[n['bic']] = BIG_PDEFVAL
+
+            if self.do_lensfit:
+                data[n['g_sens']] = DEFVAL
+            if self.do_pqr:
+                data[n['P']] = DEFVAL
+                data[n['Q']] = DEFVAL
+                data[n['R']] = DEFVAL
+
+        data['psf_flags'] = NO_ATTEMPT
+        data['psf_flux'] = DEFVAL
+        data['psf_flux_err'] = PDEFVAL
+     
+        self.data=data
 
 _stat_names=['s2n_w',
              'lnprob',
