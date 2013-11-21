@@ -1,5 +1,6 @@
 import os
 from sys import stderr,stdout
+import time
 import numpy
 import meds
 import psfex
@@ -112,6 +113,36 @@ class MedsFit(object):
             self.data=self._checkpoint_data
         else:
             self._make_struct()
+
+
+    def do_fits(self):
+        """
+        Fit all objects in our list
+        """
+
+        t0=time.time()
+
+        last=self.index_list[-1]
+        num=len(self.index_list)
+        self.checkpointed=False
+
+        for dindex in xrange(num):
+            if self.data['processed'][dindex]==1:
+                # checkpointing
+                continue
+
+            mindex = self.index_list[dindex]
+            print >>stderr,'index: %d:%d' % (mindex,last),
+            self._fit_obj(dindex)
+
+            tm=time.time()-t0
+
+            if self._should_checkpoint(tm):
+                self._write_checkpoint(tm)
+
+        tm=time.time()-t0
+        print >>stderr,"time per:",tm/num
+
 
     def _load_meds_files(self):
         """
