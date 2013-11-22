@@ -6,8 +6,7 @@ import meds
 import psfex
 import ngmix
 from ngmix import srandu
-
-from ngmix import GMixMaxIterEM
+from ngmix import GMixMaxIterEM, print_pars
 
 from .lmfit import get_model_names
 
@@ -46,6 +45,9 @@ class MedsFit(object):
         ----------
         meds_file:
             string of meds path, or list thereof for different bands
+
+        The following are sent through keywords
+
         fit_types: list of strings
             'psf','simple'
         obj_range: optional
@@ -67,6 +69,8 @@ class MedsFit(object):
 
         self.conf={}
         self.conf.update(keys)
+
+        self.fit_types=self.conf['fit_types']
 
         self.nwalkers=keys.get('nwalkers',20)
         self.burnin=keys.get('burnin',400)
@@ -121,6 +125,27 @@ class MedsFit(object):
         else:
             self._make_struct()
 
+    def get_data(self):
+        """
+        Get the data structure.  If a subset was requested, only those rows are
+        returned.
+        """
+        return self.data
+
+    #def get_meds_meta(self):
+    #    return self.meds_meta.copy()
+
+    def get_meds_meta_list(self):
+        """
+        get copies of the meta data
+        """
+        return [m.copy() for m in self.meds_meta_list]
+
+    def get_magzp(self):
+        """
+        Get the magnitude zero point.
+        """
+        return self.meds_meta['magzp_ref'][0]
 
     def do_fits(self):
         """
@@ -175,6 +200,7 @@ class MedsFit(object):
 
         print >>stderr,im_lol[0][0].shape
     
+        print >>stderr,'    fitting: psf models'
         keep_lol,psf_gmix_lol,flags=self._fit_psfs(mindex,jacob_lol)
         if any(flags):
             self.data['flags'][dindex] = PSF_FIT_FAILURE 
@@ -192,10 +218,10 @@ class MedsFit(object):
                'jacob_lol':jacob_lol,
                'psf_gmix_lol':psf_gmix_lol}
 
-        stop
         self._do_all_fits(dindex, sdata)
 
         self.data['time'][dindex] = time.time()-t0
+
 
     def _obj_check(self, mindex):
         for band in self.iband:
@@ -436,8 +462,8 @@ class MedsFit(object):
             s2guess=s2*jacob._data['det'][0]
 
             gm_guess=self._get_em_guess(s2guess)
-            print 'guess:'
-            print gm_guess
+            #print 'guess:'
+            #print gm_guess
             try:
                 fitter.go(gm_guess, sky,
                           maxiter=self.psf_maxiter,
@@ -451,8 +477,8 @@ class MedsFit(object):
                 if i == (self.psf_ntry-1):
                     raise
 
-        print 'found good fit:'
-        print fitter.get_gmix()
+        #print 'found good fit:'
+        #print fitter.get_gmix()
         return fitter
 
     def _get_em_guess(self, sigma2):
@@ -518,16 +544,18 @@ class MedsFit(object):
 
 
     def _do_all_fits(self, dindex, sdata):
-        if 'psf' in self.conf['fit_types']:
+        if 'psf' in self.fit_types:
             self._fit_psf_flux(dindex, sdata)
         else:
             raise ValueError("you should do a psf_flux fit")
  
-        max_psf_s2n=self.data['psf_flux_s2n'][dindex,:].max()
+        s2n=self.data['psf_flux'][dindex,:]/self.data['psf_flux_err'][dindex,:]
+        max_psf_s2n=s2n.max()
+         
         if max_psf_s2n >= self.conf['min_psf_s2n']:
-            if 'simple' in self.conf['fit_types']:
+            if 'simple' in self.fit_types:
                 self._fit_mb_simple_models(dindex, sdata)
-            if 'bd' in self.conf['fit_types']:
+            if 'bd' in self.fit_types:
                 self._fit_bd(dindex, sdata)
         else:
             mess="    psf s/n too low: %s (%s)"
@@ -545,10 +573,22 @@ class MedsFit(object):
             self._fit_psf_flux_oneband(dindex, sdata, band)
 
         print_pars(self.data['psf_flux'][dindex], stream=stderr, front='        ')
+        print_pars(self.data['psf_flux_err'][dindex], stream=stderr, front='        ')
 
 
     def _fit_psf_flux_oneband(self, dindex, sdata, band):
-        pass
+        """
+        Fit the PSF flux in a single band
+        """
+        fitter=ngmix.fitting.PSFFluxFitter(sdata['im_lol'][band],
+                                           sdata['wt_lol'][band],
+                                           sdata['jacob_lol'][band],
+                                           sdata['psf_gmix_lol'][band])
+        fitter.go()
+        res=fitter.get_result()
+        self.data['psf_flags'][dindex,band] = 0
+        self.data['psf_flux'][dindex,band] = res['flux']
+        self.data['psf_flux_err'][dindex,band] = res['flux_err']
 
     def _load_meds_files(self):
         """
@@ -630,6 +670,15 @@ class MedsFit(object):
 
         self.index_list = numpy.arange(start,end+1)
 
+    def _should_checkpoint(self, tm):
+        if (tm > self.checkpoint
+                and self.checkpoint_file is not None
+                and not self.checkpointed):
+            return True
+        else:
+            return False
+
+
     def _make_struct(self):
         nband=self.nband
         bshape=(nband,)
@@ -641,81 +690,83 @@ class MedsFit(object):
             ('nimage_use','i4',bshape),
             ('time','f8')]
 
-        
-        simple_npars=5+nband
-        simple_models=self.simple_models
-
-        if nband==1:
-            cov_shape=(nband,)
-        else:
-            cov_shape=(nband,nband)
-
-        for model in simple_models:
-            n=get_model_names(model)
-
-            np=simple_npars
-
-
-            dt+=[(n['flags'],'i4'),
-                 (n['iter'],'i4'),
-                 (n['pars'],'f8',np),
-                 (n['pars_cov'],'f8',(np,np)),
-                 (n['flux'],'f8',bshape),
-                 (n['flux_cov'],'f8',cov_shape),
-                 (n['g'],'f8',2),
-                 (n['g_cov'],'f8',(2,2)),
-                
-                 (n['s2n_w'],'f8'),
-                 (n['chi2per'],'f8'),
-                 (n['dof'],'f8'),
-                 (n['aic'],'f8'),
-                 (n['bic'],'f8'),
-                ]
-            if self.do_lensfit:
-                dt += [(n['g_sens'], 'f8', 2)]
-            if self.do_pqr:
-                dt += [(n['P'], 'f8'),
-                       (n['Q'], 'f8', 2),
-                       (n['R'], 'f8', (2,2))]
-
-
         # the psf fits are done for each band separately
         n=get_model_names('psf')
         dt += [(n['flags'],   'i4',bshape),
                (n['flux'],    'f8',bshape),
-               (n['flux_err'],'f8',bshape),
-               (n['flux_s2n'],'f8',bshape)]
+               (n['flux_err'],'f8',bshape)]
+       
+        if 'simple' in self.fit_types:
+    
+            simple_npars=5+nband
+            simple_models=self.simple_models
+
+            if nband==1:
+                cov_shape=(nband,)
+            else:
+                cov_shape=(nband,nband)
+
+            for model in simple_models:
+                n=get_model_names(model)
+
+                np=simple_npars
+
+
+                dt+=[(n['flags'],'i4'),
+                     (n['iter'],'i4'),
+                     (n['pars'],'f8',np),
+                     (n['pars_cov'],'f8',(np,np)),
+                     (n['flux'],'f8',bshape),
+                     (n['flux_cov'],'f8',cov_shape),
+                     (n['g'],'f8',2),
+                     (n['g_cov'],'f8',(2,2)),
+                    
+                     (n['s2n_w'],'f8'),
+                     (n['chi2per'],'f8'),
+                     (n['dof'],'f8'),
+                     (n['aic'],'f8'),
+                     (n['bic'],'f8'),
+                    ]
+                if self.do_lensfit:
+                    dt += [(n['g_sens'], 'f8', 2)]
+                if self.do_pqr:
+                    dt += [(n['P'], 'f8'),
+                           (n['Q'], 'f8', 2),
+                           (n['R'], 'f8', (2,2))]
+
 
         num=self.index_list.size
         data=numpy.zeros(num, dtype=dt)
 
-        for model in simple_models:
-            n=get_model_names(model)
-
-            data[n['flags']] = NO_ATTEMPT
-
-            data[n['pars']] = DEFVAL
-            data[n['pars_cov']] = PDEFVAL
-            data[n['flux']] = DEFVAL
-            data[n['flux_cov']] = PDEFVAL
-            data[n['g']] = DEFVAL
-            data[n['g_cov']] = PDEFVAL
-
-            data[n['s2n_w']] = DEFVAL
-            data[n['chi2per']] = PDEFVAL
-            data[n['aic']] = BIG_PDEFVAL
-            data[n['bic']] = BIG_PDEFVAL
-
-            if self.do_lensfit:
-                data[n['g_sens']] = DEFVAL
-            if self.do_pqr:
-                data[n['P']] = DEFVAL
-                data[n['Q']] = DEFVAL
-                data[n['R']] = DEFVAL
-
         data['psf_flags'] = NO_ATTEMPT
         data['psf_flux'] = DEFVAL
         data['psf_flux_err'] = PDEFVAL
+
+        if 'simple' in self.fit_types:
+            for model in simple_models:
+                n=get_model_names(model)
+
+                data[n['flags']] = NO_ATTEMPT
+
+                data[n['pars']] = DEFVAL
+                data[n['pars_cov']] = PDEFVAL
+                data[n['flux']] = DEFVAL
+                data[n['flux_cov']] = PDEFVAL
+                data[n['g']] = DEFVAL
+                data[n['g_cov']] = PDEFVAL
+
+                data[n['s2n_w']] = DEFVAL
+                data[n['chi2per']] = PDEFVAL
+                data[n['aic']] = BIG_PDEFVAL
+                data[n['bic']] = BIG_PDEFVAL
+
+                if self.do_lensfit:
+                    data[n['g_sens']] = DEFVAL
+                if self.do_pqr:
+                    data[n['P']] = DEFVAL
+                    data[n['Q']] = DEFVAL
+                    data[n['R']] = DEFVAL
+
      
         self.data=data
 
