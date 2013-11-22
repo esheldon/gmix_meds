@@ -346,12 +346,17 @@ class MedsFit(object):
         gmix_lol=[]
         flag_list=[]
 
+        self.numiter_sum=0.0
+        self.num=0
         for band in self.iband:
             meds=self.meds_list[band]
             jacob_list=jacob_lol[band]
             psfex_list=self.psfex_lol[band]
 
-            keep_list, gmix_list, flags = self._fit_psfs_oneband(meds,mindex,jacob_list,psfex_list)
+            keep_list, gmix_list, flags = self._fit_psfs_oneband(meds,
+                                                                 mindex,
+                                                                 jacob_list,
+                                                                 psfex_list)
 
             keep_lol.append( keep_list )
             gmix_lol.append( gmix_list )
@@ -363,6 +368,7 @@ class MedsFit(object):
                 flag_list.append( 0 )
 
        
+        print '    mean numiter:',self.numiter_sum/self.num
         return keep_lol, gmix_lol, flag_list
 
 
@@ -379,6 +385,7 @@ class MedsFit(object):
 
         flags=0
 
+        gmix_psf=None
         for i in xrange(len(imlist)):
             im=imlist[i]
             jacob0=jacob_list[i]
@@ -392,7 +399,8 @@ class MedsFit(object):
             jacob._data['col0'] = cen0[1]
 
             try:
-                fitter=self._do_fit_psf(im,jacob,sigma)
+                fitter=self._do_fit_psf(im,jacob,sigma,first_guess=gmix_psf)
+                #fitter=self._do_fit_psf(im,jacob,sigma)
 
                 gmix_psf=fitter.get_gmix()
                 if self._should_keep_psf(gmix_psf):
@@ -431,7 +439,6 @@ class MedsFit(object):
             im=pex.get_rec(row,col)
             cen=pex.get_center(row,col)
 
-
             imlist.append( im )
             cenlist.append(cen)
             siglist.append( pex.get_sigma() )
@@ -448,7 +455,7 @@ class MedsFit(object):
 
         return keep
 
-    def _do_fit_psf(self, im, jacob, sigma_guess):
+    def _do_fit_psf(self, im, jacob, sigma_guess, first_guess=None):
         """
         Fit a single psf
         """
@@ -459,11 +466,11 @@ class MedsFit(object):
 
         for i in xrange(self.psf_ntry):
 
-            s2guess=s2*jacob._data['det'][0]
-
-            gm_guess=self._get_em_guess(s2guess)
-            #print 'guess:'
-            #print gm_guess
+            if i == 0 and first_guess is not None:
+                gm_guess=first_guess.copy()
+            else:
+                s2guess=s2*jacob._data['det'][0]
+                gm_guess=self._get_em_guess(s2guess)
             try:
                 fitter.go(gm_guess, sky,
                           maxiter=self.psf_maxiter,
@@ -479,6 +486,10 @@ class MedsFit(object):
 
         #print 'found good fit:'
         #print fitter.get_gmix()
+        res=fitter.get_result()
+        self.numiter_sum += res['numiter']
+        self.num += 1
+        #print 'numiter:',res['numiter']
         return fitter
 
     def _get_em_guess(self, sigma2):
@@ -550,7 +561,7 @@ class MedsFit(object):
             raise ValueError("you should do a psf_flux fit")
  
         s2n=self.data['psf_flux'][dindex,:]/self.data['psf_flux_err'][dindex,:]
-        max_psf_s2n=s2n.max()
+        max_psf_s2n=numpy.nanmax(s2n)
          
         if max_psf_s2n >= self.conf['min_psf_s2n']:
             if 'simple' in self.fit_types:
@@ -586,9 +597,11 @@ class MedsFit(object):
                                            sdata['psf_gmix_lol'][band])
         fitter.go()
         res=fitter.get_result()
-        self.data['psf_flags'][dindex,band] = 0
+        self.data['psf_flags'][dindex,band] = res['flags']
         self.data['psf_flux'][dindex,band] = res['flux']
         self.data['psf_flux_err'][dindex,band] = res['flux_err']
+        self.data['psf_chi2per'][dindex,band] = res['chi2per']
+        self.data['psf_dof'][dindex,band] = res['dof']
 
     def _load_meds_files(self):
         """
@@ -694,7 +707,9 @@ class MedsFit(object):
         n=get_model_names('psf')
         dt += [(n['flags'],   'i4',bshape),
                (n['flux'],    'f8',bshape),
-               (n['flux_err'],'f8',bshape)]
+               (n['flux_err'],'f8',bshape),
+               (n['chi2per'],'f8',bshape),
+               (n['dof'],'f8',bshape)]
        
         if 'simple' in self.fit_types:
     
@@ -803,3 +818,6 @@ def calc_offset_arcsec(gm, scale=1.0):
 
 _em2_fguess=numpy.array([0.5793612389470884,1.621860687127999])
 _em2_pguess=numpy.array([0.596510042804182,0.4034898268889178])
+#_em2_fguess=numpy.array([12.6,3.8])
+#_em2_fguess[:] /= _em2_fguess.sum()
+#_em2_pguess=numpy.array([0.30, 0.70])

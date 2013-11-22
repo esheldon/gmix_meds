@@ -9,7 +9,9 @@ psf_ntry: 3
 psf_model: "em2"
 #psf_model: "em1"
 psf_maxiter: 500
-psf_tol: 1.0e-5
+#psf_tol: 1.0e-5
+#psf_tol: 1.0e-4
+psf_tol: 5.0e-4
 
 # at least one band must have psf s/n > this
 # we won't fit other models if the s/n is too low

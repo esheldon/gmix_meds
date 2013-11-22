@@ -31,7 +31,7 @@ parser.add_option("--work-dir", default=None,
                         "Also write to local files and copy out."
                         "The local files are not removed."))
 
-parser.add_option("--profile-image", default="None",
+parser.add_option("--profile-image", default=None,
                   help=("Profile the code and create the specified "
                         "image using pycallgraph"))
 def load_config(fname):
@@ -419,6 +419,7 @@ def get_range(rng_string):
     return rng
 
 def go_profile(config_file, meds_files, out_file, options, img_name):
+    conf=load_config(config_file)
     if conf['fitter']=='ngmix':
         # pycallgraph doesn't like it when the JIT starts up
         import ngmix
