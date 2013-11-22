@@ -60,11 +60,20 @@ def make_ngmix_meta(conf, meds_meta_list, meds_files):
     rlen=len(conf['region'])
     gtlen = len(conf['g_prior_type'])
 
+    fitlen=len(conf['fitter'])
+
     dt += [('gmix_meds_config','S%d' % clen),
            ('meds_file','S%d' % flen),
+           ('fitter', 'S%d' % fitlen),
            ('psf_ntry','i2'),
+           ('psf_maxiter','i2'),
+           ('psf_tol','f8'),
            ('psf_model','S%d' % mlen),
            ('psf_offset_max','f8'),
+
+           ('min_psf_s2n','f8'),
+
+           ('max_box_size','i2'),
            ('region','S%d' % rlen),
            ('nwalkers','i2'),
            ('burnin','i2'),
@@ -90,9 +99,15 @@ def make_ngmix_meta(conf, meds_meta_list, meds_files):
 
         meta['gmix_meds_config'] = config_file
         meta['meds_file'] = meds_file
+        meta['fitter'] = conf['fitter']
         meta['psf_ntry'] = conf['psf_ntry']
+        meta['psf_maxiter'] = conf['psf_maxiter']
+        meta['psf_tol'] = conf['psf_tol']
         meta['psf_model'] = conf['psf_model']
         meta['psf_offset_max'] = conf['psf_offset_max']
+
+        meta['min_psf_s2n'] = conf['min_psf_s2n']
+        meta['max_box_size'] = conf['max_box_size']
         meta['region'] = conf['region']
 
         meta['nwalkers'] = conf['nwalkers']
@@ -223,7 +238,7 @@ def make_mcmc_meta(conf, meds_meta, meds_file):
 
 
 def run_lm(meds_files, conf, checkpoint_data=None):
-    gprior=get_gprior(conf)
+    gprior=get_g_prior(conf)
     conf['gprior'] = gprior
 
     if len(meds_files)==1:
@@ -249,8 +264,9 @@ def run_ngmix(meds_files, conf, checkpoint_data=None):
     import ngmix
     import gmix_meds.nfit
 
-    gprior=get_gprior(conf)
-    conf['g_prior'] = gprior
+    
+    conf['g_prior'] = get_g_prior_ngmix(conf)
+    conf['cen_prior'] = get_cen_prior_ngmix(conf)
 
     gm=gmix_meds.nfit.MedsFit(meds_files,
                              checkpoint_data=checkpoint_data,
@@ -264,8 +280,34 @@ def run_ngmix(meds_files, conf, checkpoint_data=None):
 
     return data, meta
 
+def get_g_prior_ngmix(conf):
+    import ngmix
+    if 'g_prior_type' in conf:
+        g_prior_type=conf['g_prior_type']
+    else:
+        g_prior_type=None
 
-def get_gprior(conf):
+    if g_prior_type is None or g_prior_type=='None':
+        return None
+    else:
+        pars=conf['g_prior_pars']
+        if g_prior_type=='exp':
+            return ngmix.priors.GPriorExp(pars)
+        elif g_prior_type=='ba':
+            return ngmix.priors.GPriorBA(pars)
+        else:
+            raise ValueError("implement gprior '%s'")
+
+def get_cen_prior_ngmix(conf):
+    import ngmix
+    use_cen_prior=conf.get('use_cen_prior',False)
+    if use_cen_prior:
+        width=conf.get('cen_width',1.0)
+        return ngmix.priors.CenPrior(0.0, 0.0, width,width)
+    else:
+        return None
+
+def get_g_prior(conf):
     import gmix_image
     if 'g_prior_type' in conf:
         gprior_type=conf['g_prior_type']
@@ -285,7 +327,7 @@ def get_gprior(conf):
         raise ValueError("implement gprior '%s'")
 
 def run_mcmc(meds_files, conf):
-    gprior=get_gprior(conf)
+    gprior=get_g_prior(conf)
 
     if len(meds_files)==1:
         gm=gmix_meds.MedsMCMC(meds_files[0], gprior, **conf)

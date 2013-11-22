@@ -1,3 +1,12 @@
+"""
+todo
+
+    - make sure all metadata is being copied
+    - implement exp g prior
+    - figure out what to do with T and counts priors
+    - scale images by jacobian determinant?
+
+"""
 import os
 from sys import stderr,stdout
 import time
@@ -78,8 +87,11 @@ class MedsFit(object):
         self.do_pqr=keys.get("do_pqr",False)
         self.do_lensfit=keys.get("do_lensfit",False)
         self.mca_a=keys.get('mca_a',2.0)
-        self.g_prior=keys.get('g_prior',None)
 
+        self.g_prior=keys.get('g_prior',None)
+        self.draw_g_prior=keys.get('draw_g_prior',True)
+        # in arcsec (or units of jacobian)
+        self.cen_prior=keys.get("cen_prior",None)
 
         self.meds_files=_get_as_list(meds_files)
         self.checkpoint = self.conf.get('checkpoint',172800)
@@ -95,9 +107,6 @@ class MedsFit(object):
         self.obj_range=keys.get('obj_range',None)
         self._set_index_list()
 
-        # in arcsec (or units of jacobian)
-        self.use_cenprior=keys.get("use_cenprior",True)
-        self.cen_width=keys.get('cen_width',1.0)
 
         self.psf_model=keys.get('psf_model','em2')
         self.psf_offset_max=keys.get('psf_offset_max',PSF_OFFSET_MAX)
@@ -173,6 +182,7 @@ class MedsFit(object):
                 self._write_checkpoint(tm)
 
         tm=time.time()-t0
+        print >>stderr,"time:",tm
         print >>stderr,"time per:",tm/num
 
 
@@ -218,7 +228,7 @@ class MedsFit(object):
                'jacob_lol':jacob_lol,
                'psf_gmix_lol':psf_gmix_lol}
 
-        self._do_all_fits(dindex, sdata)
+        self._do_all_models(dindex, sdata)
 
         self.data['time'][dindex] = time.time()-t0
 
@@ -346,8 +356,8 @@ class MedsFit(object):
         gmix_lol=[]
         flag_list=[]
 
-        self.numiter_sum=0.0
-        self.num=0
+        #self.numiter_sum=0.0
+        #self.num=0
         for band in self.iband:
             meds=self.meds_list[band]
             jacob_list=jacob_lol[band]
@@ -368,7 +378,7 @@ class MedsFit(object):
                 flag_list.append( 0 )
 
        
-        print '    mean numiter:',self.numiter_sum/self.num
+        #print '    mean numiter:',self.numiter_sum/self.num
         return keep_lol, gmix_lol, flag_list
 
 
@@ -486,9 +496,9 @@ class MedsFit(object):
 
         #print 'found good fit:'
         #print fitter.get_gmix()
-        res=fitter.get_result()
-        self.numiter_sum += res['numiter']
-        self.num += 1
+        #res=fitter.get_result()
+        #self.numiter_sum += res['numiter']
+        #self.num += 1
         #print 'numiter:',res['numiter']
         return fitter
 
@@ -554,7 +564,7 @@ class MedsFit(object):
         return im_lol, wt_lol, jacob_lol, len_list
 
 
-    def _do_all_fits(self, dindex, sdata):
+    def _do_all_models(self, dindex, sdata):
         if 'psf' in self.fit_types:
             self._fit_psf_flux(dindex, sdata)
         else:
@@ -565,9 +575,7 @@ class MedsFit(object):
          
         if max_psf_s2n >= self.conf['min_psf_s2n']:
             if 'simple' in self.fit_types:
-                self._fit_mb_simple_models(dindex, sdata)
-            if 'bd' in self.fit_types:
-                self._fit_bd(dindex, sdata)
+                self._fit_simple_models(dindex, sdata)
         else:
             mess="    psf s/n too low: %s (%s)"
             mess=mess % (max_psf_s2n,self.conf['min_psf_s2n'])
@@ -583,7 +591,7 @@ class MedsFit(object):
         for band in self.iband:
             self._fit_psf_flux_oneband(dindex, sdata, band)
 
-        print_pars(self.data['psf_flux'][dindex], stream=stderr, front='        ')
+        print_pars(self.data['psf_flux'][dindex],     stream=stderr, front='        ')
         print_pars(self.data['psf_flux_err'][dindex], stream=stderr, front='        ')
 
 
@@ -602,6 +610,93 @@ class MedsFit(object):
         self.data['psf_flux_err'][dindex,band] = res['flux_err']
         self.data['psf_chi2per'][dindex,band] = res['chi2per']
         self.data['psf_dof'][dindex,band] = res['dof']
+
+    def _fit_simple_models(self, dindex, sdata):
+        """
+        Fit all the simple models
+        """
+
+        for model in self.simple_models:
+            print >>stderr,'    fitting:',model
+
+            gm=self._fit_simple(dindex, model, sdata)
+
+            res=gm.get_result()
+
+            self._copy_simple_pars(dindex, res)
+            self._print_simple_fluxes(res)
+            self._print_simple_T(res)
+
+    def _fit_simple(self, dindex, model, sdata):
+        """
+        Fit one of the "simple" models, e.g. exp or dev
+        """
+
+        counts_guess=self._get_counts_guess(dindex,sdata)
+        T_guess=self._get_T_guess(dindex,sdata)
+
+        gm=ngmix.fitting.MCMCSimple(sdata['im_lol'],
+                                    sdata['wt_lol'],
+                                    sdata['jacob_lol'],
+                                    model,
+                                    psf=sdata['psf_gmix_lol'],
+                                    T_guess=T_guess,
+                                    counts_guess=counts_guess,
+                                    cen_prior=self.cen_prior,
+                                    g_prior=self.g_prior,
+                                    draw_g_prior=self.draw_g_prior,
+                                    do_lensfit=self.do_lensfit,
+                                    do_pqr=self.do_pqr)
+        gm.go()
+        return gm
+
+    def _get_counts_guess(self, dindex, sdata):
+        """
+        Based on the psf flux guess
+        """
+        psf_flux=self.data['psf_flux'][dindex,:].clip(min=0.1, max=None)
+        return psf_flux
+
+    def _get_T_guess(self, dindex, sdata):
+        """
+        Guess at T, for now a bad guess
+        """
+        return 8.0
+
+    def _copy_simple_pars(self, dindex, res):
+        model=res['model']
+        n=get_model_names(model)
+
+        self.data[n['flags']][dindex] = res['flags']
+
+        if res['flags'] == 0:
+            pars=res['pars']
+            pars_cov=res['pars_cov']
+
+            flux=pars[5:]
+            flux_cov=pars_cov[5:, 5:]
+
+            self.data[n['pars']][dindex,:] = pars
+            self.data[n['pars_cov']][dindex,:,:] = pars_cov
+
+            self.data[n['flux']][dindex] = flux
+            self.data[n['flux_cov']][dindex] = flux_cov
+
+            self.data[n['g']][dindex,:] = res['g']
+            self.data[n['g_cov']][dindex,:,:] = res['g_cov']
+
+            for sn in _stat_names:
+                self.data[n[sn]][dindex] = res[sn]
+
+            if self.do_lensfit:
+                self.data[n['g_sens']][dindex,:] = res['g_sens']
+
+            if self.do_pqr:
+                self.data[n['P']][dindex] = res['P']
+                self.data[n['Q']][dindex,:] = res['Q']
+                self.data[n['R']][dindex,:,:] = res['R']
+                
+
 
     def _load_meds_files(self):
         """
@@ -691,6 +786,32 @@ class MedsFit(object):
         else:
             return False
 
+    def _print_simple_fluxes(self, res):
+        from numpy import sqrt,diag
+        if res['flags']==0:
+            flux=res['pars'][5:]
+            flux_cov=res['pars_cov'][5:, 5:]
+            flux_err=sqrt(diag(flux_cov))
+
+            print_pars(flux,     stream=stderr, front='        ')
+            print_pars(flux_err, stream=stderr, front='        ')
+
+    def _print_simple_T(self, res):
+        if res['flags']==0:
+            T = res['pars'][4]
+            Terr = numpy.sqrt( res['pars_cov'][4,4] )
+
+            if Terr > 0:
+                Ts2n=T/Terr
+            else:
+                Ts2n=-9999.0
+            if T > 0:
+                sigma=numpy.sqrt(T/2.)
+            else:
+                sigma=-9999.0
+
+            tup=(T,Terr,Ts2n,sigma)
+            print >>stderr, '        T: %s +/- %s Ts2n: %s sigma: %s' % tup
 
     def _make_struct(self):
         nband=self.nband
@@ -728,7 +849,6 @@ class MedsFit(object):
 
 
                 dt+=[(n['flags'],'i4'),
-                     (n['iter'],'i4'),
                      (n['pars'],'f8',np),
                      (n['pars_cov'],'f8',(np,np)),
                      (n['flux'],'f8',bshape),
@@ -786,7 +906,6 @@ class MedsFit(object):
         self.data=data
 
 _stat_names=['s2n_w',
-             'lnprob',
              'chi2per',
              'dof',
              'aic',
