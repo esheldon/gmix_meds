@@ -56,34 +56,10 @@ def make_ngmix_meta(conf, meds_meta_list, meds_files):
 
     clen=len(config_file)
     flen=max( [len(mf) for mf in meds_files] )
-    mlen=len(conf['psf_model'])
-    rlen=len(conf['region'])
-    gtlen = len(conf['g_prior_type'])
 
-    fitlen=len(conf['fitter'])
 
     dt += [('gmix_meds_config','S%d' % clen),
-           ('meds_file','S%d' % flen),
-           ('fitter', 'S%d' % fitlen),
-           ('psf_ntry','i2'),
-           ('psf_maxiter','i2'),
-           ('psf_tol','f8'),
-           ('psf_model','S%d' % mlen),
-           ('psf_offset_max','f8'),
-
-           ('min_psf_s2n','f8'),
-
-           ('max_box_size','i2'),
-           ('region','S%d' % rlen),
-           ('nwalkers','i2'),
-           ('burnin','i2'),
-           ('nstep','i2'),
-           ('mca_a','f8'),
-
-           ('do_pqr','i2'),
-           ('do_lensfit','i2'),
-
-           ('g_prior_type','S%d' % gtlen)]
+           ('meds_file','S%d' % flen)]
 
     nband=len(meds_meta_list)
 
@@ -99,34 +75,6 @@ def make_ngmix_meta(conf, meds_meta_list, meds_files):
 
         meta['gmix_meds_config'] = config_file
         meta['meds_file'] = meds_file
-        meta['fitter'] = conf['fitter']
-        meta['psf_ntry'] = conf['psf_ntry']
-        meta['psf_maxiter'] = conf['psf_maxiter']
-        meta['psf_tol'] = conf['psf_tol']
-        meta['psf_model'] = conf['psf_model']
-        meta['psf_offset_max'] = conf['psf_offset_max']
-
-        meta['min_psf_s2n'] = conf['min_psf_s2n']
-        meta['max_box_size'] = conf['max_box_size']
-        meta['region'] = conf['region']
-
-        meta['nwalkers'] = conf['nwalkers']
-        meta['burnin'] = conf['burnin']
-        meta['nstep'] = conf['nstep']
-        meta['mca_a'] = conf['mca_a']
-
-        if conf['do_pqr']:
-            meta['do_pqr']=1
-        else:
-            meta['do_pqr']=0
-
-        if conf['do_lensfit']:
-            meta['do_lensfit']=1
-        else:
-            meta['do_lensfit']=0
-
-
-        meta['g_prior_type'] = conf['g_prior_type']
 
         mlist.append(meta)
 
