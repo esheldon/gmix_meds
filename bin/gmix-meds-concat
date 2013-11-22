@@ -3,7 +3,8 @@
     %prog [options] run tilename ftype
 
 e.g.
-    gfme004grizt DES0043-4457 i lmfit
+    gfme004grizt DES0043-4457 lmfit
+    gfme004grizt DES0043-4457 mcmc
 """
 
 import sys

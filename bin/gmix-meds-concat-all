@@ -2,6 +2,10 @@
 """
     %prog [options] run ftype
     
+e.g.
+    gfme004grizt lmfit
+    gfme004grizt mcmc
+
 """
 
 import sys
