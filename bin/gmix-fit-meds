@@ -240,7 +240,8 @@ def get_g_prior_ngmix(conf):
     else:
         pars=conf['g_prior_pars']
         if g_prior_type=='exp':
-            return ngmix.priors.GPriorExp(pars)
+            parr=numpy.array(pars,dtype='f8')
+            return ngmix.priors.GPriorExp(parr)
         elif g_prior_type=='ba':
             return ngmix.priors.GPriorBA(pars)
         else:

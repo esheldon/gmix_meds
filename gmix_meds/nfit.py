@@ -79,7 +79,10 @@ class MedsFit(object):
         self.conf={}
         self.conf.update(keys)
 
+        self.imstart=1
         self.fit_types=self.conf['fit_types']
+
+        self.guess_from_coadd=keys.get('guess_from_coadd',False)
 
         self.nwalkers=keys.get('nwalkers',20)
         self.burnin=keys.get('burnin',400)
@@ -141,9 +144,6 @@ class MedsFit(object):
         """
         return self.data
 
-    #def get_meds_meta(self):
-    #    return self.meds_meta.copy()
-
     def get_meds_meta_list(self):
         """
         get copies of the meta data
@@ -204,18 +204,29 @@ class MedsFit(object):
         if self.data['flags'][dindex] != 0:
             return 0
 
-        # lists of lists
-        im_lol,wt_lol,self.coadd_lol = self._get_imlol_wtlol(dindex,mindex)
-        jacob_lol=self._get_jacobian_lol(mindex)
+        # lists of lists.  Coadd lists are length 1
+        im_lol,wt_lol,coadd_im_lol,coadd_wt_lol = \
+                self._get_imlol_wtlol(dindex,mindex)
+        jacob_lol,coadd_jacob_lol=self._get_jacobian_lol(mindex)
 
         print >>stderr,im_lol[0][0].shape
     
+        print >>stderr,'    fitting: coadd psf models'
+        coadd_keep_lol,coadd_psf_gmix_lol,coadd_flags=\
+                self._fit_psfs(mindex,coadd_jacob_lol,do_coadd=True)
+        if any(coadd_flags):
+            self.data['flags'][dindex] = PSF_FIT_FAILURE 
+            return
+
         print >>stderr,'    fitting: psf models'
         keep_lol,psf_gmix_lol,flags=self._fit_psfs(mindex,jacob_lol)
         if any(flags):
             self.data['flags'][dindex] = PSF_FIT_FAILURE 
             return
 
+        coadd_im_lol, coadd_wt_lol, coadd_jacob_lol, coadd_len_list = \
+            self._extract_sub_lists(coadd_keep_lol,coadd_im_lol,coadd_wt_lol,coadd_jacob_lol)
+ 
         im_lol, wt_lol, jacob_lol, len_list = \
             self._extract_sub_lists(keep_lol,im_lol,wt_lol,jacob_lol)
         
@@ -226,7 +237,13 @@ class MedsFit(object):
                'im_lol':im_lol,
                'wt_lol':wt_lol,
                'jacob_lol':jacob_lol,
-               'psf_gmix_lol':psf_gmix_lol}
+               'psf_gmix_lol':psf_gmix_lol,
+
+               'coadd_keep_lol':coadd_keep_lol,
+               'coadd_im_lol':coadd_im_lol,
+               'coadd_wt_lol':coadd_wt_lol,
+               'coadd_jacob_lol':coadd_jacob_lol,
+               'coadd_psf_gmix_lol':coadd_psf_gmix_lol}
 
         self._do_all_models(dindex, sdata)
 
@@ -234,6 +251,9 @@ class MedsFit(object):
 
 
     def _obj_check(self, mindex):
+        """
+        Check box sizes, number of cutouts
+        """
         for band in self.iband:
             meds=self.meds_list[band]
             flags=self._obj_check_one(meds, mindex)
@@ -242,6 +262,9 @@ class MedsFit(object):
         return flags
 
     def _obj_check_one(self, meds, mindex):
+        """
+        Check box sizes, number of cutouts
+        """
         flags=0
 
         box_size=meds['box_size'][mindex]
@@ -264,34 +287,36 @@ class MedsFit(object):
         im_lol=[]
         wt_lol=[]
         coadd_lol=[]
+        coadd_wt_lol=[]
 
         for band in self.iband:
             meds=self.meds_list[band]
 
             # inherited functions
-            imlist,coadd=self._get_imlist(meds,mindex)
-            wtlist=self._get_wtlist(meds,mindex)
+            imlist,coadd_imlist=self._get_imlist(meds,mindex)
+            wtlist,coadd_wtlist=self._get_wtlist(meds,mindex)
 
             self.data['nimage_tot'][dindex,band] = len(imlist)
 
             im_lol.append(imlist)
             wt_lol.append(wtlist)
-            coadd_lol.append(coadd)
+            coadd_lol.append(coadd_imlist)
+            coadd_wt_lol.append(coadd_wtlist)
 
         
-        return im_lol,wt_lol, coadd_lol
+        return im_lol,wt_lol,coadd_lol,coadd_wt_lol
 
     def _get_imlist(self, meds, mindex, type='image'):
         """
         get the image list, skipping the coadd
         """
-        imlist=meds.get_cutout_list(mindex,type=type)
+        imlist_all = meds.get_cutout_list(mindex,type=type)
 
-        coadd=imlist[0].astype('f8')
-        imlist=imlist[1:]
+        coadd_imlist = [ imlist_all[0].astype('f8') ]
+        se_imlist  = imlist_all[self.imstart:]
 
-        imlist = [im.astype('f8') for im in imlist]
-        return imlist, coadd
+        se_imlist = [im.astype('f8') for im in se_imlist]
+        return se_imlist, coadd_imlist
 
 
     def _get_wtlist(self, meds, mindex):
@@ -302,13 +327,15 @@ class MedsFit(object):
         zero weight
         """
         if self.region=='seg_and_sky':
-            wtlist=meds.get_cweight_cutout_list(mindex)
-            wtlist=wtlist[1:]
+            wtlist_all=meds.get_cweight_cutout_list(mindex)
 
-            wtlist=[wt.astype('f8') for wt in wtlist]
+            coadd_wtlist  = [ wtlist_all[0].astype('f8') ]
+            se_wtlist     = wtlist_all[self.imstart:]
+
+            se_wtlist=[wt.astype('f8') for wt in se_wtlist]
         else:
             raise ValueError("support other region types")
-        return wtlist
+        return se_wtlist, coadd_wtlist
 
 
     def _get_jacobian_lol(self, mindex):
@@ -317,14 +344,16 @@ class MedsFit(object):
         skipping the coadd
         """
 
-        mb_jacob_list=[]
+        jacob_lol=[]
+        jacob_coadd_lol=[]
         for band in self.iband:
             meds=self.meds_list[band]
 
-            jacob_list = self._get_jacobian_list(meds,mindex)
-            mb_jacob_list.append(jacob_list)
+            jacob_list,coadd_jacob_list = self._get_jacobian_list(meds,mindex)
+            jacob_lol.append(jacob_list)
+            jacob_coadd_lol.append(coadd_jacob_list)
 
-        return mb_jacob_list
+        return jacob_lol, jacob_coadd_lol
 
     def _get_jacobian_list(self, meds, mindex):
         """
@@ -333,7 +362,7 @@ class MedsFit(object):
         """
         jlist0=meds.get_jacobian_list(mindex)
 
-        jlist=[]
+        jlist_all=[]
         for jdict in jlist0:
             #print jdict
             j=ngmix.Jacobian(jdict['row0'],
@@ -342,13 +371,14 @@ class MedsFit(object):
                              jdict['dudcol'],
                              jdict['dvdrow'],
                              jdict['dvdcol'])
-            jlist.append(j)
+            jlist_all.append(j)
 
-        jlist=jlist[1:]
-        return jlist
+        jcoadd_jlist   = [jlist_all[0]]
+        se_jlist       =  jlist_all[self.imstart:]
+        return se_jlist, jcoadd_jlist
 
 
-    def _fit_psfs(self, mindex, jacob_lol):
+    def _fit_psfs(self, mindex, jacob_lol, do_coadd=False):
         """
         fit psfs for all bands
         """
@@ -366,7 +396,9 @@ class MedsFit(object):
             keep_list, gmix_list, flags = self._fit_psfs_oneband(meds,
                                                                  mindex,
                                                                  jacob_list,
-                                                                 psfex_list)
+                                                                 psfex_list,
+                                                                 do_coadd=do_coadd)
+
 
             keep_lol.append( keep_list )
             gmix_lol.append( gmix_list )
@@ -378,17 +410,16 @@ class MedsFit(object):
                 flag_list.append( 0 )
 
        
-        #print '    mean numiter:',self.numiter_sum/self.num
         return keep_lol, gmix_lol, flag_list
 
 
-    def _fit_psfs_oneband(self,meds,mindex,jacob_list,psfex_list):
+    def _fit_psfs_oneband(self,meds,mindex,jacob_list,psfex_list, do_coadd=False):
         """
         Generate psfex images for all SE images and fit
         them to gaussian mixture models
         """
-        ptuple = self._get_psfex_reclist(meds, psfex_list, mindex)
-        imlist,cenlist,siglist,flist,cenpix=ptuple
+        ptuple = self._get_psfex_reclist(meds, psfex_list, mindex,do_coadd=do_coadd)
+        imlist,cenlist,siglist,flist=ptuple
 
         keep_list=[]
         gmix_list=[]
@@ -410,7 +441,6 @@ class MedsFit(object):
 
             try:
                 fitter=self._do_fit_psf(im,jacob,sigma,first_guess=gmix_psf)
-                #fitter=self._do_fit_psf(im,jacob,sigma)
 
                 gmix_psf=fitter.get_gmix()
                 if self._should_keep_psf(gmix_psf):
@@ -426,19 +456,23 @@ class MedsFit(object):
         return keep_list, gmix_list, flags
 
 
-    def _get_psfex_reclist(self, meds, psfex_list, mindex):
+    def _get_psfex_reclist(self, meds, psfex_list, mindex, do_coadd=False):
         """
         Generate psfex reconstructions for the SE images
-        associated with the cutouts, skipping the coadd
-
-        add a little noise for the fitter
+        associated with the cutouts
         """
         ncut=meds['ncutout'][mindex]
         imlist=[]
         cenlist=[]
         siglist=[]
         flist=[]
-        for icut in xrange(1,ncut):
+
+        if do_coadd:
+            rng=[0]
+        else:
+            rng=range(1,ncut)
+
+        for icut in rng:
             file_id=meds['file_id'][mindex,icut]
             pex=psfex_list[file_id]
             fname=pex['filename']
@@ -454,9 +488,12 @@ class MedsFit(object):
             siglist.append( pex.get_sigma() )
             flist.append( fname)
 
-        return imlist, cenlist, siglist, flist, [row,col]
+        return imlist, cenlist, siglist, flist
 
     def _should_keep_psf(self, gm):
+        """
+        For double gauss we limit the separation
+        """
         keep=True
         if self.psf_ngauss == 2:
             offset_arcsec = calc_offset_arcsec(gm)
@@ -494,12 +531,6 @@ class MedsFit(object):
                 if i == (self.psf_ntry-1):
                     raise
 
-        #print 'found good fit:'
-        #print fitter.get_gmix()
-        #res=fitter.get_result()
-        #self.numiter_sum += res['numiter']
-        #self.num += 1
-        #print 'numiter:',res['numiter']
         return fitter
 
     def _get_em_guess(self, sigma2):
@@ -565,6 +596,9 @@ class MedsFit(object):
 
 
     def _do_all_models(self, dindex, sdata):
+        """
+        Fit psf flux and other models
+        """
         if 'psf' in self.fit_types:
             self._fit_psf_flux(dindex, sdata)
         else:
@@ -624,31 +658,42 @@ class MedsFit(object):
             res=gm.get_result()
 
             self._copy_simple_pars(dindex, res)
-            self._print_simple_fluxes(res)
-            self._print_simple_T(res)
+            self._print_simple_res(res)
+
+            if self.make_plots:
+                mindex = self.index_list[dindex]
+                ptrials,presid_list=gm.make_plots(title='%s multi-epoch' % model,
+                                                  do_residual=True)
+                ptrials.write_img(1200,1200,'trials-%06d-%s.png' % (mindex,model))
+                for band,plt in enumerate(presid_list):
+                    plt.write_img(1920,1200,'resid-%06d-%s-band%d.png' % (mindex,model,band))
 
     def _fit_simple(self, dindex, model, sdata):
         """
         Fit one of the "simple" models, e.g. exp or dev
         """
 
-        counts_guess=self._get_counts_guess(dindex,sdata)
-        T_guess=self._get_T_guess(dindex,sdata)
-
-        gm=ngmix.fitting.MCMCSimple(sdata['im_lol'],
-                                    sdata['wt_lol'],
-                                    sdata['jacob_lol'],
-                                    model,
-                                    psf=sdata['psf_gmix_lol'],
-                                    T_guess=T_guess,
-                                    counts_guess=counts_guess,
-                                    cen_prior=self.cen_prior,
-                                    g_prior=self.g_prior,
-                                    draw_g_prior=self.draw_g_prior,
-                                    do_lensfit=self.do_lensfit,
-                                    do_pqr=self.do_pqr)
-        gm.go()
+        if self.guess_from_coadd:
+            full_guess=self._get_full_simple_guess(dindex, model, sdata)
+            counts_guess=None
+            T_guess=None
+        else:
+            full_guess=None
+            counts_guess=self._get_counts_guess(dindex,sdata)
+            T_guess=self._get_T_guess(dindex,sdata)
+        
+        gm=self._do_fit_simple(model, 
+                               sdata['im_lol'],
+                               sdata['wt_lol'],
+                               sdata['jacob_lol'],
+                               sdata['psf_gmix_lol'],
+                               self.burnin,
+                               self.nstep,
+                               T_guess=T_guess,
+                               counts_guess=counts_guess,
+                               full_guess=full_guess)
         return gm
+
 
     def _get_counts_guess(self, dindex, sdata):
         """
@@ -659,11 +704,75 @@ class MedsFit(object):
 
     def _get_T_guess(self, dindex, sdata):
         """
-        Guess at T, for now a bad guess
+        Guess at T in arcsec**2
+
+        Guess corresponds to FWHM=2.0 arcsec
+
+        Assuming scale is 0.27''/pixel
         """
-        return 8.0
+        return 1.44
+
+    def _get_full_simple_guess(self, dindex, model, sdata):
+        print '    getting guess from coadd'
+        counts_guess=self._get_counts_guess(dindex,sdata)
+        T_guess=self._get_T_guess(dindex,sdata)
+
+        gm=self._do_fit_simple(model,
+                               sdata['coadd_im_lol'],
+                               sdata['coadd_wt_lol'],
+                               sdata['coadd_jacob_lol'],
+                               sdata['coadd_psf_gmix_lol'],
+                               self.conf['guess_burnin'],
+                               self.conf['guess_nstep'],
+                               T_guess=T_guess,
+                               counts_guess=counts_guess)
+
+        res=gm.get_result()
+        self._print_simple_res(res)
+
+        if self.make_plots:
+            mindex = self.index_list[dindex]
+            ptrials,presid_list=gm.make_plots(title='%s coadd' % model,
+                                              do_residual=True)
+            ptrials.write_img(1200,1200,'trials-%06d-%s-coadd.png' % (mindex,model))
+            for band,plt in enumerate(presid_list):
+                plt.write_img(1920,1200,'resid-%06d-%s-band%d-coadd.png' % (mindex,model,band))
+
+        return gm.get_trials()
+
+    def _do_fit_simple(self, model, im_lol, wt_lol, jacob_lol, psf_gmix_lol,
+                       burnin,nstep,T_guess=None,counts_guess=None,full_guess=None):
+        gm=ngmix.fitting.MCMCSimple(im_lol,
+                                    wt_lol,
+                                    jacob_lol,
+                                    model,
+                                    psf=psf_gmix_lol,
+
+                                    nwalkers=self.nwalkers,
+                                    burnin=burnin,
+                                    nstep=nstep,
+                                    mca_a=self.mca_a,
+
+                                    iter=True,
+
+                                    T_guess=T_guess,
+                                    counts_guess=counts_guess,
+
+                                    full_guess=full_guess,
+
+                                    cen_prior=self.cen_prior,
+                                    g_prior=self.g_prior,
+                                    draw_g_prior=self.draw_g_prior,
+                                    do_lensfit=self.do_lensfit,
+                                    do_pqr=self.do_pqr)
+        gm.go()
+        return gm
+
 
     def _copy_simple_pars(self, dindex, res):
+        """
+        Copy from the result dict to the output array
+        """
         model=res['model']
         n=get_model_names(model)
 
@@ -779,6 +888,9 @@ class MedsFit(object):
         self.index_list = numpy.arange(start,end+1)
 
     def _should_checkpoint(self, tm):
+        """
+        Should we write a checkpoint file?
+        """
         if (tm > self.checkpoint
                 and self.checkpoint_file is not None
                 and not self.checkpointed):
@@ -786,7 +898,24 @@ class MedsFit(object):
         else:
             return False
 
+    def _print_simple_res(self, res):
+        self._print_simple_fluxes(res)
+        self._print_simple_T(res)
+        self._print_simple_shape(res)
+
+    def _print_simple_shape(self, res):
+        if res['flags']==0:
+            g1=res['pars'][2]
+            g1err=numpy.sqrt(res['pars_cov'][2,2])
+            g2=res['pars'][3]
+            g2err=numpy.sqrt(res['pars_cov'][3,3])
+
+            print '        g1: %.4g +/- %.4g g2: %.4g +/- %.4g' % (g1,g1err,g2,g2err)
+
     def _print_simple_fluxes(self, res):
+        """
+        print in a nice format
+        """
         from numpy import sqrt,diag
         if res['flags']==0:
             flux=res['pars'][5:]
@@ -797,6 +926,9 @@ class MedsFit(object):
             print_pars(flux_err, stream=stderr, front='        ')
 
     def _print_simple_T(self, res):
+        """
+        print T, Terr, Ts2n and sigma
+        """
         if res['flags']==0:
             T = res['pars'][4]
             Terr = numpy.sqrt( res['pars_cov'][4,4] )
@@ -814,6 +946,9 @@ class MedsFit(object):
             print >>stderr, '        T: %s +/- %s Ts2n: %s sigma: %s' % tup
 
     def _make_struct(self):
+        """
+        make the output structure
+        """
         nband=self.nband
         bshape=(nband,)
 
