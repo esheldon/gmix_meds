@@ -853,7 +853,7 @@ class MedsFit(object):
             self.meds_list.append(medsi)
             self.meds_meta_list.append(medsi_meta)
 
-        self.nobj = self.meds_list[0].size
+        self.nobj_tot = self.meds_list[0].size
 
     def _get_psfex_lol(self):
         """
@@ -904,7 +904,7 @@ class MedsFit(object):
         """
         if self.obj_range is None:
             start=0
-            end=self.nobj-1
+            end=self.nobj_tot-1
         else:
             start=self.obj_range[0]
             end=self.obj_range[1]
@@ -977,6 +977,36 @@ class MedsFit(object):
                      clobber=True)
         self.checkpointed=True
 
+    def _count_all_cutouts(self):
+        """
+        Count the cutouts for the objects, not including the coadd cutouts.  If
+        obj_range was sent, this will be a subset
+        """
+        ncutout=0
+        ncoadd=self.index_list.size
+        for meds in self.meds_list:
+            ncutout += meds['ncutout'][self.index_list].sum() - ncoadd
+        return ncutout
+
+    def _make_psf_struct(self):
+        """
+        We will make the maximum number of possible psfs according
+        to the cutout count, not counting the coadd
+        """
+
+        ncutout=self._count_all_cutouts()
+
+        npars=self.psf_ngauss*6
+        dt=[('id','i4'), # same as 'id' in main struct, used for matching
+            ('band','i2'),
+            ('file_id','i2'), # to determine the psf file
+            ('flags','i4'),
+            ('g','f8',2),
+            ('T','f8'),
+            ('pars','f8',npars)]
+
+        nobj=self.index_list.size
+        self.psf_data = numpy.zeros(nobj, dtype=dt)
 
     def _make_struct(self):
         """

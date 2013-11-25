@@ -506,7 +506,7 @@ def go(config_file, meds_files, out_file, options):
     # if we get here, we have succeeded in writing the data
     # we can remove the checkpoint file
     if os.path.exists(checkpoint_file):
-        print >>stderr,'removing checkpoint file'
+        print >>stderr,'removing checkpoint file',checkpoint_file
         os.remove(checkpoint_file)
 
 def go_local_old(config_file, meds_files, out_file, options):
