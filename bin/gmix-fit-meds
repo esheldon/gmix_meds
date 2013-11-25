@@ -222,12 +222,13 @@ def run_ngmix(meds_files, conf, checkpoint_data=None):
                              **conf)
     gm.do_fits()
     data=gm.get_data()
+    psf_data=gm.get_psf_data()
     meds_meta=gm.get_meds_meta_list()
 
 
     meta=make_ngmix_meta(conf, meds_meta, meds_files)
 
-    return data, meta
+    return data, psf_data, meta
 
 def get_T_prior_ngmix(conf):
     import ngmix
@@ -307,88 +308,6 @@ def run_mcmc(meds_files, conf):
 
     return data, meta
 
-
-def reroot_file(fname, newdir):
-    bname=os.path.basename(fname)
-    return os.path.join(newdir, bname)
-
-class WorkFiles(object):
-    def __init__(self, work_dir, flist, mode='r'):
-        self.work_dir=work_dir
-        self.mode=mode
-
-        if not os.path.exists(work_dir):
-            os.makedirs(work_dir)
-
-        self.init(flist)
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exception_type, exception_value, traceback):
-        self.close()
-
-    def init(self, flist):
-        """
-        remote files we copy local temporarily.
-        """
-
-        self.remote_files=self.as_string_list(flist)
-
-        self.local_files=[]
-        for remote_file in self.remote_files:
-            local_file=reroot_file(remote_file, self.work_dir)
-            self.local_files.append(local_file)
-
-            if self.mode=='r':
-                print >>stderr,'%s -> %s' % (remote_file,local_file)
-                shutil.copy2(remote_file, local_file)
-
-
-    def close(self):
-        """
-
-        If reading, remove the files we copied locally, or copy remote if we
-        were writing
-
-        """
-        try:
-            if self.mode=='w':
-                self.copy_to_remote()
-        finally:
-            for local_file in self.local_files:
-                print >>stderr,'removing local file:',local_file
-                os.remove(local_file)
-
-
-    def copy_to_remote(self):
-        """
-        If mode is 'w', we copy the local files to their
-        destination
-        """
-        if self.mode=='r':
-            return
-
-        for i in xrange(len(self.local_files)):
-            local_file=self.local_files[i]
-            remote_file=self.remote_files[i]
-
-            print >>stderr,'%s -> %s' % (local_file,remote_file)
-            shutil.copy2(local_file, remote_file)
-
-    def as_string_list(self, data):
-        if isinstance(data, basestring):
-            out_data=[data]
-        else:
-            if not isinstance(data, (list,tuple)):
-                raise ValueError("input must be string or seq of strings")
-            for s in data:
-                if not isinstance(s, basestring):
-                    raise ValueError("input must be string or seq of strings")
-            out_data=list(data)
-
-        return out_data
-
 def get_sub_fname(fname, rng, work_dir):
     rng_string = '%s-%s' % (rng[0], rng[1])
 
@@ -443,82 +362,100 @@ def go_profile(config_file, meds_files, out_file, options, img_name):
     with PyCallGraph(config=config, output=graphviz):
         go(config_file, meds_files, out_file, options)
 
-def go(config_file, meds_files, out_file, options):
-
-    checkpoint_file=out_file.replace('.fits','-checkpoint.fits')
+def cleanup_checkpoint(checkpoint_file):
+    # if we get this far, we have succeeded in writing the data. We can remove
+    # the checkpoint file
     if os.path.exists(checkpoint_file):
+        print >>stderr,'removing checkpoint file',checkpoint_file
+        os.remove(checkpoint_file)
+
+
+def get_checkpoint_data(out_file):
+    checkpoint_file=out_file.replace('.fits','-checkpoint.fits')
+    data=None
+
+    if os.path.exists(checkpoint_file):
+        data={}
         print >>stderr,'reading checkpoint data:',checkpoint_file
-        checkpoint_data=fitsio.read(checkpoint_file,extname='model_fits')
+        with fitsio.FITS(checkpoint_file) as fobj:
+            data['data']=fobj["model_fits"][:]
+            if 'psf_fits'in fobj:
+                ata['psf_data']=fobj["psf_fits"][:]
+
+    return checkpoint_file, data
+
+def run_fitter(meds_files, conf, checkpoint_data=None):
+    psf_data=None
+    if conf['fitter'] == 'lm':
+        data, meta = run_lm(meds_files, conf,
+                            checkpoint_data=checkpoint_data)
+    elif conf['fitter'] == 'ngmix':
+        data, psf_data, meta = run_ngmix(meds_files, conf,
+                                         checkpoint_data=checkpoint_data)
     else:
-        checkpoint_data=None
+        data, meta = run_mcmc(meds_files, conf,
+                              checkpoint_data=checkpoint_data)
 
-    conf=load_config(config_file)
-    pprint.pprint(conf,stream=stderr)
+    return data, psf_data, meta
 
+def setup_work_files(options, meds_files):
+    meds_files_full=meds_files
+    extracted=None
     rng=get_range( options.obj_range )
     rng_send=None
     if rng is not None:
         if options.work_dir is not None:
-            # note extracted get cleaned up when MedsExtractors
-            # get garbage collected
+            # note variable extracted is cleaned up when MedsExtractors get
+            # garbage collected
             extracted=get_sub(meds_files, rng, options.work_dir)
             meds_files_full=meds_files
             meds_files=[ex.sub_file for ex in extracted]
             rng_send=None
         else:
             rng_send=rng
+    return rng_send, meds_files, meds_files_full, extracted
 
-
-    det_cat_file=options.det_cat
-    if det_cat_file is not None and det_cat_file != "":
-        print >>stderr,'reading:',det_cat_file
-        det_cat=fitsio.read(det_cat_file)
-    else:
-        det_cat=None
-
-    # we now do range by extracting it, see above, so
-    # this is always None
-    conf['obj_range'] = rng_send
-    conf['det_cat'] = det_cat
-    conf['config_file']=config_file
-    conf['checkpoint_file']=checkpoint_file
-
-    if conf['fitter'] == 'lm':
-        data, meta = run_lm(meds_files, conf,
-                            checkpoint_data=checkpoint_data)
-    elif conf['fitter'] == 'ngmix':
-        data, meta = run_ngmix(meds_files, conf,
-                               checkpoint_data=checkpoint_data)
-    else:
-        data, meta = run_mcmc(meds_files, conf,
-                              checkpoint_data=checkpoint_data)
-
-    if options.work_dir is not None:
-        meta['meds_file'] = meds_files_full
-
-
+ 
+def write_data(data, psf_data, meta, out_file, psf_out_file):
     makedir_fromfile(out_file)
     print >>stderr,'writing:',out_file
     with fitsio.FITS(out_file,'rw',clobber=True) as fobj:
         fobj.write(data,extname="model_fits")
         fobj.write(meta,extname="meta_data")
 
-    # if we get here, we have succeeded in writing the data
-    # we can remove the checkpoint file
-    if os.path.exists(checkpoint_file):
-        print >>stderr,'removing checkpoint file',checkpoint_file
-        os.remove(checkpoint_file)
+    if psf_data is not None:
+        with fitsio.FITS(psf_out_file,'rw',clobber=True) as fobj:
+            fobj.write(psf_data,extname="psf_fits")
 
-def go_local_old(config_file, meds_files, out_file, options):
-    """
-    copying full files local
-    """
-    with WorkFiles(options.work_dir, meds_files, mode='r') as rf:
-        with WorkFiles(options.work_dir, [out_file], mode='w') as wf:
-            meds_local=rf.local_files
-            out_local = wf.local_files[0]
-            go(config_file, meds_local, out_local, options)
 
+def go(config_file, meds_files, out_file, options):
+
+    checkpoint_file, checkpoint_data=get_checkpoint_data(out_file)
+    psf_out_file=out_file.replace('.fits','-psf.fits')
+
+    conf=load_config(config_file)
+    pprint.pprint(conf,stream=stderr)
+
+    rng_send,meds_files,meds_files_full,extracted=\
+                        setup_work_files(options,meds_files)
+
+    # if work_dir is sent, we do range by extracting it, see above, so
+    # rng_send would be None
+
+    conf['obj_range'] = rng_send
+    conf['config_file']=config_file
+    conf['checkpoint_file']=checkpoint_file
+
+    data, psf_data, meta=run_fitter(meds_files, conf, 
+                                    checkpoint_data=checkpoint_data)
+
+    if options.work_dir is not None:
+        meta['meds_file'] = meds_files_full
+
+    write_data(data, psf_data, meta, out_file, psf_out_file)
+
+    cleanup_checkpoint(checkpoint_file)
+  
     
 def main():
     options, args = parser.parse_args(sys.argv[1:])

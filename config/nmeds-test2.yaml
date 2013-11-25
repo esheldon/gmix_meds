@@ -1,7 +1,8 @@
 fitter: "ngmix"
 
+# hopefully small burnin is needed with guess from coadd
 nwalkers: 40
-burnin: 100 # hopefully small burnin is needed
+burnin: 100
 nstep: 100
 #mca_a: 3.0
 mca_a: 2.0
@@ -58,8 +59,7 @@ guess_from_coadd: True
 #
 # 1.5 hours
 
-#checkpoint: 5400
-checkpoint: 60
+checkpoint: 5400
 
 make_plots: False
 debug: 0

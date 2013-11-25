@@ -72,8 +72,9 @@ class MedsFit(object):
             Time after which to checkpoint, seconds
         checkpoint_file: string, optional
             File which will hold a checkpoint.
-        checkpoint_data: array of fields, optional
-            The data representing a previous checkpoint
+        checkpoint_data: dict, optional
+            The data representing a previous checkpoint, object and
+            psf fits
         """
 
         self.conf={}
@@ -100,7 +101,7 @@ class MedsFit(object):
         self.meds_files=_get_as_list(meds_files)
         self.checkpoint = self.conf.get('checkpoint',172800)
         self.checkpoint_file = self.conf.get('checkpoint_file',None)
-        self._checkpoint_data=keys.get('checkpoint_data',None)
+        self._set_checkpoint_data(**keys)
 
         self.nband=len(self.meds_files)
         self.iband = range(self.nband)
@@ -110,7 +111,6 @@ class MedsFit(object):
 
         self.obj_range=keys.get('obj_range',None)
         self._set_index_list()
-
 
         self.psf_model=keys.get('psf_model','em2')
         self.psf_offset_max=keys.get('psf_offset_max',PSF_OFFSET_MAX)
@@ -132,11 +132,15 @@ class MedsFit(object):
         self.make_plots=keys.get('make_plots',False)
         self.prompt=keys.get('prompt',True)
 
-
-        if self._checkpoint_data is not None:
-            self.data=self._checkpoint_data
-        else:
+        if self._checkpoint_data is None:
             self._make_struct()
+            self._make_psf_struct()
+
+    def _set_checkpoint_data(self, **keys):
+        self._checkpoint_data=keys.get('checkpoint_data',None)
+        if self._checkpoint_data is not None:
+            self.data=self._checkpoint_data['data']
+            self.psf_data=self._checkpoint_data['psf_data']
 
     def get_data(self):
         """
@@ -144,6 +148,12 @@ class MedsFit(object):
         returned.
         """
         return self.data
+
+    def get_psf_data(self):
+        """
+        Get the psf data structure.
+        """
+        return self.psf_data
 
     def get_meds_meta_list(self):
         """
@@ -199,6 +209,7 @@ class MedsFit(object):
 
         mindex = self.index_list[dindex]
 
+        # need to do this because we work on subset files
         self.data['id'][dindex] = self.meds_list[0]['number'][mindex]
 
         self.data['flags'][dindex] = self._obj_check(mindex)
@@ -972,9 +983,9 @@ class MedsFit(object):
         import fitsio
         print >>stderr,'checkpointing at',tm,'seconds'
         print >>stderr,self.checkpoint_file
-        fitsio.write(self.checkpoint_file,
-                     self.data,
-                     clobber=True)
+        with fitsio.FITS(self.checkpoint_file,'rw',clobber=True) as fobj:
+            fobj.write(self.data, extname="model_fits")
+            fobj.write(self.psf_data, extname="psf_fits")
         self.checkpointed=True
 
     def _count_all_cutouts(self):
