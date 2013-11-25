@@ -1,10 +1,10 @@
 fitter: "ngmix"
 
 nwalkers: 40
-burnin: 10
+burnin: 100 # hopefully small burnin is needed
 nstep: 100
-mca_a: 3.0
-#mca_a: 2.0
+#mca_a: 3.0
+mca_a: 2.0
 
 guess_burnin: 500
 guess_nstep: 100
@@ -43,7 +43,12 @@ cen_width: 0.27
 #g_prior_pars: 0.3
 g_prior_type: "exp"
 g_prior_pars: [27.63, 1.25, 0.016, 0.77]
+# still want true here even if using the coadd guess,
+# in case the guess is broken
 draw_g_prior: True
+
+T_prior_type: "flat"
+T_prior_pars: [0.0001, 1000.0]
 
 # over-rides draw_g_prior for the multi-epoch
 guess_from_coadd: True
@@ -53,8 +58,8 @@ guess_from_coadd: True
 #
 # 1.5 hours
 
+#checkpoint: 5400
+checkpoint: 60
 
-checkpoint: 5400
-
-make_plots: True
+make_plots: False
 debug: 0

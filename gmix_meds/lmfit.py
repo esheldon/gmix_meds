@@ -1231,7 +1231,9 @@ def get_model_names(model):
            'Q',
            'R',
            'iter',
-           'tries']
+           'tries',
+           'arate',
+           'tau']
     names += _stat_names
 
     ndict={}

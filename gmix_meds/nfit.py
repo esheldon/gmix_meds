@@ -95,6 +95,7 @@ class MedsFit(object):
         self.draw_g_prior=keys.get('draw_g_prior',True)
         # in arcsec (or units of jacobian)
         self.cen_prior=keys.get("cen_prior",None)
+        self.T_prior=keys.get('T_prior',None)
 
         self.meds_files=_get_as_list(meds_files)
         self.checkpoint = self.conf.get('checkpoint',172800)
@@ -226,10 +227,17 @@ class MedsFit(object):
 
         coadd_im_lol, coadd_wt_lol, coadd_jacob_lol, coadd_len_list = \
             self._extract_sub_lists(coadd_keep_lol,coadd_im_lol,coadd_wt_lol,coadd_jacob_lol)
- 
+        if any([l==0 for l in coadd_len_list]):
+            print >>stderr,'wierd coadd lists zero length!'
+            self.data['flags'][dindex] = PSF_FIT_FAILURE 
+            return
+
         im_lol, wt_lol, jacob_lol, len_list = \
             self._extract_sub_lists(keep_lol,im_lol,wt_lol,jacob_lol)
-        
+        if any([l==0 for l in len_list]):
+            print >>stderr,'wierd lists zero length!'
+            self.data['flags'][dindex] = PSF_FIT_FAILURE 
+            return
 
         self.data['nimage_use'][dindex, :] = len_list
 
@@ -245,7 +253,7 @@ class MedsFit(object):
                'coadd_jacob_lol':coadd_jacob_lol,
                'coadd_psf_gmix_lol':coadd_psf_gmix_lol}
 
-        self._do_all_models(dindex, sdata)
+        self._fit_all_models(dindex, sdata)
 
         self.data['time'][dindex] = time.time()-t0
 
@@ -295,6 +303,11 @@ class MedsFit(object):
             # inherited functions
             imlist,coadd_imlist=self._get_imlist(meds,mindex)
             wtlist,coadd_wtlist=self._get_wtlist(meds,mindex)
+
+            if self.reject_outliers:
+                nreject=reject_outliers(imlist,wtlist)
+                if nreject > 0:
+                    print >>stderr,'        rejected:',nreject
 
             self.data['nimage_tot'][dindex,band] = len(imlist)
 
@@ -403,7 +416,7 @@ class MedsFit(object):
             keep_lol.append( keep_list )
             gmix_lol.append( gmix_list )
 
-            # only care about flags if we have no psfs left
+            # only propagate flags if we have no psfs left
             if len(keep_list) == 0:
                 flag_list.append( flags )
             else:
@@ -443,14 +456,18 @@ class MedsFit(object):
                 fitter=self._do_fit_psf(im,jacob,sigma,first_guess=gmix_psf)
 
                 gmix_psf=fitter.get_gmix()
-                if self._should_keep_psf(gmix_psf):
+                keep,offset_arcsec=self._should_keep_psf(gmix_psf)
+                if keep:
                     gmix_list.append( gmix_psf )
                     keep_list.append(i)
                 else:
+                    print >>stderr,('large psf offset: %s '
+                                    'in %s' % (offset_arcsec,flist[i]))
                     flags |= PSF_LARGE_OFFSETS 
 
             except GMixMaxIterEM:
                 print >>stderr,'psf fail',flist[i]
+                flags |= PSF_FIT_FAILURE
 
 
         return keep_list, gmix_list, flags
@@ -500,7 +517,7 @@ class MedsFit(object):
             if offset_arcsec > self.psf_offset_max:
                 keep=False
 
-        return keep
+        return keep, offset_arcsec
 
     def _do_fit_psf(self, im, jacob, sigma_guess, first_guess=None):
         """
@@ -525,9 +542,9 @@ class MedsFit(object):
                 break
             except GMixMaxIterEM:
                 res=fitter.get_result()
-                print 'last fit:'
-                print fitter.get_gmix()
-                print 'try:',i+1,'fdiff:',res['fdiff'],'numiter:',res['numiter']
+                print >>stderr,'last fit:'
+                print >>stderr,fitter.get_gmix()
+                print >>stderr,'try:',i+1,'fdiff:',res['fdiff'],'numiter:',res['numiter']
                 if i == (self.psf_ntry-1):
                     raise
 
@@ -595,7 +612,7 @@ class MedsFit(object):
         return im_lol, wt_lol, jacob_lol, len_list
 
 
-    def _do_all_models(self, dindex, sdata):
+    def _fit_all_models(self, dindex, sdata):
         """
         Fit psf flux and other models
         """
@@ -665,8 +682,9 @@ class MedsFit(object):
                 ptrials,presid_list=gm.make_plots(title='%s multi-epoch' % model,
                                                   do_residual=True)
                 ptrials.write_img(1200,1200,'trials-%06d-%s.png' % (mindex,model))
-                for band,plt in enumerate(presid_list):
-                    plt.write_img(1920,1200,'resid-%06d-%s-band%d.png' % (mindex,model,band))
+                if presid_list is not None:
+                    for band,plt in enumerate(presid_list):
+                        plt.write_img(1920,1200,'resid-%06d-%s-band%d.png' % (mindex,model,band))
 
     def _fit_simple(self, dindex, model, sdata):
         """
@@ -713,7 +731,7 @@ class MedsFit(object):
         return 1.44
 
     def _get_full_simple_guess(self, dindex, model, sdata):
-        print '    getting guess from coadd'
+        print >>stderr,'    getting guess from coadd'
         counts_guess=self._get_counts_guess(dindex,sdata)
         T_guess=self._get_T_guess(dindex,sdata)
 
@@ -735,8 +753,9 @@ class MedsFit(object):
             ptrials,presid_list=gm.make_plots(title='%s coadd' % model,
                                               do_residual=True)
             ptrials.write_img(1200,1200,'trials-%06d-%s-coadd.png' % (mindex,model))
-            for band,plt in enumerate(presid_list):
-                plt.write_img(1920,1200,'resid-%06d-%s-band%d-coadd.png' % (mindex,model,band))
+            if presid_list is not None:
+                for band,plt in enumerate(presid_list):
+                    plt.write_img(1920,1200,'resid-%06d-%s-band%d-coadd.png' % (mindex,model,band))
 
         return gm.get_trials()
 
@@ -761,6 +780,7 @@ class MedsFit(object):
                                     full_guess=full_guess,
 
                                     cen_prior=self.cen_prior,
+                                    T_prior=self.T_prior,
                                     g_prior=self.g_prior,
                                     draw_g_prior=self.draw_g_prior,
                                     do_lensfit=self.do_lensfit,
@@ -793,6 +813,10 @@ class MedsFit(object):
 
             self.data[n['g']][dindex,:] = res['g']
             self.data[n['g_cov']][dindex,:,:] = res['g_cov']
+
+            self.data[n['arate']][dindex] = res['arate']
+            if res['tau'] is not None:
+                self.data[n['tau']][dindex] = res['tau']
 
             for sn in _stat_names:
                 self.data[n[sn]][dindex] = res[sn]
@@ -836,7 +860,7 @@ class MedsFit(object):
         Load psfex objects for each of the SE images
         include the coadd so we get  the index right
         """
-        print 'loading psfex'
+        print >>stderr,'loading psfex'
         desdata=os.environ['DESDATA']
         meds_desdata=self.meds_list[0]._meta['DESDATA'][0]
 
@@ -899,51 +923,60 @@ class MedsFit(object):
             return False
 
     def _print_simple_res(self, res):
-        self._print_simple_fluxes(res)
-        self._print_simple_T(res)
-        self._print_simple_shape(res)
+        if res['flags']==0:
+            self._print_simple_fluxes(res)
+            self._print_simple_T(res)
+            self._print_simple_shape(res)
+            print >>stderr,'        arate:',res['arate']
 
     def _print_simple_shape(self, res):
-        if res['flags']==0:
-            g1=res['pars'][2]
-            g1err=numpy.sqrt(res['pars_cov'][2,2])
-            g2=res['pars'][3]
-            g2err=numpy.sqrt(res['pars_cov'][3,3])
+        g1=res['pars'][2]
+        g1err=numpy.sqrt(res['pars_cov'][2,2])
+        g2=res['pars'][3]
+        g2err=numpy.sqrt(res['pars_cov'][3,3])
 
-            print '        g1: %.4g +/- %.4g g2: %.4g +/- %.4g' % (g1,g1err,g2,g2err)
+        print >>stderr,'        g1: %.4g +/- %.4g g2: %.4g +/- %.4g' % (g1,g1err,g2,g2err)
 
     def _print_simple_fluxes(self, res):
         """
         print in a nice format
         """
         from numpy import sqrt,diag
-        if res['flags']==0:
-            flux=res['pars'][5:]
-            flux_cov=res['pars_cov'][5:, 5:]
-            flux_err=sqrt(diag(flux_cov))
+        flux=res['pars'][5:]
+        flux_cov=res['pars_cov'][5:, 5:]
+        flux_err=sqrt(diag(flux_cov))
 
-            print_pars(flux,     stream=stderr, front='        ')
-            print_pars(flux_err, stream=stderr, front='        ')
+        print_pars(flux,     stream=stderr, front='        ')
+        print_pars(flux_err, stream=stderr, front='        ')
 
     def _print_simple_T(self, res):
         """
         print T, Terr, Ts2n and sigma
         """
-        if res['flags']==0:
-            T = res['pars'][4]
-            Terr = numpy.sqrt( res['pars_cov'][4,4] )
+        T = res['pars'][4]
+        Terr = numpy.sqrt( res['pars_cov'][4,4] )
 
-            if Terr > 0:
-                Ts2n=T/Terr
-            else:
-                Ts2n=-9999.0
-            if T > 0:
-                sigma=numpy.sqrt(T/2.)
-            else:
-                sigma=-9999.0
+        if Terr > 0:
+            Ts2n=T/Terr
+        else:
+            Ts2n=-9999.0
+        if T > 0:
+            sigma=numpy.sqrt(T/2.)
+        else:
+            sigma=-9999.0
 
-            tup=(T,Terr,Ts2n,sigma)
-            print >>stderr, '        T: %s +/- %s Ts2n: %s sigma: %s' % tup
+        tup=(T,Terr,Ts2n,sigma)
+        print >>stderr, '        T: %s +/- %s Ts2n: %s sigma: %s' % tup
+
+    def _write_checkpoint(self, tm):
+        import fitsio
+        print >>stderr,'checkpointing at',tm,'seconds'
+        print >>stderr,self.checkpoint_file
+        fitsio.write(self.checkpoint_file,
+                     self.data,
+                     clobber=True)
+        self.checkpointed=True
+
 
     def _make_struct(self):
         """
@@ -996,6 +1029,8 @@ class MedsFit(object):
                      (n['dof'],'f8'),
                      (n['aic'],'f8'),
                      (n['bic'],'f8'),
+                     (n['arate'],'f8'),
+                     (n['tau'],'f8'),
                     ]
                 if self.do_lensfit:
                     dt += [(n['g_sens'], 'f8', 2)]
@@ -1029,6 +1064,8 @@ class MedsFit(object):
                 data[n['chi2per']] = PDEFVAL
                 data[n['aic']] = BIG_PDEFVAL
                 data[n['bic']] = BIG_PDEFVAL
+
+                data[n['tau']] = PDEFVAL
 
                 if self.do_lensfit:
                     data[n['g_sens']] = DEFVAL
@@ -1075,3 +1112,67 @@ _em2_pguess=numpy.array([0.596510042804182,0.4034898268889178])
 #_em2_fguess=numpy.array([12.6,3.8])
 #_em2_fguess[:] /= _em2_fguess.sum()
 #_em2_pguess=numpy.array([0.30, 0.70])
+
+
+def reject_outliers(imlist, wtlist, nsigma=5.0, A=0.3):
+    """
+    Set the weight for outlier pixels to zero
+
+     | im - med | > n*sigma_i + A*|med|
+
+    where mu is the median
+
+    I actually do
+
+        wt*(im-med)**2 > (n + A*|med|*sqrt(wt))**2
+
+    We wrongly assume the images all align, but this is ok as long as nsigma is
+    high enough
+
+    If the number of images is < 3 then the weight maps are not modified
+    """
+
+    nreject=0
+
+    nim=len(imlist)
+    if nim < 3:
+        return nreject
+
+    dims=imlist[0].shape
+    imstack = numpy.zeros( (nim, dims[0], dims[1]) )
+
+    for i,im in enumerate(imlist):
+        imstack[i,:,:] = im
+
+    med=numpy.median(imstack, axis=0)
+
+    for i in xrange(nim):
+        im=imlist[i]
+        wt=wtlist[i]
+
+        wt.clip(0.0, out=wt)
+
+        ierr = numpy.sqrt(wt)
+
+        # wt*(im-med)**2
+        chi2_image = im.copy()
+        chi2_image -= med
+        chi2_image *= chi2_image
+        chi2_image *= wt
+
+        # ( n + A*|med|*sqrt(wt) )**2
+        maxvals = numpy.abs(med)
+        maxvals *= A
+        maxvals *= ierr
+        maxvals += nsigma
+        maxvals *= maxvals
+
+        w=numpy.where(chi2_image > maxvals)
+
+        if w[0].size > 0:
+            wt[w] = 0.0
+            nreject += w[0].size
+
+    return nreject
+
+

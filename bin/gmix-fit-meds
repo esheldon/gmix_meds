@@ -215,6 +215,7 @@ def run_ngmix(meds_files, conf, checkpoint_data=None):
     
     conf['g_prior'] = get_g_prior_ngmix(conf)
     conf['cen_prior'] = get_cen_prior_ngmix(conf)
+    conf['T_prior'] = get_T_prior_ngmix(conf)
 
     gm=gmix_meds.nfit.MedsFit(meds_files,
                              checkpoint_data=checkpoint_data,
@@ -227,6 +228,21 @@ def run_ngmix(meds_files, conf, checkpoint_data=None):
     meta=make_ngmix_meta(conf, meds_meta, meds_files)
 
     return data, meta
+
+def get_T_prior_ngmix(conf):
+    import ngmix
+
+    T_prior_type=conf['T_prior_type']
+    pars=conf['T_prior_pars']
+
+    if T_prior_type == 'flat':
+        T_prior=ngmix.priors.FlatPrior(pars[0], pars[1])
+    elif T_prior_type=='lognormal':
+        T_prior=ngmix.priors.LogNormal(pars[0], pars[1])
+    else:
+        raise ValueError("bad T prior type: %s" % T_prior_type)
+
+    return T_prior
 
 def get_g_prior_ngmix(conf):
     import ngmix
@@ -487,6 +503,11 @@ def go(config_file, meds_files, out_file, options):
         fobj.write(data,extname="model_fits")
         fobj.write(meta,extname="meta_data")
 
+    # if we get here, we have succeeded in writing the data
+    # we can remove the checkpoint file
+    if os.path.exists(checkpoint_file):
+        print >>stderr,'removing checkpoint file'
+        os.remove(checkpoint_file)
 
 def go_local_old(config_file, meds_files, out_file, options):
     """
