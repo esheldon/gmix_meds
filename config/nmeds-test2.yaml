@@ -40,10 +40,10 @@ reject_outliers: True
 use_cen_prior: True
 cen_width: 0.27
 
-#g_prior_type: "ba"
-#g_prior_pars: 0.3
+# from fitting to all cosmos galaxies in galsim data
 g_prior_type: "exp"
-g_prior_pars: [27.63, 1.25, 0.016, 0.77]
+g_prior_pars: [560.0, 1.05, 0.086, 0.813]
+
 # still want true here even if using the coadd guess,
 # in case the guess is broken
 draw_g_prior: True

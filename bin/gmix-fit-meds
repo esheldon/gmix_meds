@@ -380,7 +380,7 @@ def get_checkpoint_data(out_file):
         with fitsio.FITS(checkpoint_file) as fobj:
             data['data']=fobj["model_fits"][:]
             if 'psf_fits'in fobj:
-                ata['psf_data']=fobj["psf_fits"][:]
+                data['psf_data']=fobj["psf_fits"][:]
 
     return checkpoint_file, data
 
@@ -416,22 +416,19 @@ def setup_work_files(options, meds_files):
     return rng_send, meds_files, meds_files_full, extracted
 
  
-def write_data(data, psf_data, meta, out_file, psf_out_file):
+def write_data(data, psf_data, meta, out_file):
     makedir_fromfile(out_file)
     print >>stderr,'writing:',out_file
     with fitsio.FITS(out_file,'rw',clobber=True) as fobj:
         fobj.write(data,extname="model_fits")
-        fobj.write(meta,extname="meta_data")
-
-    if psf_data is not None:
-        with fitsio.FITS(psf_out_file,'rw',clobber=True) as fobj:
+        if psf_data is not None:
             fobj.write(psf_data,extname="psf_fits")
+        fobj.write(meta,extname="meta_data")
 
 
 def go(config_file, meds_files, out_file, options):
 
     checkpoint_file, checkpoint_data=get_checkpoint_data(out_file)
-    psf_out_file=out_file.replace('.fits','-psf.fits')
 
     conf=load_config(config_file)
     pprint.pprint(conf,stream=stderr)
@@ -452,7 +449,7 @@ def go(config_file, meds_files, out_file, options):
     if options.work_dir is not None:
         meta['meds_file'] = meds_files_full
 
-    write_data(data, psf_data, meta, out_file, psf_out_file)
+    write_data(data, psf_data, meta, out_file)
 
     cleanup_checkpoint(checkpoint_file)
   

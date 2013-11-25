@@ -5,6 +5,7 @@ todo
     - implement exp g prior
     - figure out what to do with T and counts priors
     - scale images by jacobian determinant?
+    - copy psf data
 
 """
 import os
@@ -225,13 +226,13 @@ class MedsFit(object):
     
         print >>stderr,'    fitting: coadd psf models'
         coadd_keep_lol,coadd_psf_gmix_lol,coadd_flags=\
-                self._fit_psfs(mindex,coadd_jacob_lol,do_coadd=True)
+                self._fit_psfs(dindex,coadd_jacob_lol,do_coadd=True)
         if any(coadd_flags):
             self.data['flags'][dindex] = PSF_FIT_FAILURE 
             return
 
         print >>stderr,'    fitting: psf models'
-        keep_lol,psf_gmix_lol,flags=self._fit_psfs(mindex,jacob_lol)
+        keep_lol,psf_gmix_lol,flags=self._fit_psfs(dindex,jacob_lol)
         if any(flags):
             self.data['flags'][dindex] = PSF_FIT_FAILURE 
             return
@@ -402,7 +403,7 @@ class MedsFit(object):
         return se_jlist, jcoadd_jlist
 
 
-    def _fit_psfs(self, mindex, jacob_lol, do_coadd=False):
+    def _fit_psfs(self, dindex, jacob_lol, do_coadd=False):
         """
         fit psfs for all bands
         """
@@ -418,7 +419,8 @@ class MedsFit(object):
             psfex_list=self.psfex_lol[band]
 
             keep_list, gmix_list, flags = self._fit_psfs_oneband(meds,
-                                                                 mindex,
+                                                                 dindex,
+                                                                 band,
                                                                  jacob_list,
                                                                  psfex_list,
                                                                  do_coadd=do_coadd)
@@ -437,13 +439,15 @@ class MedsFit(object):
         return keep_lol, gmix_lol, flag_list
 
 
-    def _fit_psfs_oneband(self,meds,mindex,jacob_list,psfex_list, do_coadd=False):
+    def _fit_psfs_oneband(self,meds,dindex,band,jacob_list,psfex_list, do_coadd=False):
         """
         Generate psfex images for all SE images and fit
         them to gaussian mixture models
         """
-        ptuple = self._get_psfex_reclist(meds, psfex_list, mindex,do_coadd=do_coadd)
+        ptuple = self._get_psfex_reclist(meds, psfex_list, dindex,do_coadd=do_coadd)
         imlist,cenlist,siglist,flist=ptuple
+
+        psf_start = self.data['psf_start'][dindex, band]
 
         keep_list=[]
         gmix_list=[]
@@ -452,6 +456,9 @@ class MedsFit(object):
 
         gmix_psf=None
         for i in xrange(len(imlist)):
+
+            psf_index = psf_start + i
+
             im=imlist[i]
             jacob0=jacob_list[i]
             sigma=siglist[i]
@@ -463,10 +470,13 @@ class MedsFit(object):
             jacob._data['row0'] = cen0[0]
             jacob._data['col0'] = cen0[1]
 
+            tflags=0
             try:
                 fitter=self._do_fit_psf(im,jacob,sigma,first_guess=gmix_psf)
 
                 gmix_psf=fitter.get_gmix()
+                self._set_psf_data(psf_index, gmix_psf)
+
                 keep,offset_arcsec=self._should_keep_psf(gmix_psf)
                 if keep:
                     gmix_list.append( gmix_psf )
@@ -474,21 +484,27 @@ class MedsFit(object):
                 else:
                     print >>stderr,('large psf offset: %s '
                                     'in %s' % (offset_arcsec,flist[i]))
-                    flags |= PSF_LARGE_OFFSETS 
+                    tflags |= PSF_LARGE_OFFSETS 
 
+                
             except GMixMaxIterEM:
                 print >>stderr,'psf fail',flist[i]
-                flags |= PSF_FIT_FAILURE
 
+                tlags == PSF_FIT_FAILURE
+
+            self.psf_data['flags'][psf_index] = tflags
+            flags |= tflags
 
         return keep_list, gmix_list, flags
 
 
-    def _get_psfex_reclist(self, meds, psfex_list, mindex, do_coadd=False):
+    def _get_psfex_reclist(self, meds, psfex_list, dindex, do_coadd=False):
         """
         Generate psfex reconstructions for the SE images
         associated with the cutouts
         """
+
+        mindex = self.index_list[dindex]
         ncut=meds['ncutout'][mindex]
         imlist=[]
         cenlist=[]
@@ -999,13 +1015,26 @@ class MedsFit(object):
             ncutout += meds['ncutout'][self.index_list].sum() - ncoadd
         return ncutout
 
+
+    def _set_psf_data(self, index, gm):
+        """
+        Set psf fit data. Index can be got from the main model
+        fits struct
+        """
+        pars=gm.get_full_pars()
+        g1,g2,T=gm.get_g1g2T()
+        self.psf_data['pars'][index,:] = pars
+        self.psf_data['g'][index,0] = g1
+        self.psf_data['g'][index,1] = g2
+        self.psf_data['T'][index] = T
+
+
     def _make_psf_struct(self):
         """
         We will make the maximum number of possible psfs according
         to the cutout count, not counting the coadd
         """
 
-        ncutout=self._count_all_cutouts()
 
         npars=self.psf_ngauss*6
         dt=[('id','i4'), # same as 'id' in main struct, used for matching
@@ -1016,8 +1045,49 @@ class MedsFit(object):
             ('T','f8'),
             ('pars','f8',npars)]
 
-        nobj=self.index_list.size
-        self.psf_data = numpy.zeros(nobj, dtype=dt)
+        ncutout=self._count_all_cutouts()
+        psf_data = numpy.zeros(ncutout, dtype=dt)
+
+        psf_data['g'] = PDEFVAL
+        psf_data['T'] = PDEFVAL
+        psf_data['pars'] = PDEFVAL
+        psf_data['flags'] = NO_ATTEMPT
+        self.psf_data=psf_data
+
+        self._set_psf_start()
+
+    def _set_psf_start(self):
+        """
+        Set the psf start in the self.data struct and info and fill in some psf
+        metadata in the self.psf_data struct
+        """
+        print >>stderr,'Setting psf start positions'
+        n=self.data.size
+
+        data=self.data
+        psf_data=self.psf_data
+
+        data['psf_start'] = -1
+
+        beg=0
+        for dindex in xrange(n):
+
+            mindex=self.index_list[dindex]
+
+            for band,meds in enumerate(self.meds_list):
+                # minus one to remove coadd
+                ncut_tot = meds['ncutout'][mindex]
+                ncut_se  = ncut_tot-1
+                if ncut_se > 1:
+                    end=beg+ncut_se
+                    data['psf_start'][dindex, band] = beg
+
+                    psf_data['band'][beg:end] = band 
+                    psf_data['id'][beg:end] = dindex
+                    psf_data['file_id'][beg:end] = meds['file_id'][mindex,1:ncut_tot]
+
+                    beg += ncut_se
+
 
     def _make_struct(self):
         """
