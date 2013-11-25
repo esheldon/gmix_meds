@@ -1020,6 +1020,7 @@ class MedsFit(object):
             ('flags','i4'),
             ('nimage_tot','i4',bshape),
             ('nimage_use','i4',bshape),
+            ('psf_start','i4',bshape),  # pointers into psf file
             ('time','f8')]
 
         # the psf fits are done for each band separately
