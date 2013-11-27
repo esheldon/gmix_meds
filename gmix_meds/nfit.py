@@ -1038,9 +1038,9 @@ class MedsFit(object):
         ncutout=0
         ncoadd=self.index_list.size
         for meds in self.meds_list:
-            ncutout += meds['ncutout'][self.index_list].sum() - ncoadd
+            wnozero,=numpy.where(meds['ncutout'][self.index_list]>0)
+            ncutout += meds['ncutout'][self.index_list].sum() - wnozero.size
         return ncutout
-
 
     def _set_psf_data(self, index, gm):
         """
@@ -1106,8 +1106,9 @@ class MedsFit(object):
                 # minus one to remove coadd
                 ncut_tot = meds['ncutout'][mindex]
                 ncut_se  = ncut_tot-1
-                if ncut_se > 1:
+                if ncut_se >= 1:
                     end=beg+ncut_se
+
                     data['psf_start'][dindex, band] = beg
 
                     psf_data['band'][beg:end] = band 
