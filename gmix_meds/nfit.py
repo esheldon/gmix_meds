@@ -1079,10 +1079,10 @@ class MedsFit(object):
             psf_data['pars'] = PDEFVAL
             psf_data['flags'] = NO_ATTEMPT
 
+            self.psf_data=psf_data
             self._set_psf_start()
         else:
-            psf_data=numpy.zeros(1)
-        self.psf_data=psf_data
+            self.psf_data=numpy.zeros(1)
 
     def _set_psf_start(self):
         """
