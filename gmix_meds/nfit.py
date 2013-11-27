@@ -1032,14 +1032,13 @@ class MedsFit(object):
 
     def _count_all_cutouts(self):
         """
-        Count the cutouts for the objects, not including the coadd cutouts.  If
-        obj_range was sent, this will be a subset
+        Count the cutouts for the objects, including the coadd, space which may
+        not be used.  If obj_range was sent, this will be a subset
         """
         ncutout=0
         ncoadd=self.index_list.size
         for meds in self.meds_list:
-            wnozero,=numpy.where(meds['ncutout'][self.index_list]>0)
-            ncutout += meds['ncutout'][self.index_list].sum() - wnozero.size
+            ncutout += meds['ncutout'][self.index_list].sum()
         return ncutout
 
     def _set_psf_data(self, index, gm):
