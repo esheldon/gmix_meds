@@ -511,7 +511,7 @@ class MedsFit(object):
             except GMixMaxIterEM:
                 print >>stderr,'psf fail',flist[i]
 
-                tlags == PSF_FIT_FAILURE
+                tflags == PSF_FIT_FAILURE
 
             self.psf_data['flags'][psf_index] = tflags
             flags |= tflags
