@@ -59,7 +59,7 @@ class MedsFit(object):
         The following are sent through keywords
 
         fit_types: list of strings
-            'psf','simple'
+            ['simple']
         obj_range: optional
             a 2-element sequence or None.  If not None, only the objects in the
             specified range are processed and get_data() will only return those
@@ -83,6 +83,7 @@ class MedsFit(object):
 
         self.imstart=1
         self.fit_types=self.conf['fit_types']
+        self.simple_models=keys.get('simple_models',SIMPLE_MODELS_DEFAULT )
 
         self.guess_from_coadd=keys.get('guess_from_coadd',False)
 
@@ -93,11 +94,7 @@ class MedsFit(object):
         self.do_lensfit=keys.get("do_lensfit",False)
         self.mca_a=keys.get('mca_a',2.0)
 
-        self.g_prior=keys.get('g_prior',None)
-        self.draw_g_prior=keys.get('draw_g_prior',True)
-        # in arcsec (or units of jacobian)
-        self.cen_prior=keys.get("cen_prior",None)
-        self.T_prior=keys.get('T_prior',None)
+        self._unpack_priors()
 
         self.meds_files=_get_as_list(meds_files)
         self.checkpoint = self.conf.get('checkpoint',172800)
@@ -126,8 +123,6 @@ class MedsFit(object):
         self.region=keys.get('region','seg_and_sky')
         self.max_box_size=keys.get('max_box_size',2048)
 
-        self.simple_models=keys.get('simple_models',SIMPLE_MODELS_DEFAULT )
-
         self.reject_outliers=keys.get('reject_outliers',False) # from cutouts
 
         self.make_plots=keys.get('make_plots',False)
@@ -136,6 +131,32 @@ class MedsFit(object):
         if self._checkpoint_data is None:
             self._make_struct()
             self._make_psf_struct()
+
+    def _unpack_priors(self):
+        conf=self.conf
+
+        nmod=len(self.simple_models)
+        T_priors=conf['T_priors']
+        g_priors=conf['g_priors']
+
+        if (len(T_priors) != nmod or len(g_priors) != nmod ):
+            raise ValueError("models and T,g priors must be same length")
+
+        priors={}
+        models=self.simple_models
+        for i in xrange(nmod):
+            model=models[i]
+            T_prior=T_priors[i]
+            g_prior=g_priors[i]
+            
+            modlist={'T':T_prior, 'g':g_prior}
+            priors[model] = modlist
+
+        self.priors=priors
+        self.draw_g_prior=conf.get('draw_g_prior',True)
+
+        # in arcsec (or units of jacobian)
+        self.cen_prior=conf.get("cen_prior",None)
 
     def _set_checkpoint_data(self, **keys):
         self._checkpoint_data=keys.get('checkpoint_data',None)
@@ -643,10 +664,7 @@ class MedsFit(object):
         """
         Fit psf flux and other models
         """
-        if 'psf' in self.fit_types:
-            self._fit_psf_flux(dindex, sdata)
-        else:
-            raise ValueError("you should do a psf_flux fit")
+        self._fit_psf_flux(dindex, sdata)
  
         s2n=self.data['psf_flux'][dindex,:]/self.data['psf_flux_err'][dindex,:]
         max_psf_s2n=numpy.nanmax(s2n)
@@ -787,7 +805,15 @@ class MedsFit(object):
         return gm.get_trials()
 
     def _do_fit_simple(self, model, im_lol, wt_lol, jacob_lol, psf_gmix_lol,
-                       burnin,nstep,T_guess=None,counts_guess=None,full_guess=None):
+                       burnin,nstep,
+                       T_guess=None,
+                       counts_guess=None,
+                       full_guess=None):
+
+        priors=self.priors[model]
+        g_prior=priors['g']
+        T_prior=priors['T']
+
         gm=ngmix.fitting.MCMCSimple(im_lol,
                                     wt_lol,
                                     jacob_lol,
@@ -807,8 +833,8 @@ class MedsFit(object):
                                     full_guess=full_guess,
 
                                     cen_prior=self.cen_prior,
-                                    T_prior=self.T_prior,
-                                    g_prior=self.g_prior,
+                                    T_prior=T_prior,
+                                    g_prior=g_prior,
                                     draw_g_prior=self.draw_g_prior,
                                     do_lensfit=self.do_lensfit,
                                     do_pqr=self.do_pqr)
@@ -1034,7 +1060,6 @@ class MedsFit(object):
         We will make the maximum number of possible psfs according
         to the cutout count, not counting the coadd
         """
-
 
         npars=self.psf_ngauss*6
         dt=[('id','i4'), # same as 'id' in main struct, used for matching

@@ -213,9 +213,9 @@ def run_ngmix(meds_files, conf, checkpoint_data=None):
     import gmix_meds.nfit
 
     
-    conf['g_prior'] = get_g_prior_ngmix(conf)
+    conf['g_priors'] = get_g_priors_ngmix(conf)
     conf['cen_prior'] = get_cen_prior_ngmix(conf)
-    conf['T_prior'] = get_T_prior_ngmix(conf)
+    conf['T_priors'] = get_T_priors_ngmix(conf)
 
     gm=gmix_meds.nfit.MedsFit(meds_files,
                              checkpoint_data=checkpoint_data,
@@ -230,39 +230,54 @@ def run_ngmix(meds_files, conf, checkpoint_data=None):
 
     return data, psf_data, meta
 
-def get_T_prior_ngmix(conf):
+def get_T_priors_ngmix(conf):
     import ngmix
 
-    T_prior_type=conf['T_prior_type']
-    pars=conf['T_prior_pars']
+    T_prior_types=conf['T_prior_types']
 
-    if T_prior_type == 'flat':
-        T_prior=ngmix.priors.FlatPrior(pars[0], pars[1])
-    elif T_prior_type=='lognormal':
-        T_prior=ngmix.priors.LogNormal(pars[0], pars[1])
-    else:
-        raise ValueError("bad T prior type: %s" % T_prior_type)
+    T_priors=[]
+    for i,typ in enumerate(T_prior_types):
+        if typ == 'flat':
+            pars=conf['T_prior_pars'][i]
+            T_prior=ngmix.priors.FlatPrior(pars[0], pars[1])
+        elif typ =='lognormal':
+            pars=conf['T_prior_pars'][i]
+            T_prior=ngmix.priors.LogNormal(pars[0], pars[1])
+        elif typ=="cosmos_exp":
+            T_prior=ngmix.priors.TPriorCosmosExp()
+        elif typ=="cosmos_dev":
+            T_prior=ngmix.priors.TPriorCosmosDev()
+        else:
+            raise ValueError("bad T prior type: %s" % T_prior_type)
 
-    return T_prior
+        T_priors.append(T_prior)
 
-def get_g_prior_ngmix(conf):
+    return T_priors
+
+def get_g_priors_ngmix(conf):
     import ngmix
-    if 'g_prior_type' in conf:
-        g_prior_type=conf['g_prior_type']
-    else:
-        g_prior_type=None
+    g_prior_types=conf['g_prior_types']
 
-    if g_prior_type is None or g_prior_type=='None':
-        return None
-    else:
-        pars=conf['g_prior_pars']
-        if g_prior_type=='exp':
+    g_priors=[]
+    for i,typ in enumerate(g_prior_types):
+        if typ =='exp':
+            pars=conf['g_prior_pars'][i]
             parr=numpy.array(pars,dtype='f8')
-            return ngmix.priors.GPriorExp(parr)
-        elif g_prior_type=='ba':
-            return ngmix.priors.GPriorBA(pars)
+            g_prior = ngmix.priors.GPriorM(parr)
+        elif typ=='cosmos-galfit':
+            g_prior = ngmix.priors.make_gprior_cosmos_galfit()
+        elif typ=='cosmos-exp':
+            g_prior = ngmix.priors.make_gprior_cosmos_exp()
+        elif typ=='cosmos-dev':
+            g_prior = ngmix.priors.make_gprior_cosmos_dev()
+        elif typ =='ba':
+            sigma=conf['g_prior_pars'][i]
+            g_prior = ngmix.priors.GPriorBA(sigma)
         else:
             raise ValueError("implement gprior '%s'")
+        g_priors.append(g_prior)
+
+    return g_priors
 
 def get_cen_prior_ngmix(conf):
     import ngmix
