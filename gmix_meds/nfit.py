@@ -1071,15 +1071,18 @@ class MedsFit(object):
             ('pars','f8',npars)]
 
         ncutout=self._count_all_cutouts()
-        psf_data = numpy.zeros(ncutout, dtype=dt)
+        if ncutout > 0:
+            psf_data = numpy.zeros(ncutout, dtype=dt)
 
-        psf_data['g'] = PDEFVAL
-        psf_data['T'] = PDEFVAL
-        psf_data['pars'] = PDEFVAL
-        psf_data['flags'] = NO_ATTEMPT
+            psf_data['g'] = PDEFVAL
+            psf_data['T'] = PDEFVAL
+            psf_data['pars'] = PDEFVAL
+            psf_data['flags'] = NO_ATTEMPT
+
+            self._set_psf_start()
+        else:
+            psf_data=numpy.zeros(1)
         self.psf_data=psf_data
-
-        self._set_psf_start()
 
     def _set_psf_start(self):
         """
