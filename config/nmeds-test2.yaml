@@ -26,7 +26,7 @@ region: "seg_and_sky"
 # in arcsec
 psf_offset_max: 0.25
 
-max_box_size: 256
+max_box_size: 192
 
 fit_types: ['simple']
 
