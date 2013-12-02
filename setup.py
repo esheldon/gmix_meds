@@ -3,8 +3,8 @@ import glob
 from distutils.core import setup
 
 scripts=['gmix-fit-meds',
-         'gmix-meds-concat',
-         'gmix-meds-concat-all',
+         'gmix-meds-collate',
+         'gmix-meds-collate-all',
          'gmix-fit-double-psf',
          'gmix-fit-meds-stars']
 

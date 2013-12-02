@@ -4,6 +4,10 @@ import fitsio
 import json
 from . import lmfit
 
+# need to fix up the images instead of this
+PIXSCALE=0.265
+PIXSCALE2=PIXSCALE**2
+
 def load_config(name):
     path = '$GMIX_MEDS_DIR/share/config/%s.yaml' % name
     path = os.path.expandvars(path)
@@ -43,6 +47,7 @@ class TileConcat(object):
 
         if self.blind:
             self.blind_factor = get_blind_factor()
+
 
     def find_coadd_run(self):
         """
@@ -144,8 +149,10 @@ class TileConcat(object):
                 if w.size > 0:
                     data[g_name][w,:] *= self.blind_factor
 
-    def pick_fields(self, data0):
+    def pick_fields(self, data0, meta):
         import esutil
+        nband = data0['psf_flux'].shape[1]
+
         dt=[]
         names=[]
         ftypes=[]
@@ -162,12 +169,22 @@ class TileConcat(object):
                 names.append(n)
 
         
+        flux_ind = names.index('psf_flux')
+        dt.insert(flux_ind+1, ('psf_flux_s2n','f8',nband) )
+        dt.insert(flux_ind+2, ('psf_mag','f8',nband) )
+
         simple_models=self.config.get('simple_models',
                                       lmfit.SIMPLE_MODELS_DEFAULT )
 
         do_T=False
         if 'simple' in self.config['fit_types']:
             for ft in simple_models:
+                flux_ind = names.index('%s_flux' % ft)
+                dt.insert(flux_ind+1, ('%s_flux_s2n' % ft, 'f8', nband) )
+
+                magf = ('%s_mag' % ft, 'f8', nband)
+                dt.insert(flux_ind+2, magf)
+
                 Tn = '%s_T' % ft
                 Ten = '%s_err' % Tn
                 Ts2n = '%s_s2n' % Tn
@@ -188,6 +205,11 @@ class TileConcat(object):
         data=numpy.zeros(data0.size, dtype=dt)
         esutil.numpy_util.copy_fields(data0, data)
 
+        all_models=['psf'] + simple_models 
+        for ft in all_models:
+            for band in xrange(nband):
+                self.calc_mag_and_flux_stuff(data, meta, ft, band)
+        
         if do_T:
             for ft in simple_models:
                 pn = '%s_pars' % ft
@@ -202,23 +224,73 @@ class TileConcat(object):
                 data[Ten][:]  =  9999.0
                 data[Ts2n][:] = -9999.0
 
-                w,=numpy.where(data[fn] == 0)
+                Tcov=data[pcn][:,4,4]
+                w,=numpy.where( (data[fn] == 0) & (Tcov > 0.0) )
                 if w.size > 0:
                     data[Tn][w]   = data[pn][w, 4]
-                    data[Ten][w]  =  numpy.sqrt(data[pcn][w,4,4])
+                    data[Ten][w]  =  numpy.sqrt(Tcov[w])
                     data[Ts2n][w] = data[Tn][w]/data[Ten][w]
 
 
         return data
 
-    def read_data(self, fname):
-        data0 = fitsio.read(fname, ext="model_fits")
+    def calc_mag_and_flux_stuff(self, data, meta, model, band):
+        nband = data['psf_flux'].shape[1]
 
-        data = self.pick_fields(data0)
+        flux_name='%s_flux' % model
+        cov_name='%s_flux_cov' % model
+        s2n_name='%s_flux_s2n' % model
+        flag_name = '%s_flags' % model
+        mag_name='%s_mag' % model
+
+        data[mag_name][:,band] = -9999.
+        data[s2n_name][:,band] = 0.0
+
+        if model=='psf':
+            w,=numpy.where(data[flag_name][:,band] == 0)
+        else:
+            w,=numpy.where(data[flag_name] == 0)
+
+        if w.size > 0:
+            for band in xrange(nband):
+                flux = ( data[flux_name][w,band]/PIXSCALE2 ).clip(min=0.001)
+                magzero=meta['magzp_ref'][band]
+                data[mag_name][w,band] = magzero - 2.5*numpy.log10( flux )
+
+                if model=='psf':
+                    flux=data['psf_flux'][w,band]
+                    flux_err=data['psf_flux_err'][w,band]
+                    w2,=numpy.where(flux_err > 0)
+                    if w2.size > 0:
+                        flux=flux[w2]
+                        flux_err=flux_err[w2]
+                        data[s2n_name][w[w2],band] = flux/flux_err
+                else:
+                    flux=data[cov_name][w,band,band]
+                    flux_var=data[cov_name][w,band,band]
+
+                    w2,=numpy.where(flux_var > 0)
+                    if w.size > 0:
+                        flux=flux[w2]
+                        flux_err=numpy.sqrt(flux_var[w2])
+                        data[s2n_name][w[w2], band] = flux/flux_err
+
+
+    def read_data(self, fname):
+        with fitsio.FITS(fname) as fobj:
+            data0 = fobj["model_fits"][:]
+            meta  = fobj["meta_data"][:]
+
+        data = self.pick_fields(data0,meta)
             
         return data
 
 
+    def read_meds_meta(self, meds_files):
+        """
+        get the meds metadata
+        """
+        pass
 
 
 
