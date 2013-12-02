@@ -162,7 +162,8 @@ class TileConcat(object):
                 names.append(n)
 
         
-        simple_models=self.config.get('simple_models',lmfit.SIMPLE_MODELS_DEFAULT )
+        simple_models=self.config.get('simple_models',
+                                      lmfit.SIMPLE_MODELS_DEFAULT )
 
         do_T=False
         if 'simple' in self.config['fit_types']:
