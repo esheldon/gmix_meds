@@ -24,7 +24,7 @@ class TileConcat(object):
     """
     Concatenate the split files for a single tile
     """
-    def __init__(self, run, tilename, ftype, blind=False, clobber=False):
+    def __init__(self, run, tilename, ftype, blind=False, clobber=False, fix_psfstart_bug=False):
         import desdb
         import deswl
 
@@ -33,6 +33,7 @@ class TileConcat(object):
         self.ftype=ftype
         self.blind=blind
         self.clobber=clobber
+        self.fix_psfstart_bug=fix_psfstart_bug
 
         self.rc=deswl.files.Runconfig(run)
         self.config = load_config(self.rc['config'])
@@ -133,7 +134,7 @@ class TileConcat(object):
             dlist.append(data)
             if psf_fits.dtype.names is not None:
                 # No names when nothing fit
-                w=numpy.where(data['nimage_use'] > 0)
+                w=numpy.where(data['psf_start'] != -1)
                 if w[0].size > 0:
                     data['psf_start'][w] += npsf
                 psf_fits['oid'] += npsf
@@ -320,9 +321,10 @@ class TileConcat(object):
             meta  = fobj["meta_data"][:]
 
         # we had a bug early on setting default psf_start to -1
-        w=numpy.where(data0['nimage_use'] == 0)
-        if w[0].size > 0:
-            data0['psf_start'][w] = -1
+        if self.fix_psfstart_bug:
+            w=numpy.where(data0['nimage_use'] == 0)
+            if w[0].size > 0:
+                data0['psf_start'][w] = -1
 
         names=psf_fits.dtype.names
         if names is not None:
