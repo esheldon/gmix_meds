@@ -208,7 +208,7 @@ def run_lm(meds_files, conf, checkpoint_data=None):
 
     return data, meta
 
-def run_ngmix(meds_files, conf, checkpoint_data=None):
+def run_ngmix(meds_files, meds_files_full, conf, checkpoint_data=None):
     import ngmix
     import gmix_meds.nfit
 
@@ -226,7 +226,7 @@ def run_ngmix(meds_files, conf, checkpoint_data=None):
     meds_meta=gm.get_meds_meta_list()
 
 
-    meta=make_ngmix_meta(conf, meds_meta, meds_files)
+    meta=make_ngmix_meta(conf, meds_meta, meds_files_full)
 
     return data, psf_data, meta
 
@@ -399,13 +399,13 @@ def get_checkpoint_data(out_file):
 
     return checkpoint_file, data
 
-def run_fitter(meds_files, conf, checkpoint_data=None):
+def run_fitter(meds_files, meds_files_full, conf, checkpoint_data=None):
     psf_data=None
     if conf['fitter'] == 'lm':
         data, meta = run_lm(meds_files, conf,
                             checkpoint_data=checkpoint_data)
     elif conf['fitter'] == 'ngmix':
-        data, psf_data, meta = run_ngmix(meds_files, conf,
+        data, psf_data, meta = run_ngmix(meds_files, meds_files_full, conf,
                                          checkpoint_data=checkpoint_data)
     else:
         data, meta = run_mcmc(meds_files, conf,
@@ -458,7 +458,7 @@ def go(config_file, meds_files, out_file, options):
     conf['config_file']=config_file
     conf['checkpoint_file']=checkpoint_file
 
-    data, psf_data, meta=run_fitter(meds_files, conf, 
+    data, psf_data, meta=run_fitter(meds_files, meds_files_full, conf, 
                                     checkpoint_data=checkpoint_data)
 
     if options.work_dir is not None:

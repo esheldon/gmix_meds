@@ -1094,8 +1094,6 @@ class MedsFit(object):
         data=self.data
         psf_data=self.psf_data
 
-        data['psf_start'] = -1
-
         beg=0
         for dindex in xrange(n):
 
@@ -1186,6 +1184,9 @@ class MedsFit(object):
         data['psf_flags'] = NO_ATTEMPT
         data['psf_flux'] = DEFVAL
         data['psf_flux_err'] = PDEFVAL
+
+        # by default we don't have psf info
+        data['psf_start'] = -1
 
         if 'simple' in self.fit_types:
             for model in simple_models:

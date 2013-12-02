@@ -93,6 +93,7 @@ class TileConcat(object):
                                     ext='fits')
 
     def concat(self):
+        import esutil as eu
         from deswl.generic import get_chunks, extract_start_end
         out_file=self.out_file
         print 'writing:',out_file
@@ -105,33 +106,55 @@ class TileConcat(object):
             print 'file already exists, skipping'
             return
 
+        dlist=[]
+        plist=[]
+        npsf=0
+
+        for i in xrange(nchunk):
+
+            start=startlist[i]
+            end=endlist[i]
+            sstr,estr = extract_start_end(start=start, end=end)
+
+            fname=self.df.url('wlpipe_me_split',
+                              run=self.run,
+                              tilename=self.tilename,
+                              start=sstr,
+                              end=estr,
+                              filetype=self.ftype,
+                              ext='fits')
+
+            print '\t%d/%d %s' %(i+1,nchunk,fname)
+            data, psf_fits = self.read_data(fname)
+
+            if self.blind:
+                self.blind_data(data)
+
+            dlist.append(data)
+            if psf_fits.dtype.names is not None:
+                # No names when nothing fit
+                w=numpy.where(data['nimage_use'] > 0)
+                if w[0].size > 0:
+                    data['psf_start'][w] += npsf
+                psf_fits['oid'] += npsf
+                npsf += psf_fits.size
+
+                plist.append(psf_fits)
+
+
+        data=eu.numpy_util.combine_arrlist(dlist)
+        if len(plist) > 0:
+            dopsf=True
+            psf_fits=eu.numpy_util.combine_arrlist(plist)
+        else:
+            dopsf=False
+
         with fitsio.FITS(out_file,'rw',clobber=True) as fobj:
+            meta=fitsio.read(fname, ext="meta_data")
+            fobj.write(data,extname="model_fits")
 
-            for i in xrange(nchunk):
-
-                start=startlist[i]
-                end=endlist[i]
-                sstr,estr = extract_start_end(start=start, end=end)
-
-                fname=self.df.url('wlpipe_me_split',
-                                  run=self.run,
-                                  tilename=self.tilename,
-                                  start=sstr,
-                                  end=estr,
-                                  filetype=self.ftype,
-                                  ext='fits')
-
-                print '\t%d/%d %s' %(i+1,nchunk,fname)
-                data = self.read_data(fname)
-
-                if self.blind:
-                    self.blind_data(data)
-
-                if i==0:
-                    meta=fitsio.read(fname, ext="meta_data")
-                    fobj.write(data,extname="model_fits")
-                else:
-                    fobj["model_fits"].append(data)
+            if dopsf > 0:
+                fobj.write(psf_fits,extname="psf_fits")
 
             fobj.write(meta,extname="meta_data")
 
@@ -149,7 +172,7 @@ class TileConcat(object):
                 if w.size > 0:
                     data[g_name][w,:] *= self.blind_factor
 
-    def pick_fields(self, data0, meta):
+    def pick_fields(self, data0, meta, coadd):
         import esutil
         nband = data0['psf_flux'].shape[1]
 
@@ -168,6 +191,10 @@ class TileConcat(object):
                 dt.append(d)
                 names.append(n)
 
+        dt += [('ra','f8'),('dec','f8'),
+               ('sxflags_i','i4'),
+               ('spread_model_i','f8'),
+               ('mag_auto_i','f8')]
         
         flux_ind = names.index('psf_flux')
         dt.insert(flux_ind+1, ('psf_flux_s2n','f8',nband) )
@@ -204,6 +231,16 @@ class TileConcat(object):
 
         data=numpy.zeros(data0.size, dtype=dt)
         esutil.numpy_util.copy_fields(data0, data)
+
+        cind=data['id']-1
+        wbad,=numpy.where( coadd['number'][cind] != data['id'])
+        if wbad.size > 0:
+            raise ValueError('bad: %s' % wbad.size)
+        data['sxflags_i']  = coadd['flags'][cind]
+        data['ra']  = coadd['alphawin_j2000'][cind]
+        data['dec'] = coadd['deltawin_j2000'][cind]
+        data['spread_model_i'] = coadd['spread_model'][cind]
+        data['mag_auto_i'] = coadd['mag_auto'][cind]
 
         all_models=['psf'] + simple_models 
         for ft in all_models:
@@ -279,11 +316,29 @@ class TileConcat(object):
     def read_data(self, fname):
         with fitsio.FITS(fname) as fobj:
             data0 = fobj["model_fits"][:]
+            psf_fits = fobj["psf_fits"][:]
             meta  = fobj["meta_data"][:]
 
-        data = self.pick_fields(data0,meta)
+        # we had a bug early on setting default psf_start to -1
+        w=numpy.where(data0['nimage_use'] == 0)
+        if w[0].size > 0:
+            data0['psf_start'][w] = -1
+
+        names=psf_fits.dtype.names
+        if names is not None:
+            newnames=[]
+            for n in names:
+                if n == 'id':
+                    n='oid'
+                newnames.append(n)
+
+            psf_fits.dtype.names = tuple(newnames)
+
+        coadd=fitsio.read(meta['coaddcat_file'][0],lower=True)
+        data = self.pick_fields(data0,meta,coadd)
+
             
-        return data
+        return data, psf_fits
 
 
     def read_meds_meta(self, meds_files):
