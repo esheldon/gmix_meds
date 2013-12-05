@@ -5,16 +5,24 @@ import fitsio
 
 from .constants import PIXSCALE, PIXSCALE2
 
-
-class MagHist(object):
-    """
-    Plot the histogram of magnitude
-    """
+class PlotterBase(object):
     def __init__(self, fname):
         self.fname=fname
 
         self._load_data()
 
+    def _load_data(self):
+        with fitsio.FITS(self.fname) as fobj:
+            self.data=fobj['model_fits'][:]
+            self.meta=fobj['meta_data'][:]
+            self.psf_data=fobj['psf_fits'][:]
+
+
+class MagHist(PlotterBase):
+    """
+    Plot the histogram of magnitude
+    """
+    
     def doplot(self, model, band, band_name=None, show=False, **keys):
         import esutil as eu
         data=self.data
@@ -47,11 +55,156 @@ class MagHist(object):
                               xlabel=xlabel)
 
         return plt
+
+class FluxErrHist(PlotterBase):
+    """
+    Plot the histogram of magnitude
+    """
+    
+    def doplot(self, model, band, band_name=None, show=False, **keys):
+        import esutil as eu
+        data=self.data
         
-    def _load_data(self):
-        with fitsio.FITS(self.fname) as fobj:
-            self.data=fobj['model_fits'][:]
-            self.meta=fobj['meta_data'][:]
+        if band_name is None:
+            band_name='%s' % band
+
+        flagn='%s_flags' % model
+        if model=='psf':
+            name='%s_flux_err' % model
+            hdata = data[name][:,band]
+            flags=data[flagn][:,band]
+        else:
+            flags=data[flagn]
+            name='%s_flux_cov' % model
+            hdata = numpy.sqrt( data[name][:,band].clip(min=0.001,max=None) )
+
+
+        logic = (flags==0)
+
+        xlabel=r'$flux_err_{%s}^{%s}' % (model,band_name)
+
+        w,=numpy.where(logic)
+
+        hdata=hdata[w]
+
+        med=numpy.median(hdata)
+        
+        mn,std=eu.stat.sigma_clip(hdata)
+        binsize=0.1*std
+
+        xmax=med+3.*std
+
+        plt=eu.plotting.bhist(hdata,
+                              binsize=binsize,
+                              show=show,
+                              max=xmax,
+                              xlabel=xlabel)
+
+        return plt
+
+
+# 0.1
+
+class TestMySpreadModel(PlotterBase):
+    """
+    Turns out it doesn't work so well because I have the prior on size
+
+    regular spread_model is best
+    """
+    def doplot(self, model, bands, softening=0.1, show=False, **keys):
+        import esutil as eu
+        data=self.data
+
+        flux_name='%s_flux' % model
+        flag_name='%s_flags' % model
+        var_name='%s_flux_cov' % model
+
+        flags=data[flag_name]
+        for band in bands:
+            flags |= data['psf_flags'][:,band]
+
+        logic = (flags==0)
+        w,=numpy.where(logic)
+
+        # shape nobj,nband
+        psf_flux      = data['psf_flux'][w,:]
+        psf_flux_var  = data['psf_flux_err'][w,:]**2
+        flux          = data[flux_name][w,:]
+        flux_var      = flux.copy()
+        for band in bands:
+            flux_var[:,band] = data[var_name][w,band,band]
+        weights=1.0/(flux_var + psf_flux_var + softening**2)
+
+        # sum over band now
+        wsum         = weights.sum(axis=1)
+        psf_flux_sum = ( psf_flux*weights ).sum(axis=1)
+        flux_sum     = ( flux*weights ).sum(axis=1)
+        wpsf_flux    = psf_flux_sum/wsum
+        wflux        = flux_sum/wsum
+
+        w2,=numpy.where(wflux != 0.0)
+        wpsf_flux    = wpsf_flux[w2]
+        wflux        = wflux[w2]
+        spread_model = wflux[w2]/wpsf_flux[w2]-1.
+        #spread_model = wflux[w2]-wpsf_flux[w2]
+
+        mag_name='%s_mag' % model
+        fscale = (wflux/PIXSCALE2).clip(min=0.001,max=None)
+        mag = self.meta['magzp_ref'][0] - 2.5*log10(fscale)
+
+        xlabel=r'$wmag_{%s}' % model
+        my_label=r'$my spread\_model_{%s}' % model
+        my_rng = [-0.5,2.0]
+        sx_label=r'$spread\_model_i'
+        sx_rng = [-0.03,0.03]
+
+        xrng=[15,25]
+        plt=eu.plotting.bscatter(xrng, [0,0], type='solid', color='red',
+                                 show=False)
+
+        plt=eu.plotting.bscatter(mag,
+                                 spread_model,
+                                 type='filled circle',
+                                 size=0.3,
+                                 show=False,
+                                 plt=plt)
+
+        plt.xlabel=xlabel
+        plt.ylabel=my_label
+        plt.xrange=xrng
+        plt.yrange=my_rng
+
+        if show:
+            plt.show()
+
+        plt=eu.plotting.bscatter(xrng, [0,0], type='solid', color='red',
+                                 show=False)
+        plt=eu.plotting.bscatter(mag,
+                                 data['spread_model_i'][w[w2]],
+                                 type='filled circle',
+                                 size=0.3,
+                                 plt=plt,
+                                 show=False)
+
+        plt.xlabel=xlabel
+        plt.ylabel=sx_label
+        plt.xrange=xrng
+        plt.yrange=sx_rng
+
+        if show:
+            plt.show()
+
+
+        eu.plotting.bscatter(data['spread_model_i'][w[w2]],
+                             spread_model,
+                             type='filled circle',
+                             xlabel=sx_label,
+                             ylabel=my_label,
+                             xrange=sx_rng,
+                             yrange=my_rng,
+                             size=0.3,
+                             show=show)
+
 
 class CompareBase(object):
     """
