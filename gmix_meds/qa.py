@@ -36,7 +36,7 @@ class MagHist(PlotterBase):
         else:
             flags=data[flagn]
 
-        logic = (flags==0)
+        logic = (flags==0) & (data['sxflags_i'] == 0)
 
         name='%s_mag' % model
         hdata = data[name][:,band]
@@ -102,14 +102,11 @@ class FluxErrHist(PlotterBase):
 
         return plt
 
-
-# 0.1
-
 class TestMySpreadModel(PlotterBase):
     """
     Turns out it doesn't work so well because I have the prior on size
 
-    regular spread_model is best
+    regular spread_model is better
     """
     def doplot(self, model, bands, softening=0.1, show=False, **keys):
         import esutil as eu
@@ -123,7 +120,7 @@ class TestMySpreadModel(PlotterBase):
         for band in bands:
             flags |= data['psf_flags'][:,band]
 
-        logic = (flags==0)
+        logic = (flags==0) & (data['sxflags_i'] == 0)
         w,=numpy.where(logic)
 
         # shape nobj,nband
