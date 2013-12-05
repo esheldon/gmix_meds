@@ -3,112 +3,48 @@ import numpy
 from numpy import log10
 import fitsio
 
-SCALE=0.265
-
-def do_many_compare_psfmag(goodlist_file):
-    import json
-    import desdb
-
-    with open(goodlist_file) as fobj:
-        data=json.load(fobj)
-
-    tdict = key_by_tile_band(data)
-
-    run=data[0]['run']
-    
-    desdata=os.environ['DESDATA']
-    outdir=os.path.join(desdata,'users','esheldon','gfme-qa',run)
-    if not os.path.exists(outdir):
-        os.makedirs(outdir)
-
-    print outdir
-
-    df=desdb.DESFiles()
-    for tileband,fdict in tdict.iteritems():
-
-        fname=df.url(type='wlpipe_me_generic',
-                     run=run,
-                     tilename=fdict['tilename'],
-                     band=fdict['band'],
-                     filetype='lmfit',
-                     ext='fits')
-
-        print fname
-
-        comp=ComparePSFMags(fname)
-        plt=comp.doplot()
-        plt_stars=comp.doplot(stars=True)
-
-        bname=os.path.basename(fname)
-        epsname=bname.replace('.fits','-magdiff.eps')
-        epsname=os.path.join(outdir,epsname)
-
-        epsname_stars=epsname.replace(".eps", "-stars.eps")
-
-        print '    ',epsname
-        print '    ',epsname_stars
-
-        plt.write_eps(epsname)
-        plt_stars.write_eps(epsname_stars)
-
-def key_by_tile_band(data):
-    odict={}
-
-    for d in data:
-        tilename=d['tilename']
-        band=d['band']
-
-        key='%s-%s' % (tilename,band)
-
-        odict[key] = d
-
-    return odict
+from .constants import PIXSCALE, PIXSCALE2
 
 
-class FluxHist(object):
+class MagHist(object):
     """
-    Plot the histogram of flux or magnitude
+    Plot the histogram of magnitude
     """
-    def __init__(self, fname, scale=SCALE):
+    def __init__(self, fname):
         self.fname=fname
-        self.scale=scale
 
         self._load_data()
 
-    def doplot(self, model, show=False, domag=False, **keys):
+    def doplot(self, model, band, band_name=None, show=False, **keys):
         import esutil as eu
-        
-        flagn='%s_flags' % model
-        fluxn='%s_flux' % model
-
         data=self.data
-        if (flagn not in data.dtype.names
-            or fluxn not in data.dtype.names):
-            raise ValueError("model not found: '%s'" % model)
+        
+        if band_name is None:
+            band_name='%s' % band
 
-        w,=numpy.where( (data[flagn]==0) & (data[fluxn] > 0.001) )
-
-        if domag:
-            fscale = data[fluxn][w]/( self.scale**2 )
-            hdata = -2.5*log10(fscale) + self.meta['magzp_ref'][0]
-            xlabel=r'$mag_{%s}' % model
-            xlog=False
+        flagn='%s_flags' % model
+        if model=='psf':
+            flags=data[flagn][:,band]
         else:
-            hdata = log10( data[fluxn][w] )
-            xlabel=r'$log_{10}(F_{%s})$' % model
-            xlog=True
+            flags=data[flagn]
+
+        logic = (flags==0)
+
+        name='%s_mag' % model
+        hdata = data[name][:,band]
+        logic = logic & (hdata > 15) & (hdata < 25)
+        xlabel=r'$mag_{%s}^{%s}' % (model,band_name)
+
+        w,=numpy.where(logic)
+        hdata=hdata[w]
         
         std=hdata.std()
-        mn=hdata.mean()
+        binsize=0.1*std
 
-        nsig=5
-        xmin = max( mn-nsig*std, hdata.min() )
-        xmax = min( mn+nsig*std, hdata.max() )
-        xrng=[xmin,xmax]
-
-        plt=eu.plotting.bhist(hdata, binsize=0.1*std, show=show,
-                              xrange=xrng,
-                              xlabel=xlabel, xlog=xlog)
+        plt=eu.plotting.bhist(hdata,
+                              binsize=binsize,
+                              show=show,
+                              xlabel=xlabel)
 
         return plt
         
@@ -121,10 +57,9 @@ class CompareBase(object):
     """
     Compare to sextractor psf mags
     """
-    def __init__(self, fname, coadd_cat_file=None, scale=SCALE):
+    def __init__(self, fname, coadd_cat_file=None):
         self.fname=fname
         self.coadd_cat_file=coadd_cat_file
-        self.scale=scale
 
         self._load_data()
 
@@ -144,10 +79,9 @@ class ComparePSFMags(CompareBase):
     """
     Compare to sextractor psf mags
     """
-    def __init__(self, fname, coadd_cat_file=None, scale=SCALE):
+    def __init__(self, fname, coadd_cat_file=None):
         super(ComparePSFMags,self).__init__(fname,
-                                            coadd_cat_file=coadd_cat_file,
-                                            scale=scale)
+                                            coadd_cat_file=coadd_cat_file)
 
     def doplot(self, show=False, stars=False, 
                star_spread_model_max=0.002, **keys):
@@ -173,7 +107,7 @@ class ComparePSFMags(CompareBase):
         ww,=numpy.where(fs2n > 2)
         w=w[ww]
 
-        fscale = data['psf_flux'][w]/( self.scale**2 )
+        fscale = data['psf_flux'][w]/( PIXSCALE2 )
         mag = -2.5*log10(fscale) + self.meta['magzp_ref'][0]
         sxmag = coaddcat_data['mag_psf'][w]
 
@@ -230,10 +164,9 @@ class CompareSimpleMags(CompareBase):
     """
     Compare to sextractor psf mags
     """
-    def __init__(self, fname, coadd_cat_file=None, scale=SCALE):
+    def __init__(self, fname, coadd_cat_file=None):
         super(CompareSimpleMags,self).__init__(fname,
-                                               coadd_cat_file=coadd_cat_file,
-                                               scale=scale)
+                                               coadd_cat_file=coadd_cat_file)
 
     def doplot(self, model, show=False, 
                star_spread_model_max=0.002, **keys):
@@ -256,7 +189,7 @@ class CompareSimpleMags(CompareBase):
 
         w,=numpy.where(logic)
 
-        fscale = flux[w]/( self.scale**2 )
+        fscale = flux[w]/( PIXSCALE2 )
         mag = -2.5*log10(fscale) + self.meta['magzp_ref'][0]
         mag_auto = coaddcat_data['mag_auto'][w]
         mag_auto_err = coaddcat_data['magerr_auto'][w]
@@ -302,10 +235,9 @@ class FluxVsFluxErr(CompareBase):
     """
     Plot Flux vs Flux_err
     """
-    def __init__(self, fname, coadd_cat_file=None, scale=SCALE):
+    def __init__(self, fname, coadd_cat_file=None):
         super(FluxVsFluxErr,self).__init__(fname,
-                                               coadd_cat_file=coadd_cat_file,
-                                               scale=scale)
+                                               coadd_cat_file=coadd_cat_file)
 
     def doplot(self, model, show=False, 
                star_spread_model_max=0.002, **keys):
@@ -326,8 +258,8 @@ class FluxVsFluxErr(CompareBase):
 
         w,=numpy.where(logic)
 
-        fscale = flux[w]/( self.scale**2 )
-        fscale_err = flux_err[w]/( self.scale**2 )
+        fscale = flux[w]/( PIXSCALE )
+        fscale_err = flux_err[w]/( PIXSCALE2 )
 
         log_fscale = numpy.log10( fscale )
 
@@ -358,3 +290,18 @@ class FluxVsFluxErr(CompareBase):
             plt.show()
         return plt
         
+def key_by_tile_band(data):
+    odict={}
+
+    for d in data:
+        tilename=d['tilename']
+        band=d['band']
+
+        key='%s-%s' % (tilename,band)
+
+        odict[key] = d
+
+    return odict
+
+
+

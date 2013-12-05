@@ -5,8 +5,7 @@ import json
 from . import lmfit
 
 # need to fix up the images instead of this
-PIXSCALE=0.265
-PIXSCALE2=PIXSCALE**2
+from .constants import PIXSCALE, PIXSCALE2
 
 def load_config(name):
     path = '$GMIX_MEDS_DIR/share/config/%s.yaml' % name
