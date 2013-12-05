@@ -186,7 +186,6 @@ class TileConcat(object):
                     and 'loglike' not in n
                     and 'aic' not in n
                     and 'bic' not in n
-                    and 'dof' not in n
                     and 'fit_prob' not in n):
                 dt.append(d)
                 names.append(n)
