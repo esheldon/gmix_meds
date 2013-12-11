@@ -1073,6 +1073,7 @@ class MedsFit(object):
         if ncutout > 0:
             psf_data = numpy.zeros(ncutout, dtype=dt)
 
+            psf_data['id'] = -1
             psf_data['g'] = PDEFVAL
             psf_data['T'] = PDEFVAL
             psf_data['pars'] = PDEFVAL

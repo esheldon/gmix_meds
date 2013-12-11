@@ -23,7 +23,7 @@ class TileConcat(object):
     """
     Concatenate the split files for a single tile
     """
-    def __init__(self, run, tilename, ftype, blind=False, clobber=False, fix_psfstart_bug=False):
+    def __init__(self, run, tilename, ftype, blind=False, clobber=False):
         import desdb
         import deswl
 
@@ -32,9 +32,9 @@ class TileConcat(object):
         self.ftype=ftype
         self.blind=blind
         self.clobber=clobber
-        self.fix_psfstart_bug=fix_psfstart_bug
 
         self.rc=deswl.files.Runconfig(run)
+        self.bands=self.rc['band']
         self.config = load_config(self.rc['config'])
 
         self.nper=self.rc['nper']
@@ -43,11 +43,28 @@ class TileConcat(object):
 
         self.set_output_file()
         self.find_coadd_run()
+
+        #self.load_meds()
         self.set_nrows()
+
+        self.set_coadd_objects_info()
 
         if self.blind:
             self.blind_factor = get_blind_factor()
 
+    def load_meds(self):
+        """
+        Load the associated meds files
+        """
+        self.meds_list=[]
+        for band in self.bands:
+            fname=self.df.url('meds',
+                              tilename=self.tilename,
+                              band=band,
+                              medsconf=self.rc['medsconf'],
+                              coadd_run=self.coadd_run)
+            data=fitsio.read(fname,ext='object_data')
+            self.meds_list.append(data)
 
     def find_coadd_run(self):
         """
@@ -107,7 +124,7 @@ class TileConcat(object):
             return
 
         dlist=[]
-        plist=[]
+        elist=[]
         npsf=0
 
         for i in xrange(nchunk):
@@ -125,36 +142,28 @@ class TileConcat(object):
                               ext='fits')
 
             print '\t%d/%d %s' %(i+1,nchunk,fname)
-            data, psf_fits = self.read_data(fname)
+            data, epoch_data = self.read_data(fname)
 
             if self.blind:
                 self.blind_data(data)
 
             dlist.append(data)
-            if psf_fits.dtype.names is not None:
-                # No names when nothing fit
-                w=numpy.where(data['psf_start'] != -1)
-                if w[0].size > 0:
-                    data['psf_start'][w] += npsf
-                psf_fits['oid'] += npsf
-                npsf += psf_fits.size
-
-                plist.append(psf_fits)
-
+            if epoch_data.dtype.names is not None:
+                elist.append(epoch_data)
 
         data=eu.numpy_util.combine_arrlist(dlist)
-        if len(plist) > 0:
-            dopsf=True
-            psf_fits=eu.numpy_util.combine_arrlist(plist)
+        if len(elist) > 0:
+            do_epochs=True
+            epoch_data=eu.numpy_util.combine_arrlist(elist)
         else:
-            dopsf=False
+            do_epochs=False
 
         with fitsio.FITS(out_file,'rw',clobber=True) as fobj:
             meta=fitsio.read(fname, ext="meta_data")
             fobj.write(data,extname="model_fits")
 
-            if dopsf > 0:
-                fobj.write(psf_fits,extname="psf_fits")
+            if do_epochs > 0:
+                fobj.write(epoch_data,extname="epochs")
 
             fobj.write(meta,extname="meta_data")
 
@@ -172,9 +181,62 @@ class TileConcat(object):
                 if w.size > 0:
                     data[g_name][w,:] *= self.blind_factor
 
-    def pick_fields(self, data0, meta, coadd):
+    def pick_epoch_fields(self, psf_data):
+        """
+        pick out some fields, add some fields, rename some fields
+        """
+        import esutil
+        name_map={'id':'object_number', # to match the database
+                  'band':'band_num',
+                  'flags':'psf_fit_flags',
+                  'g':'psf_fit_e',
+                  'T':'psf_fit_T',
+                  'pars':'psf_fit_pars'}
+        rename_columns(psf_data, name_map)
+
+        wkeep,=numpy.where(psf_data['object_number'] > 0)
+        if wkeep.size==0:
+            return numpy.zeros(1)
+
+        psf_data=psf_data[wkeep]
+
+        dt=psf_data.dtype.descr
+
+        names=psf_data.dtype.names
+        ind=names.index('band_num')
+        dt.insert(ind, ('band','S1') )
+        dt = [('coadd_objects_id','i8')] + dt
+        #dt += [('orig_row','f8'),('orig_col','f8')]
+
+        epoch_data = numpy.zeros(psf_data.size, dtype=dt)
+        esutil.numpy_util.copy_fields(psf_data, epoch_data)
+
+        self.add_coadd_objects_id(epoch_data)
+
+        for band_num in xrange(len(self.bands)):
+            w,=numpy.where(epoch_data['band_num'] == band_num)
+            if w.size > 0:
+
+                epoch_data['band'][w] = self.bands[band_num]
+
+                #m=self.meds_list[band_num]
+                #ind=epoch_data['object_number']-1
+                #epoch_data['orig_row'][w] = m['orig_row'][ind]
+                #epoch_data['orig_col'][w] = m['orig_col'][ind]
+
+        return epoch_data
+
+    def pick_fields(self, data0, meta):
+        """
+        pick out some fields, add some fields, rename some fields
+        """
         import esutil
         nband = data0['psf_flux'].shape[1]
+
+        name_map={'id':'object_number', # to match the database
+                  'g':'e',
+                  'g_cov':'e_cov'}
+        rename_columns(data0, name_map)
 
         dt=[]
         names=[]
@@ -182,6 +244,7 @@ class TileConcat(object):
         for d in data0.dtype.descr:
             n=d[0]
             if ('psf1' not in n 
+                    and n != 'psf_start'
                     and n != 'processed'
                     and 'loglike' not in n
                     and 'aic' not in n
@@ -189,11 +252,8 @@ class TileConcat(object):
                     and 'fit_prob' not in n):
                 dt.append(d)
                 names.append(n)
-
-        dt += [('ra','f8'),('dec','f8'),
-               ('sxflags_i','i4'),
-               ('spread_model_i','f8'),
-               ('mag_auto_i','f8')]
+        
+        dt = [('coadd_objects_id','i8'), ('tilename','S12')] + dt
         
         flux_ind = names.index('psf_flux')
         dt.insert(flux_ind+1, ('psf_flux_s2n','f8',nband) )
@@ -230,16 +290,9 @@ class TileConcat(object):
 
         data=numpy.zeros(data0.size, dtype=dt)
         esutil.numpy_util.copy_fields(data0, data)
+        data['tilename'] = self.tilename
 
-        cind=data['id']-1
-        wbad,=numpy.where( coadd['number'][cind] != data['id'])
-        if wbad.size > 0:
-            raise ValueError('bad: %s' % wbad.size)
-        data['sxflags_i']  = coadd['flags'][cind]
-        data['ra']  = coadd['alphawin_j2000'][cind]
-        data['dec'] = coadd['deltawin_j2000'][cind]
-        data['spread_model_i'] = coadd['spread_model'][cind]
-        data['mag_auto_i'] = coadd['mag_auto'][cind]
+        self.add_coadd_objects_id(data)
 
         all_models=['psf'] + simple_models 
         for ft in all_models:
@@ -247,30 +300,67 @@ class TileConcat(object):
                 self.calc_mag_and_flux_stuff(data, meta, ft, band)
         
         if do_T:
-            for ft in simple_models:
-                pn = '%s_pars' % ft
-                pcn = '%s_pars_cov' % ft
-
-                Tn = '%s_T' % ft
-                Ten = '%s_err' % Tn
-                Ts2n = '%s_s2n' % Tn
-                fn='%s_flags' % ft
-
-                data[Tn][:]   = -9999.0
-                data[Ten][:]  =  9999.0
-                data[Ts2n][:] = -9999.0
-
-                Tcov=data[pcn][:,4,4]
-                w,=numpy.where( (data[fn] == 0) & (Tcov > 0.0) )
-                if w.size > 0:
-                    data[Tn][w]   = data[pn][w, 4]
-                    data[Ten][w]  =  numpy.sqrt(Tcov[w])
-                    data[Ts2n][w] = data[Tn][w]/data[Ten][w]
-
-
+            self.add_T_info(data, simple_models)
         return data
 
+    def add_T_info(self, data, simple_models):
+        """
+        Add T S/N etc.
+        """
+        for ft in simple_models:
+            pn = '%s_pars' % ft
+            pcn = '%s_pars_cov' % ft
+
+            Tn = '%s_T' % ft
+            Ten = '%s_err' % Tn
+            Ts2n = '%s_s2n' % Tn
+            fn='%s_flags' % ft
+
+            data[Tn][:]   = -9999.0
+            data[Ten][:]  =  9999.0
+            data[Ts2n][:] = -9999.0
+
+            Tcov=data[pcn][:,4,4]
+            w,=numpy.where( (data[fn] == 0) & (Tcov > 0.0) )
+            if w.size > 0:
+                data[Tn][w]   = data[pn][w, 4]
+                data[Ten][w]  =  numpy.sqrt(Tcov[w])
+                data[Ts2n][w] = data[Tn][w]/data[Ten][w]
+
+
+
+    def add_coadd_objects_id(self, data):
+        """
+        match by object_number and add the coadd_objects_id
+        """
+        import esutil
+        #print 'object_number range:',data['object_number'].min(),data['object_number'].max()
+        cdata=self.coadd_objects_data
+
+        h,rev=esutil.stat.histogram(data['object_number'],
+                                    min=self.min_object_number,
+                                    max=self.max_object_number,
+                                    rev=True)
+        nmatch=0
+
+        n=cdata.size
+        for i in xrange(n):
+            object_number = cdata['object_number'][i]
+            coadd_objects_id = cdata['coadd_objects_id'][i]
+            if rev[i] != rev[i+1]:
+                w=rev[ rev[i]:rev[i+1] ]
+                data['coadd_objects_id'][w] = coadd_objects_id
+
+                nmatch += w.size
+
+        if nmatch != data.size:
+            raise ValueError("only %d/%d matched by "
+                             "object_number" % (nmatch,data.size))
+
     def calc_mag_and_flux_stuff(self, data, meta, model, band):
+        """
+        Get magnitudes
+        """
         nband = data['psf_flux'].shape[1]
 
         flux_name='%s_flux' % model
@@ -313,33 +403,56 @@ class TileConcat(object):
 
 
     def read_data(self, fname):
+        """
+        Read the chunk data
+        """
         with fitsio.FITS(fname) as fobj:
             data0 = fobj["model_fits"][:]
             psf_fits = fobj["psf_fits"][:]
             meta  = fobj["meta_data"][:]
 
-        # we had a bug early on setting default psf_start to -1
-        if self.fix_psfstart_bug:
-            w=numpy.where(data0['nimage_use'] == 0)
-            if w[0].size > 0:
-                data0['psf_start'][w] = -1
-
-        names=psf_fits.dtype.names
-        if names is not None:
-            newnames=[]
-            for n in names:
-                if n == 'id':
-                    n='oid'
-                newnames.append(n)
-
-            psf_fits.dtype.names = tuple(newnames)
-
         coadd=fitsio.read(meta['coaddcat_file'][0],lower=True)
-        data = self.pick_fields(data0,meta,coadd)
+        data = self.pick_fields(data0,meta)
+
+        if psf_fits.dtype.names is not None:
+            epoch_data = self.pick_epoch_fields(psf_fits)
+        else:
+            epoch_data = psf_fits
 
             
-        return data, psf_fits
+        return data, epoch_data
 
+
+    def set_coadd_objects_info(self):
+        import desdb
+        print 'getting coadd_objects ids'
+
+        query="""
+        select
+            co.coadd_objects_id, co.object_number
+        from
+            coadd_objects co, coadd c
+        where
+            co.imageid_g=c.id
+            and c.band='g'
+            and c.run='{run}'
+        order by
+            co.object_number
+        """.format(run=self.coadd_run)
+
+        conn=desdb.Connection()
+        res=conn.quick(query, array=True)
+        conn.close()
+
+        nmax=res['object_number'].max()
+        if nmax != res.size:
+            raise ValueError("some missing object_number, got "
+                             "max %d for nobj %d" % (nmax,res.size))
+
+
+        self.coadd_objects_data=res
+        self.min_object_number=res['object_number'].min()
+        self.max_object_number=res['object_number'].max()
 
     def read_meds_meta(self, meds_files):
         """
@@ -439,3 +552,11 @@ def get_blind_factor():
     g = f*1e-8
     #get value between 0.9 and 1
     return 0.9 + 0.1*g
+
+def rename_columns(arr, name_map):
+    names=list( arr.dtype.names )
+    for i,n in enumerate(names):
+        if n in name_map:
+            names[i] = name_map[n]
+
+    arr.dtype.names=tuple(names)
