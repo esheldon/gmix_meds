@@ -524,15 +524,39 @@ class MedsFit(object):
             flags |= tflags
 
             if not do_coadd:
-                psf_index=self.psf_index
-                self.psf_data['number'][psf_index] = mindex+1
-                self.psf_data['band_num'][psf_index] = band
-                self.psf_data['cutout_index'][psf_index] = icut
-                self.psf_data['psf_fit_flags'][psf_index] = tflags
+                self._set_psf_data(meds, mindex, band, icut, tflags)
                 self.psf_index += 1
 
         return keep_list, gmix_list, flags
 
+    def _set_psf_result(self, gm):
+        """
+        Set psf fit data. Index can be got from the main model
+        fits struct
+        """
+
+        psf_index=self.psf_index
+
+        pars=gm.get_full_pars()
+        g1,g2,T=gm.get_g1g2T()
+        self.psf_data['psf_fit_g'][psf_index,0] = g1
+        self.psf_data['psf_fit_g'][psf_index,1] = g2
+        self.psf_data['psf_fit_T'][psf_index] = T
+        self.psf_data['psf_fit_pars'][psf_index,:] = pars
+
+    def _set_psf_data(self, meds, mindex, band, icut, flags):
+        """
+        Set all the meta data for the psf result
+        """
+        psf_index=self.psf_index
+        pd=self.psf_data
+        pd['number'][psf_index] = mindex+1
+        pd['band_num'][psf_index] = band
+        pd['cutout_index'][psf_index] = icut
+        pd['file_id'][psf_index]  = meds['file_id'][mindex,icut].astype('i4')
+        pd['orig_row'][psf_index] = meds['orig_row'][mindex,icut]
+        pd['orig_col'][psf_index] = meds['orig_col'][mindex,icut]
+        pd['psf_fit_flags'][psf_index] = flags
 
     def _get_psfex_reclist(self, meds, psfex_list, dindex, do_coadd=False):
         """
@@ -1056,20 +1080,6 @@ class MedsFit(object):
             ncutout += meds['ncutout'][self.index_list].sum()
         return ncutout
 
-    def _set_psf_result(self, gm):
-        """
-        Set psf fit data. Index can be got from the main model
-        fits struct
-        """
-
-        psf_index=self.psf_index
-
-        pars=gm.get_full_pars()
-        g1,g2,T=gm.get_g1g2T()
-        self.psf_data['psf_fit_g'][psf_index,0] = g1
-        self.psf_data['psf_fit_g'][psf_index,1] = g2
-        self.psf_data['psf_fit_T'][psf_index] = T
-        self.psf_data['psf_fit_pars'][psf_index,:] = pars
 
     def _make_psf_struct(self):
         """
@@ -1080,7 +1090,10 @@ class MedsFit(object):
         npars=self.psf_ngauss*6
         dt=[('number','i4'), # same as 'number' in main struct, used for matching
             ('band_num','i2'),
-            ('cutout_index','i2'), # this is the index into e.g. m['orig_row']
+            ('cutout_index','i4'), # this is the index into e.g. m['orig_row']
+            ('orig_row','f8'),
+            ('orig_col','f8'),
+            ('file_id','i4'),
             ('psf_fit_flags','i4'),
             ('psf_fit_g','f8',2),
             ('psf_fit_T','f8'),
@@ -1093,6 +1106,7 @@ class MedsFit(object):
             psf_data['number'] = -1
             psf_data['band_num'] = -1
             psf_data['cutout_index'] = -1
+            psf_data['file_id'] = -1
             psf_data['psf_fit_g'] = PDEFVAL
             psf_data['psf_fit_T'] = PDEFVAL
             psf_data['psf_fit_pars'] = PDEFVAL

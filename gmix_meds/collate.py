@@ -230,20 +230,14 @@ class TileConcat(object):
         pick out some fields, add some fields, rename some fields
         """
         import esutil
-        name_map={'id':'object_number', # to match the database
-                  'band':'band_num',
-                  'flags':'psf_fit_flags',
-                  'g':'psf_fit_e',
-                  'T':'psf_fit_T',
-                  'pars':'psf_fit_pars'}
+        name_map={'number':'object_number', # to match the database
+                  'psf_fit_g':'psf_fit_e'}
         rename_columns(psf_data, name_map)
 
         # we can loosen this when we store the cutout sub-id
         # in the output file....  right now file_id can be
         # not set
-        wkeep,=numpy.where(  (psf_data['object_number'] > 0)
-                           & (psf_data['psf_fit_flags']==0)
-                           & (psf_data['file_id'] >= 0) )
+        wkeep,=numpy.where(psf_data['object_number'] > 0)
         if wkeep.size==0:
             return numpy.zeros(1)
 
@@ -253,9 +247,11 @@ class TileConcat(object):
 
         names=psf_data.dtype.names
         ind=names.index('band_num')
-        dt.insert(ind, ('band','S1') )
+        dt.insert( ind, ('band','S1') )
         dt =  [('coadd_objects_id','i8')] + dt
-        dt += [('image_id','i8'),('orig_row','f8'),('orig_col','f8')]
+
+        ind=names.index('object_number')
+        dt.insert( ind, ('image_id','i8') )
 
         epoch_data = numpy.zeros(psf_data.size, dtype=dt)
         esutil.numpy_util.copy_fields(psf_data, epoch_data)
@@ -272,25 +268,6 @@ class TileConcat(object):
                 file_ids=epoch_data['file_id'][w]
                 epoch_data['image_id'][w] = m._image_ids[file_ids]
 
-                # extract orig_row,orig_col by matching up the file_id
-                # kind of kludgy and slow but it works
-
-                for wi in w:
-                    oid=epoch_data['object_number'][wi]-1
-                    file_id=epoch_data['file_id'][wi]
-
-                    fw,=numpy.where( m['file_id'][oid,:] == file_id )
-                    if fw.size != 1:
-                        print 'all file ids:g',self.meds_list[0]['file_id'][oid,:]
-                        print 'all file ids:r',self.meds_list[1]['file_id'][oid,:]
-                        print 'all file ids:i',self.meds_list[2]['file_id'][oid,:]
-                        print 'all file ids:z',self.meds_list[3]['file_id'][oid,:]
-                        raise ValueError("for oid %d file_id %d not found or too "
-                                         "many: %s" % (oid,file_id,repr(fw)))
-                    epoch_data['orig_row'][wi] = m['orig_row'][oid,fw[0]]
-                    epoch_data['orig_col'][wi] = m['orig_col'][oid,fw[0]]
-
-
         return epoch_data
 
     def pick_fields(self, data0, meta):
@@ -300,9 +277,13 @@ class TileConcat(object):
         import esutil
         nband = data0['psf_flux'].shape[1]
 
-        name_map={'id':'object_number', # to match the database
-                  'g':'e',
-                  'g_cov':'e_cov'}
+        name_map={'number':     'object_number', # to match the database
+                  'exp_g':      'exp_e',
+                  'exp_g_cov':  'exp_e_cov',
+                  'exp_g_sens': 'exp_shear_sens',
+                  'dev_g':      'dev_e',
+                  'dev_g_cov':  'dev_e_cov',
+                  'dev_g_sens': 'dev_shear_sens'}
         rename_columns(data0, name_map)
 
         dt=[]
@@ -311,12 +292,9 @@ class TileConcat(object):
         for d in data0.dtype.descr:
             n=d[0]
             if ('psf1' not in n 
-                    and n != 'psf_start'
                     and n != 'processed'
-                    and 'loglike' not in n
                     and 'aic' not in n
-                    and 'bic' not in n
-                    and 'fit_prob' not in n):
+                    and 'bic' not in n):
                 dt.append(d)
                 names.append(n)
         
