@@ -552,7 +552,9 @@ class MedsFit(object):
         """
         psf_index=self.psf_index
         ed=self.epoch_data
-        ed['number'][psf_index] = mindex+1
+
+        # mindex can be an index into a sub-range meds
+        ed['number'][psf_index] = meds['number'][mindex]
         ed['band_num'][psf_index] = band
         ed['cutout_index'][psf_index] = icut
         ed['file_id'][psf_index]  = meds['file_id'][mindex,icut].astype('i4')

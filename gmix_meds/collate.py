@@ -266,10 +266,7 @@ class TileConcat(object):
         names=epoch_data0.dtype.names
         ind=names.index('band_num')
         dt.insert( ind, ('band','S1') )
-        dt =  [('coadd_objects_id','i8')] + dt
-
-        ind=names.index('coadd_object_number')
-        dt.insert( ind, ('image_id','i8') )
+        dt =  [('coadd_objects_id','i8'),('image_id','i8')] + dt
 
         epoch_data = numpy.zeros(epoch_data0.size, dtype=dt)
         esutil.numpy_util.copy_fields(epoch_data0, epoch_data)
@@ -478,7 +475,7 @@ class TileConcat(object):
         if epoch_data0.dtype.names is not None:
             epoch_data = self.pick_epoch_fields(epoch_data0)
         else:
-            epoch_data = epochs_data0
+            epoch_data = epoch_data0
 
             
         return data, epoch_data

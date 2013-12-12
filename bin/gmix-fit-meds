@@ -378,14 +378,19 @@ def go_profile(config_file, meds_files, out_file, options, img_name):
         go(config_file, meds_files, out_file, options)
 
 def cleanup_checkpoint(checkpoint_file):
-    # if we get this far, we have succeeded in writing the data. We can remove
-    # the checkpoint file
+    """
+    if we get this far, we have succeeded in writing the data. We can remove
+    the checkpoint file
+    """
     if os.path.exists(checkpoint_file):
         print >>stderr,'removing checkpoint file',checkpoint_file
         os.remove(checkpoint_file)
 
 
 def get_checkpoint_data(out_file):
+    """
+    See if the code was checkpointed in a previous run
+    """
     checkpoint_file=out_file.replace('.fits','-checkpoint.fits')
     data=None
 
@@ -400,6 +405,9 @@ def get_checkpoint_data(out_file):
     return checkpoint_file, data
 
 def run_fitter(meds_files, meds_files_full, conf, checkpoint_data=None):
+    """
+    Run one of a few types of fitters.  Only ngmix is maintained currently
+    """
     epoch_data=None
     if conf['fitter'] == 'lm':
         data, meta = run_lm(meds_files, conf,
@@ -414,6 +422,9 @@ def run_fitter(meds_files, meds_files_full, conf, checkpoint_data=None):
     return data, epoch_data, meta
 
 def setup_work_files(options, meds_files):
+    """
+    Set up local, possibly sub-range meds files
+    """
     meds_files_full=meds_files
     extracted=None
     rng=get_range( options.obj_range )
@@ -432,6 +443,9 @@ def setup_work_files(options, meds_files):
 
  
 def write_data(data, epoch_data, meta, out_file):
+    """
+    write the actual data.  clobber existing
+    """
     makedir_fromfile(out_file)
     print >>stderr,'writing:',out_file
     with fitsio.FITS(out_file,'rw',clobber=True) as fobj:
