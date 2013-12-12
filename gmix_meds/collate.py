@@ -35,6 +35,7 @@ class TileConcat(object):
 
         self.rc=deswl.files.Runconfig(run)
         self.bands=self.rc['band']
+        self.nbands=len(self.bands)
         self.config = load_config(self.rc['config'])
 
         self.nper=self.rc['nper']
@@ -44,7 +45,8 @@ class TileConcat(object):
         self.set_output_file()
         self.find_coadd_run()
 
-        #self.load_meds()
+        self.load_meds()
+        self.find_image_ids()
         self.set_nrows()
 
         self.set_coadd_objects_info()
@@ -56,6 +58,9 @@ class TileConcat(object):
         """
         Load the associated meds files
         """
+        import meds
+        print 'loading meds'
+
         self.meds_list=[]
         for band in self.bands:
             fname=self.df.url('meds',
@@ -63,8 +68,47 @@ class TileConcat(object):
                               band=band,
                               medsconf=self.rc['medsconf'],
                               coadd_run=self.coadd_run)
-            data=fitsio.read(fname,ext='object_data')
-            self.meds_list.append(data)
+            m=meds.MEDS(fname)
+            self.meds_list.append(m)
+
+    def find_image_ids(self):
+        """
+        Get the image id from the database for each of the 
+        SE exposures.  Note we keep a slot for the coadd but
+        it is not used
+        """
+        import desdb
+
+        print 'getting image ids'
+        conn=desdb.Connection()
+
+        for band in xrange(self.nbands):
+            m=self.meds_list[band]
+
+            nimage=m._image_info.size
+            m._image_ids = numpy.zeros(nimage,dtype='i8')
+
+            for file_id in xrange(1,nimage):
+                fname=m._image_info['image_path'][file_id]
+                ii=extract_red_info(fname)
+                query="""
+                select
+                    id
+                from
+                    location
+                where
+                    run='{run}'
+                    and exposurename='{expname}'
+                    and filetype='red'
+                    and ccd={ccd}"""
+                query=query.format(run=ii['run'],
+                                   expname=ii['expname'],
+                                   ccd=ii['ccd'])
+                res=conn.quick(query)
+                if len(res) != 1:
+                    raise ValueError("expected one image match, "
+                                     "got %s" % repr(res))
+                m._image_ids[file_id] = res[0]['id']
 
     def find_coadd_run(self):
         """
@@ -194,7 +238,12 @@ class TileConcat(object):
                   'pars':'psf_fit_pars'}
         rename_columns(psf_data, name_map)
 
-        wkeep,=numpy.where(psf_data['object_number'] > 0)
+        # we can loosen this when we store the cutout sub-id
+        # in the output file....  right now file_id can be
+        # not set
+        wkeep,=numpy.where(  (psf_data['object_number'] > 0)
+                           & (psf_data['psf_fit_flags']==0)
+                           & (psf_data['file_id'] >= 0) )
         if wkeep.size==0:
             return numpy.zeros(1)
 
@@ -205,24 +254,42 @@ class TileConcat(object):
         names=psf_data.dtype.names
         ind=names.index('band_num')
         dt.insert(ind, ('band','S1') )
-        dt = [('coadd_objects_id','i8')] + dt
-        #dt += [('orig_row','f8'),('orig_col','f8')]
+        dt =  [('coadd_objects_id','i8')] + dt
+        dt += [('image_id','i8'),('orig_row','f8'),('orig_col','f8')]
 
         epoch_data = numpy.zeros(psf_data.size, dtype=dt)
         esutil.numpy_util.copy_fields(psf_data, epoch_data)
 
         self.add_coadd_objects_id(epoch_data)
 
-        for band_num in xrange(len(self.bands)):
+        for band_num in xrange(self.nbands):
             w,=numpy.where(epoch_data['band_num'] == band_num)
             if w.size > 0:
 
                 epoch_data['band'][w] = self.bands[band_num]
 
-                #m=self.meds_list[band_num]
-                #ind=epoch_data['object_number']-1
-                #epoch_data['orig_row'][w] = m['orig_row'][ind]
-                #epoch_data['orig_col'][w] = m['orig_col'][ind]
+                m=self.meds_list[band_num]
+                file_ids=epoch_data['file_id'][w]
+                epoch_data['image_id'][w] = m._image_ids[file_ids]
+
+                # extract orig_row,orig_col by matching up the file_id
+                # kind of kludgy and slow but it works
+
+                for wi in w:
+                    oid=epoch_data['object_number'][wi]-1
+                    file_id=epoch_data['file_id'][wi]
+
+                    fw,=numpy.where( m['file_id'][oid,:] == file_id )
+                    if fw.size != 1:
+                        print 'all file ids:g',self.meds_list[0]['file_id'][oid,:]
+                        print 'all file ids:r',self.meds_list[1]['file_id'][oid,:]
+                        print 'all file ids:i',self.meds_list[2]['file_id'][oid,:]
+                        print 'all file ids:z',self.meds_list[3]['file_id'][oid,:]
+                        raise ValueError("for oid %d file_id %d not found or too "
+                                         "many: %s" % (oid,file_id,repr(fw)))
+                    epoch_data['orig_row'][wi] = m['orig_row'][oid,fw[0]]
+                    epoch_data['orig_col'][wi] = m['orig_col'][oid,fw[0]]
+
 
         return epoch_data
 
@@ -560,3 +627,18 @@ def rename_columns(arr, name_map):
             names[i] = name_map[n]
 
     arr.dtype.names=tuple(names)
+
+def extract_red_info(path):
+    parts=path.split('/')
+
+    run = parts[-4]
+    expname=parts[-2]
+
+    bname=parts[-1]
+    bname=bname[0: bname.index('.')]
+
+    ccd=int(  ( bname.split('_') )[2]  )
+
+    return {'run':run,
+            'expname':expname,
+            'ccd':ccd}

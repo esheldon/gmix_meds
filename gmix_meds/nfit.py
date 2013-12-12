@@ -164,6 +164,11 @@ class MedsFit(object):
             self.data=self._checkpoint_data['data']
             self.psf_data=self._checkpoint_data['psf_data']
 
+            if self.psf_data.dtype.names is not None:
+                # start where we left off
+                w,=numpy.where( self.psf_data['number'] == -1)
+                self.psf_index = w.min()
+
     def get_data(self):
         """
         Get the data structure.  If a subset was requested, only those rows are
@@ -232,7 +237,7 @@ class MedsFit(object):
         mindex = self.index_list[dindex]
 
         # need to do this because we work on subset files
-        self.data['id'][dindex] = self.meds_list[0]['number'][mindex]
+        self.data['number'][dindex] = self.meds_list[0]['number'][mindex]
 
         self.data['flags'][dindex] = self._obj_check(mindex)
         if self.data['flags'][dindex] != 0:
@@ -464,11 +469,12 @@ class MedsFit(object):
         """
         Generate psfex images for all SE images and fit
         them to gaussian mixture models
+
+        We write the psf results into the psf structure *if*
+        do_coadd==False
         """
         ptuple = self._get_psfex_reclist(meds, psfex_list, dindex,do_coadd=do_coadd)
-        imlist,cenlist,siglist,flist=ptuple
-
-        psf_start = self.data['psf_start'][dindex, band]
+        imlist,cenlist,siglist,flist,rng=ptuple
 
         keep_list=[]
         gmix_list=[]
@@ -476,13 +482,15 @@ class MedsFit(object):
         flags=0
 
         gmix_psf=None
-        for i in xrange(len(imlist)):
+        mindex = self.index_list[dindex]
 
-            psf_index = psf_start + i
+        for i in xrange(len(imlist)):
+            psf_index=self.psf_index
 
             im=imlist[i]
             jacob0=jacob_list[i]
             sigma=siglist[i]
+            icut=rng[i]
 
             cen0=cenlist[i]
             # the dimensions of the psfs are different, need
@@ -496,7 +504,8 @@ class MedsFit(object):
                 fitter=self._do_fit_psf(im,jacob,sigma,first_guess=gmix_psf)
 
                 gmix_psf=fitter.get_gmix()
-                self._set_psf_data(psf_index, gmix_psf)
+                if not do_coadd:
+                    self._set_psf_result(psf_index, gmix_psf)
 
                 keep,offset_arcsec=self._should_keep_psf(gmix_psf)
                 if keep:
@@ -513,8 +522,14 @@ class MedsFit(object):
 
                 tflags == PSF_FIT_FAILURE
 
-            self.psf_data['flags'][psf_index] = tflags
             flags |= tflags
+
+            if not do_coadd:
+                self.psf_data['number'][psf_index] = mindex+1
+                self.psf_data['band_num'][psf_index] = band
+                self.psf_data['cutout_index'][psf_index] = icut
+                self.psf_data['psf_fit_flags'][psf_index] = tflags
+                self.psf_index += 1
 
         return keep_list, gmix_list, flags
 
@@ -553,7 +568,7 @@ class MedsFit(object):
             siglist.append( pex.get_sigma() )
             flist.append( fname)
 
-        return imlist, cenlist, siglist, flist
+        return imlist, cenlist, siglist, flist, rng
 
     def _should_keep_psf(self, gm):
         """
@@ -1041,18 +1056,18 @@ class MedsFit(object):
             ncutout += meds['ncutout'][self.index_list].sum()
         return ncutout
 
-    def _set_psf_data(self, index, gm):
+    def _set_psf_result(self, index, gm):
         """
         Set psf fit data. Index can be got from the main model
         fits struct
         """
+
         pars=gm.get_full_pars()
         g1,g2,T=gm.get_g1g2T()
-        self.psf_data['pars'][index,:] = pars
-        self.psf_data['g'][index,0] = g1
-        self.psf_data['g'][index,1] = g2
-        self.psf_data['T'][index] = T
-
+        self.psf_data['psf_fit_g'][index,0] = g1
+        self.psf_data['psf_fit_g'][index,1] = g2
+        self.psf_data['psf_fit_T'][index] = T
+        self.psf_data['psf_fit_pars'][index,:] = pars
 
     def _make_psf_struct(self):
         """
@@ -1061,28 +1076,33 @@ class MedsFit(object):
         """
 
         npars=self.psf_ngauss*6
-        dt=[('id','i4'), # same as 'id' in main struct, used for matching
-            ('band','i2'),
-            ('file_id','i2'), # to determine the psf file
-            ('flags','i4'),
-            ('g','f8',2),
-            ('T','f8'),
-            ('pars','f8',npars)]
+        dt=[('number','i4'), # same as 'number' in main struct, used for matching
+            ('band_num','i2'),
+            ('cutout_index','i2'), # this is the index into e.g. m['orig_row']
+            ('psf_fit_flags','i4'),
+            ('psf_fit_g','f8',2),
+            ('psf_fit_T','f8'),
+            ('psf_fit_pars','f8',npars)]
 
         ncutout=self._count_all_cutouts()
         if ncutout > 0:
             psf_data = numpy.zeros(ncutout, dtype=dt)
 
-            psf_data['id'] = -1
-            psf_data['g'] = PDEFVAL
-            psf_data['T'] = PDEFVAL
-            psf_data['pars'] = PDEFVAL
-            psf_data['flags'] = NO_ATTEMPT
+            psf_data['number'] = -1
+            psf_data['band_num'] = -1
+            psf_data['cutout_index'] = -1
+            psf_data['psf_fit_g'] = PDEFVAL
+            psf_data['psf_fit_T'] = PDEFVAL
+            psf_data['psf_fit_pars'] = PDEFVAL
+            psf_data['psf_fit_flags'] = NO_ATTEMPT
 
             self.psf_data=psf_data
-            self._set_psf_start()
+            #self._set_psf_start()
         else:
             self.psf_data=numpy.zeros(1)
+
+        # where the next psf data will be written
+        self.psf_index = 0
 
     def _set_psf_start(self):
         """
@@ -1109,9 +1129,8 @@ class MedsFit(object):
 
                     data['psf_start'][dindex, band] = beg
 
-                    psf_data['band'][beg:end] = band 
-                    psf_data['id'][beg:end] = dindex
-                    psf_data['file_id'][beg:end] = meds['file_id'][mindex,1:ncut_tot]
+                    psf_data['band_num'][beg:end] = band 
+                    psf_data['number'][beg:end] = mindex+1
 
                     beg += ncut_se
 
@@ -1123,12 +1142,11 @@ class MedsFit(object):
         nband=self.nband
         bshape=(nband,)
 
-        dt=[('id','i4'),
+        dt=[('number','i4'),
             ('processed','i1'),
             ('flags','i4'),
             ('nimage_tot','i4',bshape),
             ('nimage_use','i4',bshape),
-            ('psf_start','i4',bshape),  # pointers into psf file
             ('time','f8')]
 
         # the psf fits are done for each band separately
@@ -1185,9 +1203,6 @@ class MedsFit(object):
         data['psf_flags'] = NO_ATTEMPT
         data['psf_flux'] = DEFVAL
         data['psf_flux_err'] = PDEFVAL
-
-        # by default we don't have psf info
-        data['psf_start'] = -1
 
         if 'simple' in self.fit_types:
             for model in simple_models:

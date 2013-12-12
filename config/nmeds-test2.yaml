@@ -58,7 +58,9 @@ guess_from_coadd: True
 # 1.5 hours
 #checkpoint: 5400
 # 0.5 hours
-checkpoint: 1800
+#checkpoint: 1800
+# 5 minutes
+checkpoint: 300
 
 make_plots: False
 debug: 0
