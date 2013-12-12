@@ -485,7 +485,6 @@ class MedsFit(object):
         mindex = self.index_list[dindex]
 
         for i in xrange(len(imlist)):
-            psf_index=self.psf_index
 
             im=imlist[i]
             jacob0=jacob_list[i]
@@ -505,7 +504,7 @@ class MedsFit(object):
 
                 gmix_psf=fitter.get_gmix()
                 if not do_coadd:
-                    self._set_psf_result(psf_index, gmix_psf)
+                    self._set_psf_result(gmix_psf)
 
                 keep,offset_arcsec=self._should_keep_psf(gmix_psf)
                 if keep:
@@ -525,6 +524,7 @@ class MedsFit(object):
             flags |= tflags
 
             if not do_coadd:
+                psf_index=self.psf_index
                 self.psf_data['number'][psf_index] = mindex+1
                 self.psf_data['band_num'][psf_index] = band
                 self.psf_data['cutout_index'][psf_index] = icut
@@ -1056,18 +1056,20 @@ class MedsFit(object):
             ncutout += meds['ncutout'][self.index_list].sum()
         return ncutout
 
-    def _set_psf_result(self, index, gm):
+    def _set_psf_result(self, gm):
         """
         Set psf fit data. Index can be got from the main model
         fits struct
         """
 
+        psf_index=self.psf_index
+
         pars=gm.get_full_pars()
         g1,g2,T=gm.get_g1g2T()
-        self.psf_data['psf_fit_g'][index,0] = g1
-        self.psf_data['psf_fit_g'][index,1] = g2
-        self.psf_data['psf_fit_T'][index] = T
-        self.psf_data['psf_fit_pars'][index,:] = pars
+        self.psf_data['psf_fit_g'][psf_index,0] = g1
+        self.psf_data['psf_fit_g'][psf_index,1] = g2
+        self.psf_data['psf_fit_T'][psf_index] = T
+        self.psf_data['psf_fit_pars'][psf_index,:] = pars
 
     def _make_psf_struct(self):
         """
