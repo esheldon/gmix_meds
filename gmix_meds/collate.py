@@ -214,16 +214,34 @@ class TileConcat(object):
         print 'output is in:',out_file
 
     def blind_data(self,data):
+        """
+        multiply all shear type values by the blinding factor
+
+        This also includes the Q values from B&A
+        """
+        from .lmfit import get_model_names
         simple_models=self.config.get('simple_models',lmfit.SIMPLE_MODELS_DEFAULT )
 
-        for fit_type in simple_models:
-            g_name='%s_g' % fit_type
-            flag_name='%s_flags' % fit_type
+        names=data.dtype.names
+        for model in simple_models:
+            n=get_model_names(model)
 
-            if flag_name in data.dtype.names:
+            g_name=n['g']
+            e_name=n['e']
+            Q_name=n['Q']
+            flag_name=n['flags']
+
+            if flag_name in names:
                 w,=numpy.where(data[flag_name] == 0)
                 if w.size > 0:
-                    data[g_name][w,:] *= self.blind_factor
+                    if g_name in names:
+                        data[g_name][w,:] *= self.blind_factor
+
+                    if e_name in names:
+                        data[e_name][w,:] *= self.blind_factor
+
+                    if Q_name in names:
+                        data[Q_name][w,:] *= self.blind_factor
 
     def pick_epoch_fields(self, epoch_data0):
         """
@@ -280,10 +298,10 @@ class TileConcat(object):
         name_map={'number':     'coadd_object_number',
                   'exp_g':      'exp_e',
                   'exp_g_cov':  'exp_e_cov',
-                  'exp_g_sens': 'exp_shear_sens',
+                  'exp_g_sens': 'exp_e_sens',
                   'dev_g':      'dev_e',
                   'dev_g_cov':  'dev_e_cov',
-                  'dev_g_sens': 'dev_shear_sens'}
+                  'dev_g_sens': 'dev_e_sens'}
         rename_columns(data0, name_map)
 
         dt=[]

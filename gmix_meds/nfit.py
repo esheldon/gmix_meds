@@ -1090,9 +1090,9 @@ class MedsFit(object):
         """
 
         npars=self.psf_ngauss*6
-        dt=[('number','i4'), # same as 'number' in main struct, used for matching
+        dt=[('number','i4'), # 1-n as in sextractor
             ('band_num','i2'),
-            ('cutout_index','i4'), # this is the index into e.g. m['orig_row']
+            ('cutout_index','i4'), # this is the index into e.g. m['orig_row'][3,index]
             ('orig_row','f8'),
             ('orig_col','f8'),
             ('file_id','i4'),
@@ -1115,7 +1115,6 @@ class MedsFit(object):
             epoch_data['psf_fit_flags'] = NO_ATTEMPT
 
             self.epoch_data=epoch_data
-            #self._set_psf_start()
         else:
             self.epoch_data=numpy.zeros(1)
 
