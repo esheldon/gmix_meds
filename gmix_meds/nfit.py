@@ -130,7 +130,7 @@ class MedsFit(object):
 
         if self._checkpoint_data is None:
             self._make_struct()
-            self._make_psf_struct()
+            self._make_epoch_struct()
 
     def _unpack_priors(self):
         conf=self.conf
@@ -162,11 +162,11 @@ class MedsFit(object):
         self._checkpoint_data=keys.get('checkpoint_data',None)
         if self._checkpoint_data is not None:
             self.data=self._checkpoint_data['data']
-            self.psf_data=self._checkpoint_data['psf_data']
+            self.epoch_data=self._checkpoint_data['epoch_data']
 
-            if self.psf_data.dtype.names is not None:
+            if self.epoch_data.dtype.names is not None:
                 # start where we left off
-                w,=numpy.where( self.psf_data['number'] == -1)
+                w,=numpy.where( self.epoch_data['number'] == -1)
                 self.psf_index = w.min()
 
     def get_data(self):
@@ -176,11 +176,11 @@ class MedsFit(object):
         """
         return self.data
 
-    def get_psf_data(self):
+    def get_epoch_data(self):
         """
-        Get the psf data structure.
+        Get the epoch data structure, including psf fitting
         """
-        return self.psf_data
+        return self.epoch_data
 
     def get_meds_meta_list(self):
         """
@@ -539,24 +539,26 @@ class MedsFit(object):
 
         pars=gm.get_full_pars()
         g1,g2,T=gm.get_g1g2T()
-        self.psf_data['psf_fit_g'][psf_index,0] = g1
-        self.psf_data['psf_fit_g'][psf_index,1] = g2
-        self.psf_data['psf_fit_T'][psf_index] = T
-        self.psf_data['psf_fit_pars'][psf_index,:] = pars
+
+        ed=self.epoch_data
+        ed['psf_fit_g'][psf_index,0]    = g1
+        ed['psf_fit_g'][psf_index,1]    = g2
+        ed['psf_fit_T'][psf_index]      = T
+        ed['psf_fit_pars'][psf_index,:] = pars
 
     def _set_psf_data(self, meds, mindex, band, icut, flags):
         """
         Set all the meta data for the psf result
         """
         psf_index=self.psf_index
-        pd=self.psf_data
-        pd['number'][psf_index] = mindex+1
-        pd['band_num'][psf_index] = band
-        pd['cutout_index'][psf_index] = icut
-        pd['file_id'][psf_index]  = meds['file_id'][mindex,icut].astype('i4')
-        pd['orig_row'][psf_index] = meds['orig_row'][mindex,icut]
-        pd['orig_col'][psf_index] = meds['orig_col'][mindex,icut]
-        pd['psf_fit_flags'][psf_index] = flags
+        ed=self.epoch_data
+        ed['number'][psf_index] = mindex+1
+        ed['band_num'][psf_index] = band
+        ed['cutout_index'][psf_index] = icut
+        ed['file_id'][psf_index]  = meds['file_id'][mindex,icut].astype('i4')
+        ed['orig_row'][psf_index] = meds['orig_row'][mindex,icut]
+        ed['orig_col'][psf_index] = meds['orig_col'][mindex,icut]
+        ed['psf_fit_flags'][psf_index] = flags
 
     def _get_psfex_reclist(self, meds, psfex_list, dindex, do_coadd=False):
         """
@@ -1066,7 +1068,7 @@ class MedsFit(object):
         print >>stderr,self.checkpoint_file
         with fitsio.FITS(self.checkpoint_file,'rw',clobber=True) as fobj:
             fobj.write(self.data, extname="model_fits")
-            fobj.write(self.psf_data, extname="psf_fits")
+            fobj.write(self.epoch_data, extname="epoch_data")
         self.checkpointed=True
 
     def _count_all_cutouts(self):
@@ -1081,7 +1083,7 @@ class MedsFit(object):
         return ncutout
 
 
-    def _make_psf_struct(self):
+    def _make_epoch_struct(self):
         """
         We will make the maximum number of possible psfs according
         to the cutout count, not counting the coadd
@@ -1101,54 +1103,24 @@ class MedsFit(object):
 
         ncutout=self._count_all_cutouts()
         if ncutout > 0:
-            psf_data = numpy.zeros(ncutout, dtype=dt)
+            epoch_data = numpy.zeros(ncutout, dtype=dt)
 
-            psf_data['number'] = -1
-            psf_data['band_num'] = -1
-            psf_data['cutout_index'] = -1
-            psf_data['file_id'] = -1
-            psf_data['psf_fit_g'] = PDEFVAL
-            psf_data['psf_fit_T'] = PDEFVAL
-            psf_data['psf_fit_pars'] = PDEFVAL
-            psf_data['psf_fit_flags'] = NO_ATTEMPT
+            epoch_data['number'] = -1
+            epoch_data['band_num'] = -1
+            epoch_data['cutout_index'] = -1
+            epoch_data['file_id'] = -1
+            epoch_data['psf_fit_g'] = PDEFVAL
+            epoch_data['psf_fit_T'] = PDEFVAL
+            epoch_data['psf_fit_pars'] = PDEFVAL
+            epoch_data['psf_fit_flags'] = NO_ATTEMPT
 
-            self.psf_data=psf_data
+            self.epoch_data=epoch_data
             #self._set_psf_start()
         else:
-            self.psf_data=numpy.zeros(1)
+            self.epoch_data=numpy.zeros(1)
 
         # where the next psf data will be written
         self.psf_index = 0
-
-    def _set_psf_start(self):
-        """
-        Set the psf start in the self.data struct and info and fill in some psf
-        metadata in the self.psf_data struct
-        """
-        print >>stderr,'Setting psf start positions'
-        n=self.data.size
-
-        data=self.data
-        psf_data=self.psf_data
-
-        beg=0
-        for dindex in xrange(n):
-
-            mindex=self.index_list[dindex]
-
-            for band,meds in enumerate(self.meds_list):
-                # minus one to remove coadd
-                ncut_tot = meds['ncutout'][mindex]
-                ncut_se  = ncut_tot-1
-                if ncut_se >= 1:
-                    end=beg+ncut_se
-
-                    data['psf_start'][dindex, band] = beg
-
-                    psf_data['band_num'][beg:end] = band 
-                    psf_data['number'][beg:end] = mindex+1
-
-                    beg += ncut_se
 
 
     def _make_struct(self):

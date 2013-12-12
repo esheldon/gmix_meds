@@ -207,7 +207,7 @@ class TileConcat(object):
             fobj.write(data,extname="model_fits")
 
             if do_epochs > 0:
-                fobj.write(epoch_data,extname="epochs")
+                fobj.write(epoch_data,extname='epoch_data')
 
             fobj.write(meta,extname="meta_data")
 
@@ -225,36 +225,36 @@ class TileConcat(object):
                 if w.size > 0:
                     data[g_name][w,:] *= self.blind_factor
 
-    def pick_epoch_fields(self, psf_data):
+    def pick_epoch_fields(self, epoch_data0):
         """
         pick out some fields, add some fields, rename some fields
         """
         import esutil
-        name_map={'number':'object_number', # to match the database
+        name_map={'number':'coadd_object_number', # to match the database
                   'psf_fit_g':'psf_fit_e'}
-        rename_columns(psf_data, name_map)
+        rename_columns(epoch_data0, name_map)
 
         # we can loosen this when we store the cutout sub-id
         # in the output file....  right now file_id can be
         # not set
-        wkeep,=numpy.where(psf_data['object_number'] > 0)
+        wkeep,=numpy.where(epoch_data0['coadd_object_number'] > 0)
         if wkeep.size==0:
             return numpy.zeros(1)
 
-        psf_data=psf_data[wkeep]
+        epoch_data0=epoch_data0[wkeep]
 
-        dt=psf_data.dtype.descr
+        dt=epoch_data0.dtype.descr
 
-        names=psf_data.dtype.names
+        names=epoch_data0.dtype.names
         ind=names.index('band_num')
         dt.insert( ind, ('band','S1') )
         dt =  [('coadd_objects_id','i8')] + dt
 
-        ind=names.index('object_number')
+        ind=names.index('coadd_object_number')
         dt.insert( ind, ('image_id','i8') )
 
-        epoch_data = numpy.zeros(psf_data.size, dtype=dt)
-        esutil.numpy_util.copy_fields(psf_data, epoch_data)
+        epoch_data = numpy.zeros(epoch_data0.size, dtype=dt)
+        esutil.numpy_util.copy_fields(epoch_data0, epoch_data)
 
         self.add_coadd_objects_id(epoch_data)
 
@@ -277,7 +277,7 @@ class TileConcat(object):
         import esutil
         nband = data0['psf_flux'].shape[1]
 
-        name_map={'number':     'object_number', # to match the database
+        name_map={'number':     'coadd_object_number',
                   'exp_g':      'exp_e',
                   'exp_g_cov':  'exp_e_cov',
                   'exp_g_sens': 'exp_shear_sens',
@@ -376,13 +376,12 @@ class TileConcat(object):
 
     def add_coadd_objects_id(self, data):
         """
-        match by object_number and add the coadd_objects_id
+        match by coadd_object_number and add the coadd_objects_id
         """
         import esutil
-        #print 'object_number range:',data['object_number'].min(),data['object_number'].max()
         cdata=self.coadd_objects_data
 
-        h,rev=esutil.stat.histogram(data['object_number'],
+        h,rev=esutil.stat.histogram(data['coadd_object_number'],
                                     min=self.min_object_number,
                                     max=self.max_object_number,
                                     rev=True)
@@ -390,17 +389,16 @@ class TileConcat(object):
 
         n=cdata.size
         for i in xrange(n):
-            object_number = cdata['object_number'][i]
-            coadd_objects_id = cdata['coadd_objects_id'][i]
             if rev[i] != rev[i+1]:
                 w=rev[ rev[i]:rev[i+1] ]
+                coadd_objects_id = cdata['coadd_objects_id'][i]
                 data['coadd_objects_id'][w] = coadd_objects_id
 
                 nmatch += w.size
 
         if nmatch != data.size:
             raise ValueError("only %d/%d matched by "
-                             "object_number" % (nmatch,data.size))
+                             "coadd_object_number" % (nmatch,data.size))
 
     def calc_mag_and_flux_stuff(self, data, meta, model, band):
         """
@@ -452,17 +450,17 @@ class TileConcat(object):
         Read the chunk data
         """
         with fitsio.FITS(fname) as fobj:
-            data0 = fobj["model_fits"][:]
-            psf_fits = fobj["psf_fits"][:]
-            meta  = fobj["meta_data"][:]
+            data0       = fobj['model_fits'][:]
+            epoch_data0 = fobj['epoch_data'][:]
+            meta        = fobj['meta_data'][:]
 
         coadd=fitsio.read(meta['coaddcat_file'][0],lower=True)
         data = self.pick_fields(data0,meta)
 
-        if psf_fits.dtype.names is not None:
-            epoch_data = self.pick_epoch_fields(psf_fits)
+        if epoch_data0.dtype.names is not None:
+            epoch_data = self.pick_epoch_fields(epoch_data0)
         else:
-            epoch_data = psf_fits
+            epoch_data = epochs_data0
 
             
         return data, epoch_data
@@ -474,7 +472,7 @@ class TileConcat(object):
 
         query="""
         select
-            co.coadd_objects_id, co.object_number
+            co.coadd_objects_id, co.object_number as coadd_object_number
         from
             coadd_objects co, coadd c
         where
@@ -482,22 +480,22 @@ class TileConcat(object):
             and c.band='g'
             and c.run='{run}'
         order by
-            co.object_number
+            coadd_object_number
         """.format(run=self.coadd_run)
 
         conn=desdb.Connection()
         res=conn.quick(query, array=True)
         conn.close()
 
-        nmax=res['object_number'].max()
+        nmax=res['coadd_object_number'].max()
         if nmax != res.size:
             raise ValueError("some missing object_number, got "
                              "max %d for nobj %d" % (nmax,res.size))
 
 
         self.coadd_objects_data=res
-        self.min_object_number=res['object_number'].min()
-        self.max_object_number=res['object_number'].max()
+        self.min_object_number=res['coadd_object_number'].min()
+        self.max_object_number=res['coadd_object_number'].max()
 
     def read_meds_meta(self, meds_files):
         """
