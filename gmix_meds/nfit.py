@@ -205,6 +205,7 @@ class MedsFit(object):
         num=len(self.index_list)
         self.checkpointed=False
 
+        first=True
         for dindex in xrange(num):
             if self.data['processed'][dindex]==1:
                 # checkpointing
@@ -216,8 +217,9 @@ class MedsFit(object):
 
             tm=time.time()-t0
 
-            if self._should_checkpoint(tm):
-                self._write_checkpoint(tm)
+            if first or self._should_checkpoint(tm):
+                self._write_checkpoint(tm, first=first)
+                first=False
 
         tm=time.time()-t0
         print >>stderr,"time:",tm
@@ -1007,16 +1009,6 @@ class MedsFit(object):
 
         self.index_list = numpy.arange(start,end+1)
 
-    def _should_checkpoint(self, tm):
-        """
-        Should we write a checkpoint file?
-        """
-        if (tm > self.checkpoint
-                and self.checkpoint_file is not None
-                and not self.checkpointed):
-            return True
-        else:
-            return False
 
     def _print_simple_res(self, res):
         if res['flags']==0:
@@ -1064,14 +1056,28 @@ class MedsFit(object):
         tup=(T,Terr,Ts2n,sigma)
         print >>stderr, '        T: %s +/- %s Ts2n: %s sigma: %s' % tup
 
-    def _write_checkpoint(self, tm):
+    def _should_checkpoint(self, tm):
+        """
+        Should we write a checkpoint file?
+        """
+        if (tm > self.checkpoint
+                and self.checkpoint_file is not None
+                and not self.checkpointed):
+            return True
+        else:
+            return False
+
+    def _write_checkpoint(self, dindex, tm, first=False):
         import fitsio
         print >>stderr,'checkpointing at',tm,'seconds'
         print >>stderr,self.checkpoint_file
         with fitsio.FITS(self.checkpoint_file,'rw',clobber=True) as fobj:
             fobj.write(self.data, extname="model_fits")
             fobj.write(self.epoch_data, extname="epoch_data")
-        self.checkpointed=True
+
+        if not first:
+            # we don't count the first one
+            self.checkpointed=True
 
     def _count_all_cutouts(self):
         """
