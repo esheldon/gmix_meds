@@ -1,4 +1,5 @@
 import os
+import copy
 import numpy
 import fitsio
 import json
@@ -23,7 +24,7 @@ class TileConcat(object):
     """
     Concatenate the split files for a single tile
     """
-    def __init__(self, run, tilename, ftype, blind=False, clobber=False):
+    def __init__(self, run, tilename, ftype, blind=True, clobber=False):
         import desdb
         import deswl
 
@@ -314,10 +315,15 @@ class TileConcat(object):
                 names.append(n)
         
         dt = [('coadd_objects_id','i8'), ('tilename','S12')] + dt
+        names = ['coadd_objects_id','tilename'] + names
+
         
-        flux_ind = names.index('psf_flux')
+        flux_ind = names.index('psf_flux_err')
         dt.insert(flux_ind+1, ('psf_flux_s2n','f8',nband) )
+        names.insert(flux_ind+1,'psf_flux_s2n')
+
         dt.insert(flux_ind+2, ('psf_mag','f8',nband) )
+        names.insert(flux_ind+2,'psf_mag')
 
         simple_models=self.config.get('simple_models',
                                       lmfit.SIMPLE_MODELS_DEFAULT )
@@ -325,11 +331,16 @@ class TileConcat(object):
         do_T=False
         if 'simple' in self.config['fit_types']:
             for ft in simple_models:
-                flux_ind = names.index('%s_flux' % ft)
-                dt.insert(flux_ind+1, ('%s_flux_s2n' % ft, 'f8', nband) )
 
-                magf = ('%s_mag' % ft, 'f8', nband)
+                s2n_name='%s_flux_s2n' % ft
+                flux_ind = names.index('%s_flux' % ft)
+                dt.insert(flux_ind+1, (s2n_name, 'f8', nband) )
+                names.insert(flux_ind+1,s2n_name)
+
+                mag_name='%s_mag' % ft
+                magf = (mag_name, 'f8', nband)
                 dt.insert(flux_ind+2, magf)
+                names.insert(flux_ind+2, mag_name)
 
                 Tn = '%s_T' % ft
                 Ten = '%s_err' % Tn
