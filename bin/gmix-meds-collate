@@ -13,8 +13,8 @@ import gmix_meds
 from optparse import OptionParser
 parser = OptionParser(__doc__)
 
-parser.add_option('--blind',action='store_true',
-                  help="blind the catalog")
+parser.add_option('--noblind',action='store_true',
+                  help="don't blind the catalog")
 parser.add_option('--clobber',action='store_true',
                   help="clobber existing catalog, else skip over")
 
@@ -28,8 +28,12 @@ def main():
     tilename=args[1]
     ftype=args[2]
 
+    if options.noblind:
+        blind=False
+    else:
+        blind=True
     tc=gmix_meds.collate.TileConcat(run, tilename, ftype,
-                                    blind=options.blind,
+                                    blind=blind,
                                     clobber=options.clobber)
     tc.concat()
 
