@@ -1067,7 +1067,7 @@ class MedsFit(object):
         else:
             return False
 
-    def _write_checkpoint(self, dindex, tm, first=False):
+    def _write_checkpoint(self, tm, first=False):
         import fitsio
         print >>stderr,'checkpointing at',tm,'seconds'
         print >>stderr,self.checkpoint_file
