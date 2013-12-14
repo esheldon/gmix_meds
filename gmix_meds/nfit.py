@@ -45,6 +45,7 @@ EM_MAX_ITER=100
 
 SIMPLE_MODELS_DEFAULT = ['exp','dev']
 
+_CHECKPOINTS_DEFAULT_MINUTES=[10,30,60,90]
 
 class MedsFit(object):
     def __init__(self, meds_files, **keys):
@@ -69,8 +70,8 @@ class MedsFit(object):
         psf_offset_max: optional
             max offset between multi-component gaussians in psf models
 
-        checkpoint: number, optional
-            Time after which to checkpoint, seconds
+        checkpoints: number, optional
+            Times after which to checkpoint, seconds
         checkpoint_file: string, optional
             File which will hold a checkpoint.
         checkpoint_data: dict, optional
@@ -97,9 +98,7 @@ class MedsFit(object):
         self._unpack_priors()
 
         self.meds_files=_get_as_list(meds_files)
-        self.checkpoint = self.conf.get('checkpoint',172800)
-        self.checkpoint_file = self.conf.get('checkpoint_file',None)
-        self._set_checkpoint_data(**keys)
+        self._setup_checkpoints()
 
         self.nband=len(self.meds_files)
         self.iband = range(self.nband)
@@ -158,16 +157,6 @@ class MedsFit(object):
         # in arcsec (or units of jacobian)
         self.cen_prior=conf.get("cen_prior",None)
 
-    def _set_checkpoint_data(self, **keys):
-        self._checkpoint_data=keys.get('checkpoint_data',None)
-        if self._checkpoint_data is not None:
-            self.data=self._checkpoint_data['data']
-            self.epoch_data=self._checkpoint_data['epoch_data']
-
-            if self.epoch_data.dtype.names is not None:
-                # start where we left off
-                w,=numpy.where( self.epoch_data['number'] == -1)
-                self.psf_index = w.min()
 
     def get_data(self):
         """
@@ -203,12 +192,10 @@ class MedsFit(object):
 
         last=self.index_list[-1]
         num=len(self.index_list)
-        self.checkpointed=False
 
-        first=True
         for dindex in xrange(num):
             if self.data['processed'][dindex]==1:
-                # checkpointing
+                # was checkpointed
                 continue
 
             mindex = self.index_list[dindex]
@@ -217,9 +204,7 @@ class MedsFit(object):
 
             tm=time.time()-t0
 
-            if first or self._should_checkpoint(tm):
-                self._write_checkpoint(tm, first=first)
-                first=False
+            self._try_checkpoint(tm) # only at certain intervals
 
         tm=time.time()-t0
         print >>stderr,"time:",tm
@@ -1056,28 +1041,83 @@ class MedsFit(object):
         tup=(T,Terr,Ts2n,sigma)
         print >>stderr, '        T: %s +/- %s Ts2n: %s sigma: %s' % tup
 
+    def _setup_checkpoints(self):
+        """
+        Set up the checkpoint times in minutes and data
+        """
+        self.checkpoints = self.conf.get('checkpoints',_CHECKPOINTS_DEFAULT_MINUTES)
+        self.n_checkpoint    = len(self.checkpoints)
+        self.checkpointed    = [0]*self.n_checkpoint
+        self.checkpoint_file = self.conf.get('checkpoint_file',None)
+
+        self._set_checkpoint_data()
+
+        if self.checkpoint_file is not None:
+            self.do_checkpoint=True
+        else:
+            self.do_checkpoint=False
+
+    def _set_checkpoint_data(self):
+        """
+        See if checkpoint data was sent
+        """
+        self._checkpoint_data=self.conf.get('checkpoint_data',None)
+        if self._checkpoint_data is not None:
+            self.data=self._checkpoint_data['data']
+            self.epoch_data=self._checkpoint_data['epoch_data']
+
+            if self.epoch_data.dtype.names is not None:
+                # start where we left off
+                w,=numpy.where( self.epoch_data['number'] == -1)
+                self.psf_index = w.min()
+
+    def _try_checkpoint(self, tm):
+        """
+        Checkpoint at certain intervals.  
+        Potentially modified self.checkpointed
+        """
+
+        should_checkpoint, icheck = self._should_checkpoint(tm)
+
+        if should_checkpoint:
+            self._write_checkpoint(tm)
+            self.checkpointed[icheck]=1
+
     def _should_checkpoint(self, tm):
         """
         Should we write a checkpoint file?
         """
-        if (tm > self.checkpoint
-                and self.checkpoint_file is not None
-                and not self.checkpointed):
-            return True
-        else:
-            return False
 
-    def _write_checkpoint(self, tm, first=False):
+        should_checkpoint=False
+        icheck=-1
+
+        if self.do_checkpoint:
+            tm_minutes=tm/60
+
+            for i in xrange(self.n_checkpoint):
+
+                checkpoint=self.checkpoints[i]
+                checkpointed=self.checkpointed[i]
+
+                if tm_minutes > checkpoint and not checkpointed:
+                    should_checkpoint=True
+                    icheck=i
+
+        return should_checkpoint, icheck
+
+    def _write_checkpoint(self, tm):
+        """
+        Write out the current data structure to a temporary
+        checkpoint file.
+        """
         import fitsio
-        print >>stderr,'checkpointing at',tm,'seconds'
+
+        print >>stderr,'checkpointing at',tm/60,'minutes'
         print >>stderr,self.checkpoint_file
+
         with fitsio.FITS(self.checkpoint_file,'rw',clobber=True) as fobj:
             fobj.write(self.data, extname="model_fits")
             fobj.write(self.epoch_data, extname="epoch_data")
-
-        if not first:
-            # we don't count the first one
-            self.checkpointed=True
 
     def _count_all_cutouts(self):
         """

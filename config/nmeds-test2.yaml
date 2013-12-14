@@ -52,17 +52,11 @@ T_prior_types: ["cosmos_exp","cosmos_dev"]
 # over-rides draw_g_prior for the multi-epoch
 guess_from_coadd: True
 
-# checkpoint time in seconds, needed for condor in case we pass
-# a batch system limit such as in the condor scavenge
-#
-# 1.5 hours
-#checkpoint: 5400
-# 1.0 hours
-checkpoint: 3600
-# 0.5 hours
-#checkpoint: 1800
-# 5 minutes
-#checkpoint: 300
+# checkpoint times in minutes, needed for condor in case we pass a batch system
+# limit such as in the condor scavenge.
+# 0 means after the first object
+
+checkpoints: [0,10,30,60,90]
 
 make_plots: False
 debug: 0
