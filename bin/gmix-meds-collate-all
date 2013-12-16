@@ -18,12 +18,10 @@ import gmix_meds
 
 from optparse import OptionParser
 parser = OptionParser(__doc__)
-parser.add_option('--blind',action='store_true',
-                  help="blind the catalog")
+parser.add_option('--noblind',action='store_true',
+                  help="don't blind the catalog")
 parser.add_option('--clobber',action='store_true',
                   help="clobber existing catalog, else skip over")
-parser.add_option('--fix-psfstart-bug',action='store_true',
-                  help="Fix bug in psf start")
 
 def main():
     options, args = parser.parse_args(sys.argv[1:])
@@ -34,6 +32,10 @@ def main():
     run=args[0]
     ftype=args[1]
 
+    if options.noblind:
+        blind=False
+    else:
+        blind=True
 
     rc=deswl.files.Runconfig(run)
     bands=rc['band']
@@ -46,9 +48,8 @@ def main():
 
     for fi in info_list:
         tc=gmix_meds.collate.TileConcat(run, fi['tilename'], ftype,
-                                        blind=options.blind,
-                                        clobber=options.clobber,
-                                        fix_psfstart_bug=options.fix_psfstart_bug)
+                                        blind=blind,
+                                        clobber=options.clobber)
         tc.concat()
 
 
