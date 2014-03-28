@@ -7,7 +7,10 @@
 from .lmfit import *
 from .lmfit import _stat_names
 
-from gmix_image.gmix_mcmc import MixMCSimple
+try:
+    from gmix_image.gmix_mcmc import MixMCSimple
+except:
+    print 'could not import gmix_image.gmix_mcmc'
 
 class MedsMCMC(MedsFit):
     def __init__(self, meds_file, g_prior, **keys):

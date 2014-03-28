@@ -176,6 +176,10 @@ def get_index_cols():
             'psf_flags_r',
             'psf_flags_i',
             'psf_flags_z',
+            'psf_mag_g',
+            'psf_mag_r',
+            'psf_mag_i',
+            'psf_mag_z',
 
             'exp_flags',
             'exp_chi2per',

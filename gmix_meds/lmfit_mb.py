@@ -1,8 +1,11 @@
 from .lmfit import *
 from .lmfit import _stat_names
 
-from gmix_image.gmix_fit import GMixFitMultiSimpleMB
-from gmix_image.gmix_fit import GMixFitMultiBD
+try:
+    from gmix_image.gmix_fit import GMixFitMultiSimpleMB
+    from gmix_image.gmix_fit import GMixFitMultiBD
+except:
+    print 'could not import gmix_image'
 
 class MedsFitMB(MedsFit):
     def __init__(self, meds_files, **keys):

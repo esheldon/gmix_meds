@@ -8,8 +8,9 @@ todo
     - copy psf data
 
 """
+from __future__ import print_function
+
 import os
-from sys import stderr,stdout
 import time
 import numpy
 import meds
@@ -82,6 +83,9 @@ class MedsFit(object):
         self.conf={}
         self.conf.update(keys)
 
+        self.meds_files=_get_as_list(meds_files)
+        self.nband=len(self.meds_files)
+
         self.imstart=1
         self.fit_types=self.conf['fit_types']
         self.simple_models=keys.get('simple_models',SIMPLE_MODELS_DEFAULT )
@@ -97,10 +101,9 @@ class MedsFit(object):
 
         self._unpack_priors()
 
-        self.meds_files=_get_as_list(meds_files)
+
         self._setup_checkpoints()
 
-        self.nband=len(self.meds_files)
         self.iband = range(self.nband)
 
         self._load_meds_files()
@@ -136,7 +139,12 @@ class MedsFit(object):
 
         nmod=len(self.simple_models)
         T_priors=conf['T_priors']
+        counts_priors=conf['counts_priors']
         g_priors=conf['g_priors']
+
+        self.g_prior_during = conf.get('g_prior_during',False)
+        if self.g_prior_during:
+            print('applying prior during')
 
         if (len(T_priors) != nmod or len(g_priors) != nmod ):
             raise ValueError("models and T,g priors must be same length")
@@ -146,9 +154,10 @@ class MedsFit(object):
         for i in xrange(nmod):
             model=models[i]
             T_prior=T_priors[i]
+            counts_prior=counts_priors[i]
             g_prior=g_priors[i]
             
-            modlist={'T':T_prior, 'g':g_prior}
+            modlist={'T':T_prior, 'g':g_prior,'counts':counts_prior}
             priors[model] = modlist
 
         self.priors=priors
@@ -199,7 +208,7 @@ class MedsFit(object):
                 continue
 
             mindex = self.index_list[dindex]
-            print >>stderr,'index: %d:%d' % (mindex,last),
+            print('index: %d:%d' % (mindex,last), )
             self.fit_obj(dindex)
 
             tm=time.time()-t0
@@ -207,8 +216,8 @@ class MedsFit(object):
             self._try_checkpoint(tm) # only at certain intervals
 
         tm=time.time()-t0
-        print >>stderr,"time:",tm
-        print >>stderr,"time per:",tm/num
+        print("time:",tm)
+        print("time per:",tm/num)
 
 
     def fit_obj(self, dindex):
@@ -235,32 +244,34 @@ class MedsFit(object):
                 self._get_imlol_wtlol(dindex,mindex)
         jacob_lol,coadd_jacob_lol=self._get_jacobian_lol(mindex)
 
-        print >>stderr,im_lol[0][0].shape
+        print(im_lol[0][0].shape)
     
-        print >>stderr,'    fitting: coadd psf models'
-        coadd_keep_lol,coadd_psf_gmix_lol,coadd_flags=\
-                self._fit_psfs(dindex,coadd_jacob_lol,do_coadd=True)
-        if any(coadd_flags):
-            self.data['flags'][dindex] = PSF_FIT_FAILURE 
-            return
+        if self.guess_from_coadd:
+            print('    fitting: coadd psf models')
+            coadd_keep_lol,coadd_psf_gmix_lol,coadd_flags=\
+                    self._fit_psfs(dindex,coadd_jacob_lol,do_coadd=True)
+            if any(coadd_flags):
+                self.data['flags'][dindex] = PSF_FIT_FAILURE 
+                return
 
-        print >>stderr,'    fitting: psf models'
+            coadd_im_lol, coadd_wt_lol, coadd_jacob_lol, coadd_len_list = \
+                self._extract_sub_lists(coadd_keep_lol,coadd_im_lol,coadd_wt_lol,coadd_jacob_lol)
+            if any([l==0 for l in coadd_len_list]):
+                print('wierd coadd lists zero length!')
+                self.data['flags'][dindex] = PSF_FIT_FAILURE 
+                return
+
+        print('    fitting: psf models')
         keep_lol,psf_gmix_lol,flags=self._fit_psfs(dindex,jacob_lol)
         if any(flags):
             self.data['flags'][dindex] = PSF_FIT_FAILURE 
             return
 
-        coadd_im_lol, coadd_wt_lol, coadd_jacob_lol, coadd_len_list = \
-            self._extract_sub_lists(coadd_keep_lol,coadd_im_lol,coadd_wt_lol,coadd_jacob_lol)
-        if any([l==0 for l in coadd_len_list]):
-            print >>stderr,'wierd coadd lists zero length!'
-            self.data['flags'][dindex] = PSF_FIT_FAILURE 
-            return
 
         im_lol, wt_lol, jacob_lol, len_list = \
             self._extract_sub_lists(keep_lol,im_lol,wt_lol,jacob_lol)
         if any([l==0 for l in len_list]):
-            print >>stderr,'wierd lists zero length!'
+            print('wierd lists zero length!')
             self.data['flags'][dindex] = PSF_FIT_FAILURE 
             return
 
@@ -270,13 +281,14 @@ class MedsFit(object):
                'im_lol':im_lol,
                'wt_lol':wt_lol,
                'jacob_lol':jacob_lol,
-               'psf_gmix_lol':psf_gmix_lol,
+               'psf_gmix_lol':psf_gmix_lol}
 
-               'coadd_keep_lol':coadd_keep_lol,
-               'coadd_im_lol':coadd_im_lol,
-               'coadd_wt_lol':coadd_wt_lol,
-               'coadd_jacob_lol':coadd_jacob_lol,
-               'coadd_psf_gmix_lol':coadd_psf_gmix_lol}
+        if self.guess_from_coadd:
+            sdata.update( {'coadd_keep_lol':coadd_keep_lol,
+                           'coadd_im_lol':coadd_im_lol,
+                           'coadd_wt_lol':coadd_wt_lol,
+                           'coadd_jacob_lol':coadd_jacob_lol,
+                           'coadd_psf_gmix_lol':coadd_psf_gmix_lol} )
 
         self._fit_all_models(dindex, sdata)
 
@@ -302,11 +314,11 @@ class MedsFit(object):
 
         box_size=meds['box_size'][mindex]
         if box_size > self.max_box_size:
-            print >>stderr,'Box size too big:',box_size
+            print('Box size too big:',box_size)
             flags |= BOX_SIZE_TOO_BIG
 
         if meds['ncutout'][mindex] < 2:
-            print >>stderr,'No SE cutouts'
+            print('No SE cutouts')
             flags |= NO_SE_CUTOUTS
         return flags
 
@@ -332,7 +344,7 @@ class MedsFit(object):
             if self.reject_outliers:
                 nreject=reject_outliers(imlist,wtlist)
                 if nreject > 0:
-                    print >>stderr,'        rejected:',nreject
+                    print('        rejected:',nreject)
 
             self.data['nimage_tot'][dindex,band] = len(imlist)
 
@@ -498,15 +510,15 @@ class MedsFit(object):
                     gmix_list.append( gmix_psf )
                     keep_list.append(i)
                 else:
-                    print >>stderr,('large psf offset: %s '
-                                    'in %s' % (offset_arcsec,flist[i]))
+                    print( ('large psf offset: %s '
+                                    'in %s' % (offset_arcsec,flist[i])) )
                     tflags |= PSF_LARGE_OFFSETS 
 
                 
             except GMixMaxIterEM:
-                print >>stderr,'psf fail',flist[i]
+                print('psf fail',flist[i])
 
-                tflags == PSF_FIT_FAILURE
+                tflags = PSF_FIT_FAILURE
 
             flags |= tflags
 
@@ -590,6 +602,7 @@ class MedsFit(object):
         For double gauss we limit the separation
         """
         keep=True
+        offset_arcsec=0.0
         if self.psf_ngauss == 2:
             offset_arcsec = calc_offset_arcsec(gm)
             if offset_arcsec > self.psf_offset_max:
@@ -620,9 +633,9 @@ class MedsFit(object):
                 break
             except GMixMaxIterEM:
                 res=fitter.get_result()
-                print >>stderr,'last fit:'
-                print >>stderr,fitter.get_gmix()
-                print >>stderr,'try:',i+1,'fdiff:',res['fdiff'],'numiter:',res['numiter']
+                print('last fit:')
+                print( fitter.get_gmix() )
+                print( 'try:',i+1,'fdiff:',res['fdiff'],'numiter:',res['numiter'] )
                 if i == (self.psf_ntry-1):
                     raise
 
@@ -705,7 +718,7 @@ class MedsFit(object):
         else:
             mess="    psf s/n too low: %s (%s)"
             mess=mess % (max_psf_s2n,self.conf['min_psf_s2n'])
-            print >>stderr,mess
+            print(mess)
 
 
     def _fit_psf_flux(self, dindex, sdata):
@@ -713,12 +726,12 @@ class MedsFit(object):
         Perform PSF flux fits on each band separately
         """
 
-        print >>stderr,'    fitting: psf'
+        print('    fitting: psf')
         for band in self.iband:
             self._fit_psf_flux_oneband(dindex, sdata, band)
 
-        print_pars(self.data['psf_flux'][dindex],     stream=stderr, front='        ')
-        print_pars(self.data['psf_flux_err'][dindex], stream=stderr, front='        ')
+        print_pars(self.data['psf_flux'][dindex],     front='        ')
+        print_pars(self.data['psf_flux_err'][dindex], front='        ')
 
 
     def _fit_psf_flux_oneband(self, dindex, sdata, band):
@@ -743,7 +756,7 @@ class MedsFit(object):
         """
 
         for model in self.simple_models:
-            print >>stderr,'    fitting:',model
+            print('    fitting:',model)
 
             gm=self._fit_simple(dindex, model, sdata)
 
@@ -754,8 +767,15 @@ class MedsFit(object):
 
             if self.make_plots:
                 mindex = self.index_list[dindex]
-                ptrials,presid_list=gm.make_plots(title='%s multi-epoch' % model,
-                                                  do_residual=True)
+                ptuple=gm.make_plots(title='%s multi-epoch' % model,
+                                                          do_residual=True)
+                
+                if len(ptuple)==3:
+                    ptrials,wtrials,presid_list=ptuple
+                    wtrials.write_img(1200,1200,'wtrials-%06d-%s.png' % (mindex,model))
+                else:
+                    ptrials,presid_list=ptuple
+
                 ptrials.write_img(1200,1200,'trials-%06d-%s.png' % (mindex,model))
                 if presid_list is not None:
                     for band,plt in enumerate(presid_list):
@@ -806,7 +826,7 @@ class MedsFit(object):
         return 1.44
 
     def _get_full_simple_guess(self, dindex, model, sdata):
-        print >>stderr,'    getting guess from coadd'
+        print('    getting guess from coadd')
         counts_guess=self._get_counts_guess(dindex,sdata)
         T_guess=self._get_T_guess(dindex,sdata)
 
@@ -843,6 +863,7 @@ class MedsFit(object):
         priors=self.priors[model]
         g_prior=priors['g']
         T_prior=priors['T']
+        counts_prior=priors['counts']
 
         gm=ngmix.fitting.MCMCSimple(im_lol,
                                     wt_lol,
@@ -864,7 +885,9 @@ class MedsFit(object):
 
                                     cen_prior=self.cen_prior,
                                     T_prior=T_prior,
+                                    counts_prior=[counts_prior],
                                     g_prior=g_prior,
+                                    g_prior_during=self.g_prior_during,
                                     draw_g_prior=self.draw_g_prior,
                                     do_lensfit=self.do_lensfit,
                                     do_pqr=self.do_pqr)
@@ -923,7 +946,7 @@ class MedsFit(object):
         self.meds_meta_list=[]
 
         for i,f in enumerate(self.meds_files):
-            print >>stderr,f
+            print(f)
             medsi=meds.MEDS(f)
             medsi_meta=medsi.get_meta()
             if i==0:
@@ -943,7 +966,7 @@ class MedsFit(object):
         Load psfex objects for each of the SE images
         include the coadd so we get  the index right
         """
-        print >>stderr,'loading psfex'
+        print('loading psfex')
         desdata=os.environ['DESDATA']
         meds_desdata=self.meds_list[0]._meta['DESDATA'][0]
 
@@ -976,7 +999,15 @@ class MedsFit(object):
             if desdata not in psfpath:
                 psfpath=psfpath.replace(meds_desdata,desdata)
 
-            pex=psfex.PSFEx(psfpath)
+            if not os.path.exists(psfpath):
+                if i==0 and not self.guess_from_coadd:
+                    # can skip missing coadd psfex
+                    print('skipping missing coadd psfex:',psfpath)
+                    pex=None
+                else:
+                    raise ValueError("missing psfex for coadd: %s" % psfpath)
+            else:
+                pex=psfex.PSFEx(psfpath)
             psfex_list.append(pex)
 
         return psfex_list
@@ -1000,7 +1031,7 @@ class MedsFit(object):
             self._print_simple_fluxes(res)
             self._print_simple_T(res)
             self._print_simple_shape(res)
-            print >>stderr,'        arate:',res['arate']
+            print('        arate:',res['arate'])
 
     def _print_simple_shape(self, res):
         g1=res['pars'][2]
@@ -1008,7 +1039,7 @@ class MedsFit(object):
         g2=res['pars'][3]
         g2err=numpy.sqrt(res['pars_cov'][3,3])
 
-        print >>stderr,'        g1: %.4g +/- %.4g g2: %.4g +/- %.4g' % (g1,g1err,g2,g2err)
+        print('        g1: %.4g +/- %.4g g2: %.4g +/- %.4g' % (g1,g1err,g2,g2err) )
 
     def _print_simple_fluxes(self, res):
         """
@@ -1019,8 +1050,8 @@ class MedsFit(object):
         flux_cov=res['pars_cov'][5:, 5:]
         flux_err=sqrt(diag(flux_cov))
 
-        print_pars(flux,     stream=stderr, front='        ')
-        print_pars(flux_err, stream=stderr, front='        ')
+        print_pars(flux,     front='        flux')
+        print_pars(flux_err, front='        ferr')
 
     def _print_simple_T(self, res):
         """
@@ -1039,7 +1070,7 @@ class MedsFit(object):
             sigma=-9999.0
 
         tup=(T,Terr,Ts2n,sigma)
-        print >>stderr, '        T: %s +/- %s Ts2n: %s sigma: %s' % tup
+        print('        T: %s +/- %s Ts2n: %s sigma: %s' % tup )
 
     def _setup_checkpoints(self):
         """
@@ -1064,6 +1095,9 @@ class MedsFit(object):
         self._checkpoint_data=self.conf.get('checkpoint_data',None)
         if self._checkpoint_data is not None:
             self.data=self._checkpoint_data['data']
+
+            # for nband==1 the written array drops the arrayness
+            self.data.dtype=self._get_dtype()
             self.epoch_data=self._checkpoint_data['epoch_data']
 
             if self.epoch_data.dtype.names is not None:
@@ -1112,8 +1146,8 @@ class MedsFit(object):
         """
         import fitsio
 
-        print >>stderr,'checkpointing at',tm/60,'minutes'
-        print >>stderr,self.checkpoint_file
+        print('checkpointing at',tm/60,'minutes')
+        print(self.checkpoint_file)
 
         with fitsio.FITS(self.checkpoint_file,'rw',clobber=True) as fobj:
             fobj.write(self.data, extname="model_fits")
@@ -1170,10 +1204,8 @@ class MedsFit(object):
         self.psf_index = 0
 
 
-    def _make_struct(self):
-        """
-        make the output structure
-        """
+    def _get_dtype(self):
+
         nband=self.nband
         bshape=(nband,)
 
@@ -1195,14 +1227,13 @@ class MedsFit(object):
         if 'simple' in self.fit_types:
     
             simple_npars=5+nband
-            simple_models=self.simple_models
 
             if nband==1:
                 cov_shape=(nband,)
             else:
                 cov_shape=(nband,nband)
 
-            for model in simple_models:
+            for model in self.simple_models:
                 n=get_model_names(model)
 
                 np=simple_npars
@@ -1230,7 +1261,13 @@ class MedsFit(object):
                     dt += [(n['P'], 'f8'),
                            (n['Q'], 'f8', 2),
                            (n['R'], 'f8', (2,2))]
+        return dt
 
+    def _make_struct(self):
+        """
+        make the output structure
+        """
+        dt=self._get_dtype()
 
         num=self.index_list.size
         data=numpy.zeros(num, dtype=dt)
@@ -1240,7 +1277,7 @@ class MedsFit(object):
         data['psf_flux_err'] = PDEFVAL
 
         if 'simple' in self.fit_types:
-            for model in simple_models:
+            for model in self.simple_models:
                 n=get_model_names(model)
 
                 data[n['flags']] = NO_ATTEMPT

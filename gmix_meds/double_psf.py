@@ -2,8 +2,6 @@ from sys import stderr
 import os
 import numpy
 from numpy import sqrt
-import gmix_image
-from gmix_image import GMixEMBoot
 import psfex
 import fitsio
 
@@ -106,6 +104,7 @@ def fit_em2(flist, out_file, pos=[500.63, 600.25]):
 
 
 def _do_measure_em2(pex, pos, ngauss, maxtry):
+    from gmix_image import GMixEMBoot
     im=pex.get_rec(pos[0], pos[1])
 
     cen_guess=pex.get_center(pos[0], pos[1])

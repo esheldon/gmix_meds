@@ -6,14 +6,19 @@ from numpy import sqrt, diag
 from numpy.random import randn
 import fitsio
 import meds
-import gmix_image
-from gmix_image.gmix_fit import LM_MAX_TRY, \
-        GMixFitPSFJacob,\
-        GMixFitMultiSimple,GMixFitMultiCModel, \
-        GMixFitMultiPSFFlux,GMixFitMultiMatch
-from gmix_image.util import print_pars, srandu
-from gmix_image.gmix_em import GMixEMBoot
-from gmix_image.priors import CenPrior
+
+try:
+    import gmix_image
+    from gmix_image.gmix_fit import LM_MAX_TRY, \
+            GMixFitPSFJacob,\
+            GMixFitMultiSimple,GMixFitMultiCModel, \
+            GMixFitMultiPSFFlux,GMixFitMultiMatch
+    from gmix_image.util import print_pars, srandu
+    from gmix_image.gmix_em import GMixEMBoot
+    from gmix_image.priors import CenPrior
+except:
+    print 'could not import gmix_image'
+
 import psfex
 
 DEFVAL=-9999

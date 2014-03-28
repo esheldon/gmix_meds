@@ -4,7 +4,6 @@ import numpy
 from numpy import sqrt
 import fitsio
 import meds
-import gmix_image
 
 ZERO_WEIGHT_PIXELS=2**30
 
@@ -369,6 +368,7 @@ class StarPlotter(object):
         performed before fitting the line
 
         """
+        import gmix_image
         import biggles
         from esutil.stat import sigma_clip
 
@@ -501,6 +501,7 @@ class StarFitter(object):
         print 'output is in:',out_file
 
     def _process_stars(self, file_id, slist, icutlist):
+        import gmix_image
         ns=len(slist)
         st=self._get_struct(ns)
         st['tileband'] = self.tileband
@@ -888,7 +889,7 @@ class StarFitter(object):
 
    
 
-def measure_image_width_erf(image, thresh_vals, smooth=0.1, nsub=10, type='erf'):
+def measure_image_width(image, thresh_vals, smooth=0.1, nsub=10, type='erf'):
     """
     Measure width at the given threshold using the specified method.
     
@@ -997,8 +998,6 @@ def measure_image_width_erf(image, thresh_vals, smooth=0.1):
 
 def measure_image_width_interp(image, thresh_vals, nsub=20):
     """
-    Measure width at the given threshold using an erf to smooth the contour.
-    
     e.g. 0.5 would be the FWHM
 
     parameters
@@ -1007,22 +1006,11 @@ def measure_image_width_interp(image, thresh_vals, nsub=20):
         The image to measure
     thresh_vals: scalar or sequence
         threshold is, e.g. 0.5 to get a Full Width at Half max
-    smooth: float
-        The smoothing scale for the erf.  This should be between 0 and 1. If
-        you have noisy data, you might set this to the noise value or greater,
-        scaled by the max value in the images.  Otherwise just make sure it
-        smooths enough to avoid pixelization effects.
+    nsub: float
 
     output
     ------
     widths: scalar or ndarray
-        sqrt(Area)/pi where Area is,
-
-            nim=image.image.max()
-            arg =  (nim-thresh)/smooth
-            vals = 0.5*( 1 + erf(arg) )
-            area = vals.sum()
-            width = 2*sqrt(area/pi)
     """
     from numpy import array, sqrt, zeros, pi, where
     from scipy.special import erf
@@ -1071,6 +1059,7 @@ def _make_interpolated_image(im, nsub, order=1):
     return zimage
 
 def test_measure_image_width(fwhm=20.0, smooth=0.1, nsub=20, type='erf'):
+    import gmix_image
     print 'testing type:',type
     sigma=fwhm/2.3548
 

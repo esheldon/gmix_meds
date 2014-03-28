@@ -4,9 +4,8 @@
 
 Process the input meds file.
 """
-
+from __future__ import print_function
 import os,sys
-from sys import stderr
 import shutil
 import numpy
 import yaml
@@ -34,6 +33,10 @@ parser.add_option("--work-dir", default=None,
 parser.add_option("--profile-image", default=None,
                   help=("Profile the code and create the specified "
                         "image using pycallgraph"))
+
+parser.add_option("--make-plots", action='store_true',
+                  help=("make some plots"))
+
 def load_config(fname):
     with open(fname) as fobj:
         data=yaml.load(fobj)
@@ -216,6 +219,7 @@ def run_ngmix(meds_files, meds_files_full, conf, checkpoint_data=None):
     conf['g_priors'] = get_g_priors_ngmix(conf)
     conf['cen_prior'] = get_cen_prior_ngmix(conf)
     conf['T_priors'] = get_T_priors_ngmix(conf)
+    conf['counts_priors'] = get_counts_priors_ngmix(conf)
 
     gm=gmix_meds.nfit.MedsFit(meds_files,
                              checkpoint_data=checkpoint_data,
@@ -253,6 +257,24 @@ def get_T_priors_ngmix(conf):
         T_priors.append(T_prior)
 
     return T_priors
+
+def get_counts_priors_ngmix(conf):
+    import ngmix
+
+    counts_prior_types=conf['counts_prior_types']
+
+    counts_priors=[]
+    for i,typ in enumerate(counts_prior_types):
+        if typ == 'flat':
+            pars=conf['counts_prior_pars'][i]
+            counts_prior=ngmix.priors.FlatPrior(pars[0], pars[1])
+        else:
+            raise ValueError("bad counts prior type: %s" % counts_prior_type)
+
+        counts_priors.append(counts_prior)
+
+    return counts_priors
+
 
 def get_g_priors_ngmix(conf):
     import ngmix
@@ -343,7 +365,7 @@ def get_sub(meds_files, rng, work_dir):
 
     for f in meds_files:
 
-        print >>stderr,f
+        print(f)
         newf = get_sub_fname(f, rng, work_dir)
         ex=meds.MEDSExtractor(f, rng[0], rng[1], newf, cleanup=True)
         extracted.append(ex)
@@ -370,7 +392,7 @@ def go_profile(config_file, meds_files, out_file, options, img_name):
     from pycallgraph.output import GraphvizOutput
 
     graphviz = GraphvizOutput()
-    print 'profile image:',img_name
+    print('profile image:',img_name)
     graphviz.output_file = img_name
     config=pycallgraph.Config(groups=False)
 
@@ -383,7 +405,7 @@ def cleanup_checkpoint(checkpoint_file):
     the checkpoint file
     """
     if os.path.exists(checkpoint_file):
-        print >>stderr,'removing checkpoint file',checkpoint_file
+        print('removing checkpoint file',checkpoint_file)
         os.remove(checkpoint_file)
 
 
@@ -396,7 +418,7 @@ def get_checkpoint_data(out_file):
 
     if os.path.exists(checkpoint_file):
         data={}
-        print >>stderr,'reading checkpoint data:',checkpoint_file
+        print('reading checkpoint data:',checkpoint_file)
         with fitsio.FITS(checkpoint_file) as fobj:
             data['data']=fobj['model_fits'][:]
             if 'epoch_data'in fobj:
@@ -447,7 +469,7 @@ def write_data(data, epoch_data, meta, out_file):
     write the actual data.  clobber existing
     """
     makedir_fromfile(out_file)
-    print >>stderr,'writing:',out_file
+    print('writing:',out_file)
     with fitsio.FITS(out_file,'rw',clobber=True) as fobj:
         fobj.write(data,extname="model_fits")
         if epoch_data is not None:
@@ -460,7 +482,10 @@ def go(config_file, meds_files, out_file, options):
     checkpoint_file, checkpoint_data=get_checkpoint_data(out_file)
 
     conf=load_config(config_file)
-    pprint.pprint(conf,stream=stderr)
+    
+    conf['make_plots'] = options.make_plots
+
+    pprint.pprint(conf)
 
     rng_send,meds_files,meds_files_full,extracted=\
                         setup_work_files(options,meds_files)

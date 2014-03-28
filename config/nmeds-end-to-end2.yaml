@@ -1,0 +1,65 @@
+fitter: "ngmix"
+
+# hopefully small burnin is needed with guess from coadd
+nwalkers: 80
+burnin: 400
+nstep: 800
+mca_a: 2.0
+
+guess_burnin: 500
+guess_nstep: 100
+
+psf_ntry: 3
+psf_model: "em1"
+psf_maxiter: 5000
+psf_tol: 5.0e-6
+
+# at least one band must have psf s/n > this
+# we won't fit other models if the s/n is too low
+# this might be tweaked depending on how many bands
+# and images you have in the stack.
+min_psf_s2n: 4
+
+region: "seg_and_sky"
+
+# in arcsec
+psf_offset_max: 0.25
+
+max_box_size: 192
+
+fit_types: ['simple']
+
+simple_models: ['exp']
+do_pqr: True
+do_lensfit: False
+
+reject_outliers: True
+
+use_cen_prior: True
+cen_width: 0.27
+
+# from fitting to all cosmos galaxies in galsim data
+g_prior_types: ["cosmos-exp"]
+g_prior_during: True
+
+# still want true here even if using the coadd guess,
+# in case the guess is broken
+draw_g_prior: True
+
+T_prior_types: ["flat"]
+T_prior_pars: [ [0.0001,3000.0] ]
+
+# some objects have absolutely crazy flux values
+counts_prior_types: ["flat"]
+counts_prior_pars: [ [0.0001,100000.0] ]
+
+# over-rides draw_g_prior for the multi-epoch
+guess_from_coadd: False
+
+# checkpoint times in minutes, needed for condor in case we pass a batch system
+# limit such as in the condor scavenge.
+# 0 means after the first object
+
+checkpoints: [0,10,30,60,90]
+
+debug: 0
