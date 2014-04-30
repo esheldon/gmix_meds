@@ -1,12 +1,4 @@
 """
-todo
-
-    - make sure all metadata is being copied
-    - implement exp g prior
-    - figure out what to do with T and counts priors
-    - scale images by jacobian determinant?
-    - copy psf data
-
 """
 from __future__ import print_function
 
@@ -163,7 +155,7 @@ class MedsFit(object):
         self.priors=priors
         self.draw_g_prior=conf.get('draw_g_prior',True)
 
-        # in arcsec (or units of jacobian)
+        # in units of the jacobian
         self.cen_prior=conf.get("cen_prior",None)
 
 
@@ -325,7 +317,7 @@ class MedsFit(object):
 
     def _get_imlol_wtlol(self, dindex, mindex):
         """
-        Get a list of the jocobians for this object
+        Get a list of the jacobians for this object
         skipping the coadd
         """
 
@@ -390,7 +382,7 @@ class MedsFit(object):
 
     def _get_jacobian_lol(self, mindex):
         """
-        Get a list of the jocobians for this object
+        Get a list of the jacobians for this object
         skipping the coadd
         """
 
@@ -407,7 +399,7 @@ class MedsFit(object):
 
     def _get_jacobian_list(self, meds, mindex):
         """
-        Get a list of the jocobians for this object
+        Get a list of the jacobians for this object
         skipping the coadd
         """
         jlist0=meds.get_jacobian_list(mindex)
@@ -1000,12 +992,7 @@ class MedsFit(object):
                 psfpath=psfpath.replace(meds_desdata,desdata)
 
             if not os.path.exists(psfpath):
-                if i==0 and not self.guess_from_coadd:
-                    # can skip missing coadd psfex
-                    print('skipping missing coadd psfex:',psfpath)
-                    pex=None
-                else:
-                    raise ValueError("missing psfex for coadd: %s" % psfpath)
+                raise IOError("missing psfex: %s" % psfpath)
             else:
                 pex=psfex.PSFEx(psfpath)
             psfex_list.append(pex)
@@ -1403,5 +1390,4 @@ def reject_outliers(imlist, wtlist, nsigma=5.0, A=0.3):
             nreject += w[0].size
 
     return nreject
-
 
