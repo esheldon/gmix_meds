@@ -1,6 +1,5 @@
 fitter: "ngmix"
 
-# hopefully small burnin is needed with guess from coadd
 nwalkers: 80
 burnin: 400
 nstep: 800
@@ -9,7 +8,7 @@ mca_a: 2.0
 guess_burnin: 500
 guess_nstep: 100
 
-psf_ntry: 3
+psf_ntry: 30
 psf_model: "em1"
 psf_maxiter: 5000
 psf_tol: 5.0e-6
@@ -60,6 +59,6 @@ guess_from_coadd: False
 # limit such as in the condor scavenge.
 # 0 means after the first object
 
-checkpoints: [0,10,30,60,90]
+checkpoints: [30,60,110]
 
 debug: 0
