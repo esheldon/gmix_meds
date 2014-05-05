@@ -233,56 +233,25 @@ class MedsFit(object):
         if self.data['flags'][dindex] != 0:
             return 0
 
-        # lists of lists.  Coadd lists are length 1
-        im_lol,wt_lol,coadd_im_lol,coadd_wt_lol = \
-                self._get_imlol_wtlol(dindex,mindex)
-        jacob_lol,coadd_jacob_lol=self._get_jacobian_lol(mindex)
+        # MultiBandObsList obects
+        coadd_mb_obs_list, mb_obs_list, n_im = \
+                self._get_multi_band_observations(mindex)
 
-        print(im_lol[0][0].shape)
-    
-        if self.guess_from_coadd:
-            print('    fitting: coadd psf models')
-            coadd_keep_lol,coadd_psf_gmix_lol,coadd_flags=\
-                    self._fit_psfs(dindex,coadd_jacob_lol,do_coadd=True)
-            if any(coadd_flags):
-                self.data['flags'][dindex] = PSF_FIT_FAILURE 
-                return
-
-            coadd_im_lol, coadd_wt_lol, coadd_jacob_lol, coadd_len_list = \
-                self._extract_sub_lists(coadd_keep_lol,coadd_im_lol,coadd_wt_lol,coadd_jacob_lol)
-            if any([l==0 for l in coadd_len_list]):
-                print('wierd coadd lists zero length!')
-                self.data['flags'][dindex] = PSF_FIT_FAILURE 
-                return
-
-        print('    fitting: psf models')
-        keep_lol,psf_gmix_lol,flags=self._fit_psfs(dindex,jacob_lol)
-        if any(flags):
+        if (len(coadd_mb_obs_list) == 0 and self.guess_from_coadd):
+            print("  Coadd psf fitting failed, Could not guess from coadd")
+            self.data['flags'][dindex] = PSF_FIT_FAILURE 
+            return
+        if len(mb_obs_list) == 0:
+            print("  psf fitting failed")
             self.data['flags'][dindex] = PSF_FIT_FAILURE 
             return
 
+        print(mb_obs_list[0][0].image.shape)
 
-        im_lol, wt_lol, jacob_lol, len_list = \
-            self._extract_sub_lists(keep_lol,im_lol,wt_lol,jacob_lol)
-        if any([l==0 for l in len_list]):
-            print('wierd lists zero length!')
-            self.data['flags'][dindex] = PSF_FIT_FAILURE 
-            return
+        self.data['nimage_use'][dindex, :] = n_im
 
-        self.data['nimage_use'][dindex, :] = len_list
-
-        sdata={'keep_lol':keep_lol,
-               'im_lol':im_lol,
-               'wt_lol':wt_lol,
-               'jacob_lol':jacob_lol,
-               'psf_gmix_lol':psf_gmix_lol}
-
-        if self.guess_from_coadd:
-            sdata.update( {'coadd_keep_lol':coadd_keep_lol,
-                           'coadd_im_lol':coadd_im_lol,
-                           'coadd_wt_lol':coadd_wt_lol,
-                           'coadd_jacob_lol':coadd_jacob_lol,
-                           'coadd_psf_gmix_lol':coadd_psf_gmix_lol} )
+        sdata={'coadd_mb_obs_list':coadd_mb_obs_list,
+               'mb_obs_list':mb_obs_list}
 
         self._fit_all_models(dindex, sdata)
 
@@ -387,33 +356,110 @@ class MedsFit(object):
         Get a MultiBandObsList object for the SE observations.
         """
 
-        pass
+        coadd_mb_obs_list=MultiBandObsList()
+        mb_obs_list=MultiBandObsList()
 
-    def _get_band_observations(self, mindex, icut):
+        n_im = 0
+        for band in self.iband:
+            cobs_list, obs_list = self._get_band_observations(band, mindex)
+
+            if len(cobs_list) > 0:
+                coadd_mb_obs_list.append(cobs_list)
+
+            this_n_im=len(obs_list)
+            if this_n_im > 0:
+                mb_obs_list.append(obs_list)
+            n_im += this_n_im
+
+        return coadd_mb_obs_list, mb_obs_list, n_im
+
+    def _get_band_observations(self, band, mindex):
         """
         Get an ObsList for the coadd observations in each band
+
+        If psf fitting fails, the ObsList will be zero length
         """
 
-        icut=0
-        obs_list = ObsList()
-        for band in self.iband:
+        meds=self.meds_list[band]
+        ncutout=meds['ncutout'][mindex]
 
-            obs = self._get_band_observation(band, mindex, icut)
+        coadd_obs_list=ObsList()
+        obs_list = ObsList()
+
+        try:
+            coadd_obs = self._get_band_observation(band, mindex, 0)
+            coadd_obs_list.append( coadd_obs )
+        except GMixMaxIterEM:
+            pass
+
+        for icut in xrange(1,ncutout)
+            try:
+                obs = self._get_band_observation(band, mindex, icut)
+                obs_list.append(obs)
+            except GMixMaxIterEM:
+                pass
+
+        return coadd_obs_list, obs_list
 
     def _get_band_observation(self, band, mindex, icut):
         """
         Get an Observation for a single band.
+
+        GMixMaxIterEM is raised if psf fitting fails
         """
         meds=self.meds_list[band]
 
         im = self._get_meds_image(meds, mindex, icut)
         wt = self._get_meds_weight(meds, mindex, icut)
         jacob = self._get_jacobian(meds, mindex, icut)
-        psf_obs = self._get_psf(band, mindex, icut, jacob)
+        psf_obs = self._get_psf_observation(band, mindex, icut, jacob)
+        psf_gmix = self._fit_psf(psf_obs)
 
-        raise RuntimeError("fit the psf")
+        psf_obs.set_gmix(psf_gmix)
+
+        obs=Observation(im,
+                        weight=wt,
+                        jacobian=jacob,
+                        psf=psf_obs)
 
         return obs
+
+    def _fit_psf(self, obs):
+        """
+        Fit the PSF observation to a gaussian mixture
+
+        If no fit after psf_ntry tries, GMixMaxIterEM will
+        be raised
+
+        """
+
+        s2=psf_obj.meta['sigma']**2
+        im_with_sky, sky = ngmix.em.prep_image(obs.image)
+
+        fitter=ngmix.em.GMixEM(im_with_sky, jacobian=obs.jacob)
+
+        for i in xrange(self.psf_ntry):
+
+            if i == 0 and first_guess is not None:
+                gm_guess=first_guess.copy()
+            else:
+                s2guess=s2*jacob._data['det'][0]
+                gm_guess=self._get_em_guess(s2guess)
+            try:
+                fitter.go(gm_guess, sky,
+                          maxiter=self.psf_maxiter,
+                          tol=self.psf_tol)
+                break
+            except GMixMaxIterEM:
+                res=fitter.get_result()
+                print('last fit:')
+                print( fitter.get_gmix() )
+                print( 'try:',i+1,'fdiff:',res['fdiff'],'numiter:',res['numiter'] )
+                if i == (self.psf_ntry-1):
+                    raise
+
+        return fitter
+
 
     def _get_jacobian(self, meds, mindex, icut):
         """
@@ -423,16 +469,19 @@ class MedsFit(object):
         jacob = self._convert_jacobian_dict(jdict)
         return jacob
 
-    def _get_psf(self, band, mindex, icut, image_jacobian):
+    def _get_psf_observation(self, band, mindex, icut, image_jacobian):
         """
-        Get an Observation representing the PSF
+        Get an Observation representing the PSF and the "sigma"
+        from the psfex object
         """
-        im, cen = self._get_psf_image(band, mindex, icut)
+        im, cen, sigma = self._get_psf_image(band, mindex, icut)
 
         psf_jacobian = image_jacobian.copy()
         psf_jacobian.set_cen(cen[0], cen[1])
 
         psf_obs = Observation(im, jacobian=psf_jacobian)
+
+        psf_obs.update_meta_data({'sigma':sigma})
 
         return psf_obs
 
@@ -451,8 +500,9 @@ class MedsFit(object):
 
         im=pex.get_rec(row,col).astype('f8', copy=False)
         cen=pex.get_center(row,col)
+        sigma=pex.get_sigma()
 
-        return im, cen
+        return im, cen, sigma
 
     def _get_meds_image(self, meds, mindex, icut):
         """
@@ -709,6 +759,8 @@ class MedsFit(object):
 
     def _do_fit_psf(self, im, jacob, sigma_guess, first_guess=None):
         """
+        old
+
         Fit a single psf
         """
         s2=sigma_guess**2
@@ -742,12 +794,14 @@ class MedsFit(object):
         """
         Guess for the EM algorithm
         """
-        if self.psf_ngauss==1:
+
+        ngauss=self.psf_ngauss
+        if ngauss==1:
             pars=numpy.array( [1.0, 0.0, 0.0, 
                                sigma2*(1.0 + 0.1*srandu()),
                                0.0,
                                sigma2*(1.0 + 0.1*srandu())] )
-        else:
+        elif ngauss==2:
 
             pars=numpy.array( [_em2_pguess[0],
                                0.1*srandu(),
@@ -762,6 +816,33 @@ class MedsFit(object):
                                _em2_fguess[1]*sigma2*(1.0 + 0.1*srandu()),
                                0.0,
                                _em2_fguess[1]*sigma2*(1.0 + 0.1*srandu())] )
+        elif ngauss==3:
+
+            pars=numpy.array( [_em3_pguess[0]*(1.0+0.1*srandu()),
+                               0.1*srandu(),
+                               0.1*srandu(),
+                               _em3_fguess[0]*sigma2*(1.0 + 0.1*srandu()),
+                               0.01*srandu(),
+                               _em3_fguess[0]*sigma2*(1.0 + 0.1*srandu()),
+
+                               _em3_pguess[1]*(1.0+0.1*srandu()),
+                               0.1*srandu(),
+                               0.1*srandu(),
+                               _em3_fguess[1]*sigma2*(1.0 + 0.1*srandu()),
+                               0.01*srandu(),
+                               _em3_fguess[1]*sigma2*(1.0 + 0.1*srandu()),
+
+                               _em3_pguess[2]*(1.0+0.1*srandu()),
+                               0.1*srandu(),
+                               0.1*srandu(),
+                               _em3_fguess[2]*sigma2*(1.0 + 0.1*srandu()),
+                               0.01*srandu(),
+                               _em3_fguess[2]*sigma2*(1.0 + 0.1*srandu())]
+
+                            )
+
+        else:
+            raise ValueError("only support 1,2,3 gauss for psf")
 
         return ngmix.gmix.GMix(pars=pars)
 
@@ -1430,6 +1511,11 @@ def calc_offset_arcsec(gm, scale=1.0):
 
 _em2_fguess=numpy.array([0.5793612389470884,1.621860687127999])
 _em2_pguess=numpy.array([0.596510042804182,0.4034898268889178])
+_em3_pguess = array([0.596510042804182,0.4034898268889178,1.303069003078001e-07])
+_em3_fguess = array([0.5793612389470884,1.621860687127999,7.019347162356363],dtype='f8')
+
+
+
 #_em2_fguess=numpy.array([12.6,3.8])
 #_em2_fguess[:] /= _em2_fguess.sum()
 #_em2_pguess=numpy.array([0.30, 0.70])
