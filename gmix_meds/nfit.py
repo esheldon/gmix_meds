@@ -9,7 +9,9 @@ import meds
 import psfex
 import ngmix
 from ngmix import srandu
+from ngmix import Jacobian
 from ngmix import GMixMaxIterEM, print_pars
+from ngmix import Observation, ObsList, MultiBandObsList
 
 from .lmfit import get_model_names
 
@@ -379,6 +381,100 @@ class MedsFit(object):
             raise ValueError("support other region types")
         return se_wtlist, coadd_wtlist
 
+    def _get_multi_band_observations(self, mindex):
+        """
+        Get an ObsList object for the Coadd observations
+        Get a MultiBandObsList object for the SE observations.
+        """
+
+        coadd_obs_list = self._get_coadd_obs(mindex)
+        se_mb_obs_list = self._get_se_obs(mindex)
+
+    def _get_obs(self, mindex, icut):
+        """
+        Get an ObsList for the coadd observations in each band
+        """
+
+        icut=0
+        obs_list = ObsList()
+        for band in self.iband:
+
+            meds=self.meds_list[band]
+
+            im = self._get_meds_image(meds, mindex, icut)
+            wt = self._get_meds_weight(meds, mindex, icut)
+            jacob = self._get_jacobian(meds, mindex, icut)
+            psf_im, psf_cen = self._get_psf(band, mindex, icut, jacob)
+
+    def _get_jacobian(self, meds, mindex, icut):
+        """
+        Get a Jacobian object for the requested object
+        """
+        jdict = meds.get_jacobian(mindex, icut)
+        jacob = self._convert_jacobian_dict(jdict)
+        return jacob
+
+    def _get_psf(self, band, mindex, icut, image_jacobian):
+        """
+        Get an Observation representing the PSF
+        """
+        im, cen = self._get_psf_image(band, mindex, icut)
+
+        # make psf observation here
+        psf_jacobian = image_jacobian.copy()
+        psf_jacobian.set_cen(cen[0], cen[1])
+
+
+        return psf_obs
+
+    def _get_psf_image(self, band, mindex, icut):
+        """
+        Get an image representing the psf
+        """
+
+        meds=self.meds_list[band]
+        file_id=meds['file_id'][mindex,icut]
+
+        pex=self._psfex_lol[band][file_id]
+
+        row=meds['orig_row'][mindex,icut]
+        col=meds['orig_col'][mindex,icut]
+
+        im=pex.get_rec(row,col).astype('f8', copy=False)
+        cen=pex.get_center(row,col)
+
+        return im, cen
+
+    def _get_meds_image(self, meds, mindex, icut):
+        """
+        Get an image cutout from the input MEDS file
+        """
+        im = meds.get_cutout(mindex, icut)
+        im = im.astype('f8', copy=False)
+        return im
+
+    def _get_meds_weight(self, meds, mindex, icut):
+        """
+        Get a weight map from the input MEDS file
+        """
+        if self.region=='seg_and_sky':
+            wt=meds.get_cweight_cutout(mindex, icut)
+            wt=wt.astype('f8', copy=False)
+        else:
+            raise ValueError("support other region types")
+        return wt
+
+    def _convert_jacobian_dict(self, jdict):
+        """
+        Get the jacobian for the input meds index and cutout index
+        """
+        jacob=Jacobian(jdict['row0'],
+                       jdict['col0'],
+                       jdict['dudrow'],
+                       jdict['dudcol'],
+                       jdict['dvdrow'],
+                       jdict['dvdcol'])
+        return jacob
 
     def _get_jacobian_lol(self, mindex):
         """
