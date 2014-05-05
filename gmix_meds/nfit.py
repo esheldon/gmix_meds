@@ -387,10 +387,9 @@ class MedsFit(object):
         Get a MultiBandObsList object for the SE observations.
         """
 
-        coadd_obs_list = self._get_coadd_obs(mindex)
-        se_mb_obs_list = self._get_se_obs(mindex)
+        pass
 
-    def _get_obs(self, mindex, icut):
+    def _get_band_observations(self, mindex, icut):
         """
         Get an ObsList for the coadd observations in each band
         """
@@ -399,12 +398,22 @@ class MedsFit(object):
         obs_list = ObsList()
         for band in self.iband:
 
-            meds=self.meds_list[band]
+            obs = self._get_band_observation(band, mindex, icut)
 
-            im = self._get_meds_image(meds, mindex, icut)
-            wt = self._get_meds_weight(meds, mindex, icut)
-            jacob = self._get_jacobian(meds, mindex, icut)
-            psf_im, psf_cen = self._get_psf(band, mindex, icut, jacob)
+    def _get_band_observation(self, band, mindex, icut):
+        """
+        Get an Observation for a single band.
+        """
+        meds=self.meds_list[band]
+
+        im = self._get_meds_image(meds, mindex, icut)
+        wt = self._get_meds_weight(meds, mindex, icut)
+        jacob = self._get_jacobian(meds, mindex, icut)
+        psf_obs = self._get_psf(band, mindex, icut, jacob)
+
+        raise RuntimeError("fit the psf")
+
+        return obs
 
     def _get_jacobian(self, meds, mindex, icut):
         """
@@ -420,10 +429,10 @@ class MedsFit(object):
         """
         im, cen = self._get_psf_image(band, mindex, icut)
 
-        # make psf observation here
         psf_jacobian = image_jacobian.copy()
         psf_jacobian.set_cen(cen[0], cen[1])
 
+        psf_obs = Observation(im, jacobian=psf_jacobian)
 
         return psf_obs
 
