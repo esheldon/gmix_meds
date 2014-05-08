@@ -127,38 +127,50 @@ class MedsFit(object):
             self._make_epoch_struct()
 
     def _unpack_priors(self):
+        """
+        Currently only separable priors
+        """
+
+        from ngmix.joint_prior import PriorSimpleSep
+        from ngmix.priors import Disk2D
         conf=self.conf
+
+        cen_prior=conf['cen_prior']
+
+        g_prior_flat=Disk2D([0.0,0.0], 1.0)
+
+        g_priors=conf['g_priors']
+        T_priors=conf['T_priors']
+        counts_priors=conf['counts_priors']
 
         models = self.fit_models
         nmod=len(models)
 
-        T_priors=conf['T_priors']
-        counts_priors=conf['counts_priors']
-        g_priors=conf['g_priors']
-
-        self.g_prior_during = conf.get('g_prior_during',False)
-        if self.g_prior_during:
-            print('applying prior during')
-
-        if (len(T_priors) != nmod or len(g_priors) != nmod ):
-            raise ValueError("models and T,g priors must be same length")
+        nprior=len(g_priors)
+        if nprior != nmod:
+            raise ValueError("len(models)=%d but got len(priors)=%d" % (nmod,nprior))
 
         priors={}
+        gflat_priors={}
         for i in xrange(nmod):
-            model=models[i]
-            T_prior=T_priors[i]
-            counts_prior=counts_priors[i]
-            g_prior=g_priors[i]
-            
-            modlist={'T':T_prior, 'g':g_prior,'counts':counts_prior}
-            priors[model] = modlist
+            model=self.fit_models[i]
+
+            prior = PriorSimpleSep(cen_prior,
+                                   g_priors[i],
+                                   T_priors[i],
+                                   counts_priors[i])
+
+            # for the exploration, for which we do not apply g prior during
+            gflat_prior = PriorSimpleSep(cen_prior,
+                                         g_prior_flat,
+                                         T_priors[i],
+                                         counts_priors[i])
+
+            priors[model]=prior
+            gflat_priors[model]=gflat_prior
 
         self.priors=priors
-        self.draw_g_prior=conf.get('draw_g_prior',True)
-
-        # in units of the jacobian
-        self.cen_prior=conf.get("cen_prior",None)
-
+        self.gflat_priors=gflat_priors
 
     def get_data(self):
         """
@@ -765,16 +777,18 @@ class MedsFit(object):
         if model not in ['exp','dev']:
             raise ValueError("only simple models for now")
 
-        gm=self._fit_simple(dindex, sdata, model)
+        fitter=self._fit_simple(dindex, sdata, model)
 
-        res=gm.get_result()
+        log_res=fitter.get_result()
+        lin_res=fitter.get_lin_result()
 
-        self._copy_simple_pars(dindex, res)
-        self._print_simple_res(res)
+        self._print_simple_res(lin_res)
+
+        self._copy_simple_pars(dindex, log_res, lin_res)
 
         if self.make_plots:
             mindex = self.index_list[dindex]
-            ptuple=gm.make_plots(title='%s multi-epoch' % model,
+            ptuple=fitter.make_plots(title='%s multi-epoch' % model,
                                                       do_residual=True)
             
             if len(ptuple)==3:
@@ -794,44 +808,26 @@ class MedsFit(object):
         """
 
         if self.guess_from_coadd:
-            # use the em1 fit for the guess
-            full_guess=self._get_full_simple_guess(dindex, sdata, model)
-            counts_guess=None
-            T_guess=None
+            # use the em1 fit followed by a fit to the coadd
+            guess=self._get_guess_from_coadd(dindex, sdata, model)
         else:
-            full_guess=None
-            counts_guess=self._get_counts_guess(dindex,sdata)
-            T_guess=self._get_T_guess(dindex,sdata)
+            guess=self._get_guess_from_em1(dindex)
         
-        gm=self._do_fit_simple(model, 
-                               sdata['im_lol'],
-                               sdata['wt_lol'],
-                               sdata['jacob_lol'],
-                               sdata['psf_gmix_lol'],
-                               self.burnin,
-                               self.nstep,
-                               T_guess=T_guess,
-                               counts_guess=counts_guess,
-                               full_guess=full_guess)
-        return gm
+        fitter=self._do_fit_simple(model,
+                                   sdata['mb_obs_list'],
+                                   self.burnin,
+                                   self.nstep,
+                                   guess)
 
+        log_trials=fitter.get_trials()
 
-    def _get_counts_guess(self, dindex, sdata):
-        """
-        Based on the psf flux guess
-        """
-        psf_flux=self.data['psf_flux'][dindex,:].clip(min=0.1, max=None)
-        return psf_flux
+        g_prior=self.priors[model].g_prior
+        weights = g_prior.get_prob_array2d(log_trials[:,2], log_trials[:,3])
+        fitter.calc_result(weights=weights)
+        fitter.calc_lin_result(weights=weights)
 
-    def _get_T_guess(self, dindex, sdata):
-        """
-        Guess at T in arcsec**2
+        return fitter
 
-        Guess corresponds to FWHM=2.0 arcsec
-
-        Assuming scale is 0.27''/pixel
-        """
-        return 1.44
 
     def _get_guess_from_em1(self, dindex):
         """
@@ -839,6 +835,8 @@ class MedsFit(object):
 
         The size will be too big due to the psf...
         """
+        from numpy import log
+
         data=self.data
 
         gmix_pars=data['coadd_em1_gmix_pars'][dindex,:]
@@ -848,138 +846,138 @@ class MedsFit(object):
         irr=gmix_pars[3+ind*6]
         icc=gmix_pars[5+ind*6]
 
-        T = numpy.median( irr+icc )
+        T = numpy.median( irr+icc ).clip(min=0.1, max=100.0)
 
-        rowcen_vals = gmix_pars[0+ind*6]
-        colcen_vals = gmix_pars[1+ind*6]
+        rowcen_vals = gmix_pars[1+ind*6]
+        colcen_vals = gmix_pars[2+ind*6]
 
         rowcen=numpy.median(rowcen_vals)
         colcen=numpy.median(colcen_vals)
 
-        flux_vals=data['coadd_em1_flux'][dindex,:].clip(min=0.1, max=None)
+        flux_vals=data['coadd_em1_flux'][dindex,:].clip(min=0.1, max=1.0e6)
 
         nwalkers=self.nwalkers
         np=5+self.nband
+
         guess=numpy.zeros( (nwalkers, np) )
         guess[:,0] = rowcen + 0.01*srandu(nwalkers)
         guess[:,1] = colcen + 0.01*srandu(nwalkers)
         guess[:,2] = 0.1*srandu(nwalkers)
         guess[:,3] = 0.1*srandu(nwalkers)
-        guess[:,4] = T*(1.0 + 0.1*srandu(nwalkers))
+        guess[:,4] = log( T*(1.0 + 0.1*srandu(nwalkers)) )
         for band in self.iband:
-            guess[:,5+band] = flux_vals[band]*(1.0 + 0.1*srandu(nwalkers))
+            guess[:,5+band] = log( flux_vals[band]*(1.0 + 0.1*srandu(nwalkers)) )
 
         return guess
 
-    def _get_full_simple_guess(self, dindex, sdata, model):
+    def _get_guess_from_coadd(self, dindex, sdata, model):
+        """
+        start from em1 and then do a full fit to the coadd
+        """
+        import random
+
         print('    getting guess from coadd')
-        counts_guess=self._get_counts_guess(dindex,sdata)
-        T_guess=self._get_T_guess(dindex,sdata)
 
-        gm=self._do_fit_simple(model,
-                               sdata['coadd_im_lol'],
-                               sdata['coadd_wt_lol'],
-                               sdata['coadd_jacob_lol'],
-                               sdata['coadd_psf_gmix_lol'],
-                               self.conf['guess_burnin'],
-                               self.conf['guess_nstep'],
-                               T_guess=T_guess,
-                               counts_guess=counts_guess)
+        guess=self._get_guess_from_em1(dindex)
 
-        res=gm.get_result()
+        fitter=self._do_fit_simple(model,
+                                   sdata['coadd_mb_obs_list'],
+                                   self.conf['guess_burnin'],
+                                   self.conf['guess_nstep'],
+                                   guess)
+
+        # the log pars
+        log_trials=fitter.get_trials()
+
+        g_prior=self.priors[model].g_prior
+        weights = g_prior.get_prob_array2d(log_trials[:,2], log_trials[:,3])
+        fitter.calc_lin_result(weights=weights)
+
+        res=fitter.get_lin_result()
         self._print_simple_res(res)
 
         if self.make_plots:
             mindex = self.index_list[dindex]
-            ptrials,presid_list=gm.make_plots(title='%s coadd' % model,
+            ptrials,presid_list=fitter.make_plots(title='%s coadd' % model,
                                               do_residual=True)
             ptrials.write_img(1200,1200,'trials-%06d-%s-coadd.png' % (mindex,model))
             if presid_list is not None:
                 for band,plt in enumerate(presid_list):
                     plt.write_img(1920,1200,'resid-%06d-%s-band%d-coadd.png' % (mindex,model,band))
 
-        return gm.get_trials()
+        # now get a random set (the most recent would be from the same walker)
+        np = log_trials.shape[0]
+        rand_int = random.sample(xrange(np), self.nwalkers)
+        return log_trials[rand_int, :]
 
-    def _do_fit_simple(self, model, im_lol, wt_lol, jacob_lol, psf_gmix_lol,
-                       burnin,nstep,
-                       T_guess=None,
-                       counts_guess=None,
-                       full_guess=None):
+    def _do_fit_simple(self,
+                       model,
+                       obs,
+                       burnin,
+                       nstep,
+                       guess):
 
-        priors=self.priors[model]
-        g_prior=priors['g']
-        T_prior=priors['T']
-        counts_prior=priors['counts']
+        from ngmix.fitting import MCMCSimple
 
-        gm=ngmix.fitting.MCMCSimple(im_lol,
-                                    wt_lol,
-                                    jacob_lol,
-                                    model,
-                                    psf=psf_gmix_lol,
+        prior=self.gflat_priors[model]
 
-                                    nwalkers=self.nwalkers,
-                                    burnin=burnin,
-                                    nstep=nstep,
-                                    mca_a=self.mca_a,
+        fitter=MCMCSimple(obs,
+                          model,
+                          prior=prior,
+                          nwalkers=self.nwalkers,
+                          mca_a=self.mca_a)
 
-                                    iter=True,
-
-                                    T_guess=T_guess,
-                                    counts_guess=counts_guess,
-
-                                    full_guess=full_guess,
-
-                                    cen_prior=self.cen_prior,
-                                    T_prior=T_prior,
-                                    counts_prior=[counts_prior],
-                                    g_prior=g_prior,
-                                    g_prior_during=self.g_prior_during,
-                                    draw_g_prior=self.draw_g_prior,
-                                    do_lensfit=self.do_lensfit,
-                                    do_pqr=self.do_pqr)
-        gm.go()
-        return gm
+        pos=fitter.run_mcmc(guess,burnin)
+        pos=fitter.run_mcmc(pos,nstep)
 
 
-    def _copy_simple_pars(self, dindex, res):
+        return fitter
+
+
+    def _copy_simple_pars(self, dindex, log_res, lin_res):
         """
         Copy from the result dict to the output array
         """
-        model=res['model']
+        model=log_res['model']
         n=get_model_names(model)
 
-        self.data[n['flags']][dindex] = res['flags']
+        self.data[n['flags']][dindex] = log_res['flags']
 
-        if res['flags'] == 0:
-            pars=res['pars']
-            pars_cov=res['pars_cov']
+        if log_res['flags'] == 0:
+            log_pars=log_res['pars']
+            log_pars_cov=log_res['pars_cov']
+            lin_pars=log_res['pars']
+            lin_pars_cov=log_res['pars_cov']
 
-            flux=pars[5:]
-            flux_cov=pars_cov[5:, 5:]
+            flux=lin_pars[5:]
+            flux_cov=lin_pars_cov[5:, 5:]
 
-            self.data[n['pars']][dindex,:] = pars
-            self.data[n['pars_cov']][dindex,:,:] = pars_cov
+            self.data[n['pars']][dindex,:] = lin_pars
+            self.data[n['pars_cov']][dindex,:,:] = lin_pars_cov
+            self.data[n['logpars']][dindex,:] = log_pars
+            self.data[n['logpars_cov']][dindex,:,:] = log_pars_cov
+
 
             self.data[n['flux']][dindex] = flux
             self.data[n['flux_cov']][dindex] = flux_cov
 
-            self.data[n['g']][dindex,:] = res['g']
-            self.data[n['g_cov']][dindex,:,:] = res['g_cov']
+            self.data[n['g']][dindex,:] = log_res['g']
+            self.data[n['g_cov']][dindex,:,:] = log_res['g_cov']
 
-            self.data[n['arate']][dindex] = res['arate']
-            if res['tau'] is not None:
-                self.data[n['tau']][dindex] = res['tau']
+            self.data[n['arate']][dindex] = log_res['arate']
+            if log_res['tau'] is not None:
+                self.data[n['tau']][dindex] = log_res['tau']
 
             for sn in _stat_names:
-                self.data[n[sn]][dindex] = res[sn]
+                self.data[n[sn]][dindex] = log_res[sn]
 
             if self.do_lensfit:
-                self.data[n['g_sens']][dindex,:] = res['g_sens']
+                self.data[n['g_sens']][dindex,:] = log_res['g_sens']
 
             if self.do_pqr:
-                self.data[n['P']][dindex] = res['P']
-                self.data[n['Q']][dindex,:] = res['Q']
-                self.data[n['R']][dindex,:,:] = res['R']
+                self.data[n['P']][dindex] = log_res['P']
+                self.data[n['Q']][dindex,:] = log_res['Q']
+                self.data[n['R']][dindex,:,:] = log_res['R']
                 
 
 
@@ -1069,11 +1067,11 @@ class MedsFit(object):
 
     def _print_simple_res(self, res):
         if res['flags']==0:
-            self._print_simple_fluxes(res)
-            self._print_simple_T(res)
-            self._print_simple_shape(res)
-            print('        arate:',res['arate'])
+            print_pars(res['pars'],    front='    ')
+            print_pars(res['pars_err'],front='    ')
+            print('    arate:',res['arate'])
 
+    '''
     def _print_simple_shape(self, res):
         g1=res['pars'][2]
         g1err=numpy.sqrt(res['pars_cov'][2,2])
@@ -1112,6 +1110,7 @@ class MedsFit(object):
 
         tup=(T,Terr,Ts2n,sigma)
         print('        T: %s +/- %s Ts2n: %s sigma: %s' % tup )
+    '''
 
     def _setup_checkpoints(self):
         """
@@ -1293,6 +1292,8 @@ class MedsFit(object):
             dt+=[(n['flags'],'i4'),
                  (n['pars'],'f8',np),
                  (n['pars_cov'],'f8',(np,np)),
+                 (n['logpars'],'f8',np),
+                 (n['logpars_cov'],'f8',(np,np)),
                  (n['flux'],'f8',bshape),
                  (n['flux_cov'],'f8',cov_shape),
                  (n['g'],'f8',2),
@@ -1332,7 +1333,7 @@ class MedsFit(object):
 
         n=get_model_names('coadd_em1')
         data[n['flags']] = NO_ATTEMPT
-        data[n['pars']] = DEFVAL
+        data[n['gmix_pars']] = DEFVAL
         data[n['flux']] = DEFVAL
         data[n['flux_err']] = PDEFVAL
         data[n['chi2per']] = PDEFVAL
