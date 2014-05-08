@@ -89,9 +89,9 @@ class MedsFit(object):
 
         self.guess_from_coadd=keys.get('guess_from_coadd',False)
 
-        self.nwalkers=keys.get('nwalkers',20)
-        self.burnin=keys.get('burnin',400)
-        self.nstep=keys.get('nstep',200)
+        self.nwalkers=keys['nwalkers']
+        self.burnin=keys['burnin']
+        self.nstep=keys['nstep']
         self.do_pqr=keys.get("do_pqr",False)
         self.do_lensfit=keys.get("do_lensfit",False)
         self.mca_a=keys.get('mca_a',2.0)
@@ -528,8 +528,6 @@ class MedsFit(object):
         # this can fail and we continue
         self._fit_psf_flux(dindex, sdata)
 
-        stop
- 
         s2n=self.data['coadd_em1_flux'][dindex,:]/self.data['coadd_em1_flux_err'][dindex,:]
         max_s2n=numpy.nanmax(s2n)
          
@@ -537,7 +535,7 @@ class MedsFit(object):
             for model in self.fit_models:
                 self._fit_model(dindex, sdata, model)
         else:
-            mess="    psf s/n too low: %s (%s)"
+            mess="    em1 s/n too low: %s (%s)"
             mess=mess % (max_psf_s2n,self.conf['min_em1_s2n'])
             print(mess)
 
@@ -600,7 +598,7 @@ class MedsFit(object):
             #print(pars)
             beg=band*6
             end=(band+1)*6
-            data['coadd_em1_pars'][dindex,beg:end] = pars
+            data['coadd_em1_gmix_pars'][dindex,beg:end] = pars
         else:
             gmix=None
 
@@ -767,7 +765,7 @@ class MedsFit(object):
         if model not in ['exp','dev']:
             raise ValueError("only simple models for now")
 
-        gm=self._fit_simple(dindex, model, sdata)
+        gm=self._fit_simple(dindex, sdata, model)
 
         res=gm.get_result()
 
@@ -790,13 +788,14 @@ class MedsFit(object):
                 for band,plt in enumerate(presid_list):
                     plt.write_img(1920,1200,'resid-%06d-%s-band%d.png' % (mindex,model,band))
 
-    def _fit_simple(self, dindex, model, sdata):
+    def _fit_simple(self, dindex, sdata, model):
         """
         Fit one of the "simple" models, e.g. exp or dev
         """
 
         if self.guess_from_coadd:
-            full_guess=self._get_full_simple_guess(dindex, model, sdata)
+            # use the em1 fit for the guess
+            full_guess=self._get_full_simple_guess(dindex, sdata, model)
             counts_guess=None
             T_guess=None
         else:
@@ -834,7 +833,45 @@ class MedsFit(object):
         """
         return 1.44
 
-    def _get_full_simple_guess(self, dindex, model, sdata):
+    def _get_guess_from_em1(self, dindex):
+        """
+        take guesses from em1 except for an ellipticity.
+
+        The size will be too big due to the psf...
+        """
+        data=self.data
+
+        gmix_pars=data['coadd_em1_gmix_pars'][dindex,:]
+
+        nband=self.nband
+        ind=numpy.arange(nband)
+        irr=gmix_pars[3+ind*6]
+        icc=gmix_pars[5+ind*6]
+
+        T = numpy.median( irr+icc )
+
+        rowcen_vals = gmix_pars[0+ind*6]
+        colcen_vals = gmix_pars[1+ind*6]
+
+        rowcen=numpy.median(rowcen_vals)
+        colcen=numpy.median(colcen_vals)
+
+        flux_vals=data['coadd_em1_flux'][dindex,:].clip(min=0.1, max=None)
+
+        nwalkers=self.nwalkers
+        np=5+self.nband
+        guess=numpy.zeros( (nwalkers, np) )
+        guess[:,0] = rowcen + 0.01*srandu(nwalkers)
+        guess[:,1] = colcen + 0.01*srandu(nwalkers)
+        guess[:,2] = 0.1*srandu(nwalkers)
+        guess[:,3] = 0.1*srandu(nwalkers)
+        guess[:,4] = T*(1.0 + 0.1*srandu(nwalkers))
+        for band in self.iband:
+            guess[:,5+band] = flux_vals[band]*(1.0 + 0.1*srandu(nwalkers))
+
+        return guess
+
+    def _get_full_simple_guess(self, dindex, sdata, model):
         print('    getting guess from coadd')
         counts_guess=self._get_counts_guess(dindex,sdata)
         T_guess=self._get_T_guess(dindex,sdata)
@@ -1225,7 +1262,7 @@ class MedsFit(object):
         # coadd fit with em 1 gauss
         n=get_model_names('coadd_em1')
         dt += [(n['flags'],'i4',bshape),
-               (n['pars'],'f8',6*nband),
+               (n['gmix_pars'],'f8',6*nband),
                (n['flux'], 'f8', bshape),
                (n['flux_err'], 'f8', bshape),
                (n['chi2per'],'f8',bshape),

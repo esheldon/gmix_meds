@@ -75,10 +75,10 @@ def make_ngmix_meta(conf, meds_meta_list, meds_files):
         meds_meta=meds_meta_list[band]
         mf=meds_files[band]
 
-        mnames=meta.names
+        mnames=meta.dtype.names
         for name in meds_meta.dtype.names:
             if name in mnames:
-                meta[name][band] = meds_meta[name]
+                meta[name][band] = meds_meta[name][0]
 
         #eu.numpy_util.copy_fields(meds_meta, meta)
 
@@ -121,10 +121,10 @@ def make_lm_meta(conf, meds_meta_list, meds_files):
         meds_meta=meds_meta_list[band]
         mf=meds_files[band]
 
-        mnames=meta.names
+        mnames=meta.dtype.names
         for name in meds_meta.dtype.names:
             if name in mnames:
-                meta[name][band] = meds_meta[name]
+                meta[name][band] = meds_meta[name][0]
 
         #eu.numpy_util.copy_fields(meds_meta, meta)
 
