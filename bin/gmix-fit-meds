@@ -14,7 +14,7 @@ import meds
 import gmix_meds
 import pprint
 
-import esutil as eu
+#import esutil as eu
 
 from optparse import OptionParser
 parser = OptionParser(__doc__)
@@ -65,23 +65,29 @@ def make_ngmix_meta(conf, meds_meta_list, meds_files):
            ('meds_file','S%d' % flen)]
 
     nband=len(meds_meta_list)
+    meta=numpy.zeros(nband, dtype=dt)
 
-    mlist=[]
+    #mlist=[]
     for band in xrange(nband):
 
-        meta=numpy.zeros(1, dtype=dt)
+        #meta=numpy.zeros(1, dtype=dt)
         meds_file=meds_files[band]
         meds_meta=meds_meta_list[band]
         mf=meds_files[band]
 
-        eu.numpy_util.copy_fields(meds_meta, meta)
+        mnames=meta.names
+        for name in meds_meta.dtype.names:
+            if name in mnames:
+                meta[name][band] = meds_meta[name]
 
-        meta['gmix_meds_config'] = config_file
-        meta['meds_file'] = meds_file
+        #eu.numpy_util.copy_fields(meds_meta, meta)
 
-        mlist.append(meta)
+        meta['gmix_meds_config'][band] = config_file
+        meta['meds_file'][band] = meds_file
 
-    meta=eu.numpy_util.combine_arrlist(mlist)
+        #mlist.append(meta)
+
+    #meta=eu.numpy_util.combine_arrlist(mlist)
     return meta
 
 
@@ -105,8 +111,9 @@ def make_lm_meta(conf, meds_meta_list, meds_files):
            ('region','S%d' % rlen)]
 
     nband=len(meds_meta_list)
+    meta=numpy.zeros(nband, dtype=dt)
 
-    mlist=[]
+    #mlist=[]
     for band in xrange(nband):
 
         meta=numpy.zeros(1, dtype=dt)
@@ -114,18 +121,23 @@ def make_lm_meta(conf, meds_meta_list, meds_files):
         meds_meta=meds_meta_list[band]
         mf=meds_files[band]
 
-        eu.numpy_util.copy_fields(meds_meta, meta)
+        mnames=meta.names
+        for name in meds_meta.dtype.names:
+            if name in mnames:
+                meta[name][band] = meds_meta[name]
 
-        meta['gmix_meds_config'] = config_file
-        meta['meds_file'] = meds_file
-        meta['psf_ntry'] = conf['psf_ntry']
-        meta['obj_ntry'] = conf['obj_ntry']
-        meta['psf_model'] = conf['psf_model']
-        meta['psf_offset_max'] = conf['psf_offset_max']
-        meta['region'] = conf['region']
-        mlist.append(meta)
+        #eu.numpy_util.copy_fields(meds_meta, meta)
 
-    meta=eu.numpy_util.combine_arrlist(mlist)
+        meta['gmix_meds_config'][band] = config_file
+        meta['meds_file'][band] = meds_file
+        meta['psf_ntry'][band] = conf['psf_ntry']
+        meta['obj_ntry'][band] = conf['obj_ntry']
+        meta['psf_model'][band] = conf['psf_model']
+        meta['psf_offset_max'][band] = conf['psf_offset_max']
+        meta['region'][band] = conf['region']
+        #mlist.append(meta)
+
+    #meta=eu.numpy_util.combine_arrlist(mlist)
     return meta
 
 def make_mcmc_meta(conf, meds_meta, meds_file):
