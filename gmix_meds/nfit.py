@@ -228,8 +228,9 @@ class MedsFit(object):
         # need to do this because we work on subset files
         self.data['number'][dindex] = self.meds_list[0]['number'][mindex]
 
-        self.data['flags'][dindex] = self._obj_check(mindex)
-        if self.data['flags'][dindex] != 0:
+        flags = self._obj_check(mindex)
+        if flags != 0:
+            self.data['flags'][dindex] = flags
             return 0
 
         # MultiBandObsList obects
@@ -252,7 +253,8 @@ class MedsFit(object):
         sdata={'coadd_mb_obs_list':coadd_mb_obs_list,
                'mb_obs_list':mb_obs_list}
 
-        self._fit_all_models(dindex, sdata)
+        flags=self._fit_all_models(dindex, sdata)
+        self.data['flags'][dindex] = flags
 
         self.data['time'][dindex] = time.time()-t0
 
@@ -512,6 +514,33 @@ class MedsFit(object):
 
         return keep, offset_arcsec
 
+
+    def _fit_all_models(self, dindex, sdata):
+        """
+        Fit psf flux and other models
+        """
+
+        flags=self._fit_coadd_em1(dindex, sdata)
+        if flags != 0:
+            print("    failure fitting coadd")
+            return flags
+
+        # this can fail and we continue
+        self._fit_psf_flux(dindex, sdata)
+
+        stop
+ 
+        s2n=self.data['coadd_em1_flux'][dindex,:]/self.data['coadd_em1_flux_err'][dindex,:]
+        max_s2n=numpy.nanmax(s2n)
+         
+        if max_s2n >= self.conf['min_em1_s2n']:
+            for model in self.fit_models:
+                self._fit_model(dindex, sdata, model)
+        else:
+            mess="    psf s/n too low: %s (%s)"
+            mess=mess % (max_psf_s2n,self.conf['min_em1_s2n'])
+            print(mess)
+
     def _fit_coadd_em1(self, dindex, sdata):
         """
         Fit a the multi-band galaxy observations to one gaussian using EM
@@ -520,6 +549,7 @@ class MedsFit(object):
         data
         """
 
+        print('    fitting: coadd em1')
         mb_obs_list=sdata['coadd_mb_obs_list']
 
         all_flags=0
@@ -528,9 +558,9 @@ class MedsFit(object):
             gmix,flags=self._fit_coadd_em1_oneband(dindex, band, obs)
 
             if flags == 0:
+                obs.set_gmix(gmix)
                 flags += self._fit_coadd_template_flux_oneband(dindex,
                                                                band,
-                                                               gmix,
                                                                obs)
             all_flags += flags
 
@@ -544,7 +574,7 @@ class MedsFit(object):
 
         # this is in sky coords
         sigma_guess = numpy.sqrt( psf_gmix.get_T()/2.0 )
-        print('      galaxy sigma guess:',sigma_guess)
+        #print('    galaxy sigma guess:',sigma_guess)
 
         ngauss=1
         empars=self.conf['galaxy_em_pars']
@@ -561,30 +591,32 @@ class MedsFit(object):
             fitter=None
             flags=EM_FIT_FAILURE
 
-        return fitter, flags
-
         data=self.data
-        data['coadd_em1_flags']][dindex,band] = flags
+        data['coadd_em1_flags'][dindex,band] = flags
 
         if flags == 0:
             gmix=fitter.get_gmix()
             pars=gmix.get_full_pars()
-            print(pars)
+            #print(pars)
             beg=band*6
             end=(band+1)*6
-            data['coadd_em1_pars']][dindex,beg:end] = pars
+            data['coadd_em1_pars'][dindex,beg:end] = pars
         else:
             gmix=None
 
         return gmix, flags
 
 
-    def _fit_coadd_template_flux_oneband(self, dindex, band, gmix, obs):
+    def _fit_coadd_template_flux_oneband(self, dindex, band, obs):
         """
-        Use the gmix as a template and fit for the flux
+        Use the gmix as a template and fit for the flux. You must
+        have run obs.set_gmix() and that gmix center should be the
+        best one from the em fit
+
+        We take the centers, relative to the jacobian centers which must
+        be co-located, from the gmix themselves
         """
-        cen=gmix.get_cen()
-        fitter = ngmix.fitting.TemplateFluxFitter(obs, cen)
+        fitter = ngmix.fitting.TemplateFluxFitter(obs)
         fitter.go()
 
         res=fitter.get_result()
@@ -595,6 +627,7 @@ class MedsFit(object):
             data['coadd_em1_flux_err'][dindex,band] = res['flux_err']
             data['coadd_em1_chi2per'][dindex,band] = res['chi2per']
             data['coadd_em1_dof'][dindex,band] = res['dof']
+            print("        robust coadd flux(%s): %g +/- %g" % (band,res['flux'],res['flux_err']))
         else:
             print("        could not fit template for band:",band)
 
@@ -694,91 +727,35 @@ class MedsFit(object):
 
 
 
-    def _extract_sub_lists(self,
-                           keep_lol0,
-                           im_lol0,
-                           wt_lol0,
-                           jacob_lol0):
-        """
-        extract those that passed some previous cuts
-        """
-        im_lol=[]
-        wt_lol=[]
-        jacob_lol=[]
-        len_list=[]
-        for band in self.iband:
-            keep_list = keep_lol0[band]
-
-            imlist0 = im_lol0[band]
-            wtlist0 = wt_lol0[band]
-            jacob_list0 = jacob_lol0[band]
-
-            imlist = [imlist0[i] for i in keep_list]
-            wtlist = [wtlist0[i] for i in keep_list]
-            jacob_list = [jacob_list0[i] for i in keep_list]
-
-            im_lol.append( imlist )
-            wt_lol.append( wtlist )
-            jacob_lol.append( jacob_list )
-
-            len_list.append( len(imlist) )
-
-        return im_lol, wt_lol, jacob_lol, len_list
-
-
-    def _fit_all_models(self, dindex, sdata):
-        """
-        Fit psf flux and other models
-        """
-
-        flags=self._fit_coadd_em1(dindex, sdata)
-        if flags != 0:
-            print("    failure fitting coadd")
-            self.data['flags'][dindex] += flags
-        stop
-
-        self._fit_psf_flux(dindex, sdata)
- 
-        s2n=self.data['psf_flux'][dindex,:]/self.data['psf_flux_err'][dindex,:]
-        max_psf_s2n=numpy.nanmax(s2n)
-         
-        if max_psf_s2n >= self.conf['min_psf_s2n']:
-            for model in self.fit_models:
-                self._fit_model(dindex, sdata, model)
-        else:
-            mess="    psf s/n too low: %s (%s)"
-            mess=mess % (max_psf_s2n,self.conf['min_psf_s2n'])
-            print(mess)
-
-
     def _fit_psf_flux(self, dindex, sdata):
         """
         Perform PSF flux fits on each band separately
         """
 
         print('    fitting: psf')
-        for band in self.iband:
-            self._fit_psf_flux_oneband(dindex, sdata, band)
+        for band,obs_list in enumerate(sdata['mb_obs_list']):
+            self._fit_psf_flux_oneband(dindex, band, obs_list)
 
-        print_pars(self.data['psf_flux'][dindex],     front='        ')
-        print_pars(self.data['psf_flux_err'][dindex], front='        ')
+        #print_pars(self.data['psf_flux'][dindex],     front='        ')
+        #print_pars(self.data['psf_flux_err'][dindex], front='        ')
 
 
-    def _fit_psf_flux_oneband(self, dindex, sdata, band):
+    def _fit_psf_flux_oneband(self, dindex, band, obs_list):
         """
         Fit the PSF flux in a single band
         """
-        fitter=ngmix.fitting.TemplateFluxFitter(sdata['im_lol'][band],
-                                                sdata['wt_lol'][band],
-                                                sdata['jacob_lol'][band],
-                                                sdata['psf_gmix_lol'][band])
+        fitter=ngmix.fitting.TemplateFluxFitter(obs_list, do_psf=True)
         fitter.go()
+
         res=fitter.get_result()
-        self.data['psf_flags'][dindex,band] = res['flags']
-        self.data['psf_flux'][dindex,band] = res['flux']
-        self.data['psf_flux_err'][dindex,band] = res['flux_err']
-        self.data['psf_chi2per'][dindex,band] = res['chi2per']
-        self.data['psf_dof'][dindex,band] = res['dof']
+        data=self.data
+
+        data['psf_flags'][dindex,band] = res['flags']
+        data['psf_flux'][dindex,band] = res['flux']
+        data['psf_flux_err'][dindex,band] = res['flux_err']
+        data['psf_chi2per'][dindex,band] = res['chi2per']
+        data['psf_dof'][dindex,band] = res['dof']
+        print("        psf flux(%s): %g +/- %g" % (band,res['flux'],res['flux_err']))
 
     def _fit_model(self, dindex, sdata, model):
         """
@@ -1354,6 +1331,38 @@ class MedsFit(object):
 
 
     # methods below here not used
+    def _extract_sub_lists(self,
+                           keep_lol0,
+                           im_lol0,
+                           wt_lol0,
+                           jacob_lol0):
+        """
+        extract those that passed some previous cuts
+        """
+        im_lol=[]
+        wt_lol=[]
+        jacob_lol=[]
+        len_list=[]
+        for band in self.iband:
+            keep_list = keep_lol0[band]
+
+            imlist0 = im_lol0[band]
+            wtlist0 = wt_lol0[band]
+            jacob_list0 = jacob_lol0[band]
+
+            imlist = [imlist0[i] for i in keep_list]
+            wtlist = [wtlist0[i] for i in keep_list]
+            jacob_list = [jacob_list0[i] for i in keep_list]
+
+            im_lol.append( imlist )
+            wt_lol.append( wtlist )
+            jacob_lol.append( jacob_list )
+
+            len_list.append( len(imlist) )
+
+        return im_lol, wt_lol, jacob_lol, len_list
+
+
     def _get_imlol_wtlol(self, dindex, mindex):
         """
         Get a list of the jacobians for this object
