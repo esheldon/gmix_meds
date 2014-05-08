@@ -1,4 +1,10 @@
 """
+todo
+
+    - do the template flux fit
+    - do psf flux fit
+    - do model fits
+    - copy SE psf pars into epochs
 """
 from __future__ import print_function
 
@@ -515,9 +521,20 @@ class MedsFit(object):
         """
 
         mb_obs_list=sdata['coadd_mb_obs_list']
+
+        all_flags=0
         for band in self.iband:
             obs = mb_obs_list[band][0]
-            self._fit_coadd_em1_oneband(dindex, band, obs)
+            gmix,flags=self._fit_coadd_em1_oneband(dindex, band, obs)
+
+            if flags == 0:
+                flags += self._fit_coadd_template_flux_oneband(dindex,
+                                                               band,
+                                                               gmix,
+                                                               obs)
+            all_flags += flags
+
+        return all_flags
 
     def _fit_coadd_em1_oneband(self, dindex, band, obs):
         """
@@ -544,18 +561,45 @@ class MedsFit(object):
             fitter=None
             flags=EM_FIT_FAILURE
 
-        n=get_model_names('coadd_em1')
-        d=self.data
-        d[n['flags']][dindex,band] = flags
+        return fitter, flags
+
+        data=self.data
+        data['coadd_em1_flags']][dindex,band] = flags
+
         if flags == 0:
-            gm=fitter.get_gmix()
-            pars=gm.get_full_pars()
+            gmix=fitter.get_gmix()
+            pars=gmix.get_full_pars()
             print(pars)
             beg=band*6
             end=(band+1)*6
-            d[n['pars']][dindex,beg:end] = pars
+            data['coadd_em1_pars']][dindex,beg:end] = pars
+        else:
+            gmix=None
 
-            raise RuntimeError("do template flux fit here")
+        return gmix, flags
+
+
+    def _fit_coadd_template_flux_oneband(self, dindex, band, gmix, obs):
+        """
+        Use the gmix as a template and fit for the flux
+        """
+        cen=gmix.get_cen()
+        fitter = ngmix.fitting.TemplateFluxFitter(obs, cen)
+        fitter.go()
+
+        res=fitter.get_result()
+        flags=res['flags']
+        data=self.data
+        if flags == 0:
+            data['coadd_em1_flux'][dindex,band] = res['flux']
+            data['coadd_em1_flux_err'][dindex,band] = res['flux_err']
+            data['coadd_em1_chi2per'][dindex,band] = res['chi2per']
+            data['coadd_em1_dof'][dindex,band] = res['dof']
+        else:
+            print("        could not fit template for band:",band)
+
+        return flags
+
 
     def _fit_with_em(self, obs, sigma_guess, ngauss, maxiter, tol, ntry):
         """
@@ -687,7 +731,10 @@ class MedsFit(object):
         Fit psf flux and other models
         """
 
-        self._fit_coadd_em1(dindex, sdata)
+        flags=self._fit_coadd_em1(dindex, sdata)
+        if flags != 0:
+            print("    failure fitting coadd")
+            self.data['flags'][dindex] += flags
         stop
 
         self._fit_psf_flux(dindex, sdata)
