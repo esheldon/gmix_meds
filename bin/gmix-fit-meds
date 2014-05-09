@@ -298,8 +298,8 @@ def get_g_priors_ngmix(conf):
             pars=conf['g_prior_pars'][i]
             parr=numpy.array(pars,dtype='f8')
             g_prior = ngmix.priors.GPriorM(parr)
-        elif typ=='cosmos-galfit':
-            g_prior = ngmix.priors.make_gprior_cosmos_galfit()
+        elif typ=='cosmos-sersic':
+            g_prior = ngmix.priors.make_gprior_cosmos_sersic(type='erf')
         elif typ=='cosmos-exp':
             g_prior = ngmix.priors.make_gprior_cosmos_exp()
         elif typ=='cosmos-dev':
