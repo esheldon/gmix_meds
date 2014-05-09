@@ -459,9 +459,12 @@ class MedsFit(object):
         """
         if self.region=='seg_and_sky':
             wt=meds.get_cweight_cutout(mindex, icut)
-            wt=wt.astype('f8', copy=False)
+        elif self.region=="cweight-nearest":
+            wt=meds.get_cweight_cutout_nearest(mindex, icut)
         else:
             raise ValueError("support other region types")
+
+        wt=wt.astype('f8', copy=False)
         return wt
 
     def _convert_jacobian_dict(self, jdict):
@@ -550,6 +553,8 @@ class MedsFit(object):
             mess="    em1 s/n too low: %s (%s)"
             mess=mess % (max_psf_s2n,self.conf['min_em1_s2n'])
             print(mess)
+
+        return flags
 
     def _fit_coadd_em1(self, dindex, sdata):
         """
@@ -784,23 +789,31 @@ class MedsFit(object):
 
         self._print_simple_res(lin_res)
 
-        self._copy_simple_pars(dindex, log_res, lin_res)
 
         if self.make_plots:
             mindex = self.index_list[dindex]
-            ptuple=fitter.make_plots(title='%s multi-epoch' % model,
-                                                      do_residual=True)
-            
-            if len(ptuple)==3:
-                ptrials,wtrials,presid_list=ptuple
-                wtrials.write_img(1200,1200,'wtrials-%06d-%s.png' % (mindex,model))
-            else:
-                ptrials,presid_list=ptuple
+            pdict=fitter.make_plots(title='%s multi-epoch' % model,
+                                    weights=fitter.weights,
+                                    do_residual=True)
 
-            ptrials.write_img(1200,1200,'trials-%06d-%s.png' % (mindex,model))
-            if presid_list is not None:
-                for band,plt in enumerate(presid_list):
-                    plt.write_img(1920,1200,'resid-%06d-%s-band%d.png' % (mindex,model,band))
+            trials_png='trials-%06d-%s-me.png' % (mindex,model)
+            wtrials_png='wtrials-%06d-%s-me.png' % (mindex,model)
+
+            print("        ",trials_png)
+            pdict['trials'].write_img(1200,1200,trials_png)
+
+            print("        ",wtrials_png)
+            pdict['wtrials'].write_img(1200,1200,wtrials_png)
+
+            for band, band_plots in enumerate(pdict['resid']):
+                for icut, plt in enumerate(band_plots):
+                    fname='resid-%06d-%s-band%d-im%d-me.png' % (mindex,model,band,icut+1)
+                    print("        ",fname)
+                    plt.write_img(1920,1200,fname)
+
+
+
+        #self._copy_simple_pars(dindex, log_res, lin_res)
 
     def _fit_simple(self, dindex, sdata, model):
         """
@@ -825,6 +838,8 @@ class MedsFit(object):
         weights = g_prior.get_prob_array2d(log_trials[:,2], log_trials[:,3])
         fitter.calc_result(weights=weights)
         fitter.calc_lin_result(weights=weights)
+
+        fitter.weights=weights
 
         return fitter
 
@@ -855,6 +870,8 @@ class MedsFit(object):
         colcen=numpy.median(colcen_vals)
 
         flux_vals=data['coadd_em1_flux'][dindex,:].clip(min=0.1, max=1.0e6)
+
+        print("central guess:",rowcen,colcen,T,flux_vals)
 
         nwalkers=self.nwalkers
         np=5+self.nband
@@ -891,19 +908,35 @@ class MedsFit(object):
 
         g_prior=self.priors[model].g_prior
         weights = g_prior.get_prob_array2d(log_trials[:,2], log_trials[:,3])
+
+        fitter.calc_result(weights=weights)
         fitter.calc_lin_result(weights=weights)
 
-        res=fitter.get_lin_result()
-        self._print_simple_res(res)
+        lin_res=fitter.get_lin_result()
+        self._print_simple_res(lin_res)
 
         if self.make_plots:
+            fitter.calc_result(weights=weights)
             mindex = self.index_list[dindex]
-            ptrials,presid_list=fitter.make_plots(title='%s coadd' % model,
-                                              do_residual=True)
-            ptrials.write_img(1200,1200,'trials-%06d-%s-coadd.png' % (mindex,model))
-            if presid_list is not None:
-                for band,plt in enumerate(presid_list):
-                    plt.write_img(1920,1200,'resid-%06d-%s-band%d-coadd.png' % (mindex,model,band))
+            pdict=fitter.make_plots(title='%s coadd' % model,
+                                    weights=weights,
+                                    do_residual=True)
+
+            trials_png='trials-%06d-%s-coadd.png' % (mindex,model)
+            wtrials_png='wtrials-%06d-%s-coadd.png' % (mindex,model)
+
+            print("        ",trials_png)
+            pdict['trials'].write_img(1200,1200,trials_png)
+
+            print("        ",wtrials_png)
+            pdict['wtrials'].write_img(1200,1200,wtrials_png)
+
+            for band, band_plots in enumerate(pdict['resid']):
+                # only one cutout for coadd
+                plt=band_plots[0]
+                fname='resid-%06d-%s-band%d-coadd.png' % (mindex,model,band)
+                print("        ",fname)
+                plt.write_img(1920,1200,fname)
 
         # now get a random set (the most recent would be from the same walker)
         np = log_trials.shape[0]
