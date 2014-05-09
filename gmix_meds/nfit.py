@@ -5,6 +5,9 @@ todo
     - do psf flux fit
     - do model fits
     - copy SE psf pars into epochs
+
+errors fitting masked objects
+    - tried simplifying jacobian, no difference
 """
 from __future__ import print_function
 
@@ -348,7 +351,7 @@ class MedsFit(object):
                 obs_list.append(obs)
             except GMixMaxIterEM:
                 pass
-
+        
         return coadd_obs_list, obs_list
 
     def _get_band_observation(self, band, mindex, icut):
@@ -357,6 +360,7 @@ class MedsFit(object):
 
         GMixMaxIterEM is raised if psf fitting fails
         """
+        import images
         meds=self.meds_list[band]
 
         im = self._get_meds_image(meds, mindex, icut)
@@ -367,6 +371,7 @@ class MedsFit(object):
 
         psf_fitter = self._fit_psf(psf_obs)
         psf_gmix = psf_fitter.get_gmix()
+
         psf_obs.set_gmix(psf_gmix)
 
         obs=Observation(im,
@@ -374,6 +379,13 @@ class MedsFit(object):
                         jacobian=jacob,
                         psf=psf_obs)
 
+        psf_fwhm=2.35*numpy.sqrt(psf_gmix.get_T()/2.0)
+        print("        psf fwhm:",psf_fwhm)
+        #images.multiview(psf_obs.image,title='psf %s' % icut)
+
+
+        #images.multiview(im,title='im icut: %s' % icut)
+        #images.multiview(wt,title='wt icut: %s' % icut)
         return obs
 
     def _fit_psf(self, obs):
@@ -871,7 +883,7 @@ class MedsFit(object):
 
         flux_vals=data['coadd_em1_flux'][dindex,:].clip(min=0.1, max=1.0e6)
 
-        print("central guess:",rowcen,colcen,T,flux_vals)
+        print("    em1 guess:",rowcen,colcen,T,flux_vals)
 
         nwalkers=self.nwalkers
         np=5+self.nband
@@ -1100,6 +1112,7 @@ class MedsFit(object):
 
     def _print_simple_res(self, res):
         if res['flags']==0:
+            print("    linear pars:")
             print_pars(res['pars'],    front='    ')
             print_pars(res['pars_err'],front='    ')
             print('    arate:',res['arate'])
