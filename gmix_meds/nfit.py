@@ -1,13 +1,7 @@
 """
 todo
-
-    - do the template flux fit
-    - do psf flux fit
-    - do model fits
-    - copy SE psf pars into epochs
-
-errors fitting masked objects
-    - tried simplifying jacobian, no difference
+    - copy coadd model fits as well
+        - always do the fit and just maybe do the ME guess from that
 """
 from __future__ import print_function
 
@@ -240,6 +234,9 @@ class MedsFit(object):
 
         mindex = self.index_list[dindex]
 
+        ncutout_tot=self._get_object_ncutout(mindex)
+        self.data['nimage_tot'][dindex, :] = ncutout_tot
+
         # need to do this because we work on subset files
         self.data['number'][dindex] = self.meds_list[0]['number'][mindex]
 
@@ -273,6 +270,14 @@ class MedsFit(object):
 
         self.data['time'][dindex] = time.time()-t0
 
+    def _get_object_ncutout(self, mindex):
+        """
+        number of cutouts for the specified object.
+        """
+        ncutout=0
+        for meds in self.meds_list:
+            ncutout += meds['ncutout'][mindex]
+        return ncutout
 
     def _obj_check(self, mindex):
         """
@@ -312,6 +317,7 @@ class MedsFit(object):
         coadd_mb_obs_list=MultiBandObsList()
         mb_obs_list=MultiBandObsList()
 
+        # number used
         n_im = 0
         for band in self.iband:
             cobs_list, obs_list = self._get_band_observations(band, mindex)
@@ -339,18 +345,27 @@ class MedsFit(object):
         coadd_obs_list=ObsList()
         obs_list = ObsList()
 
+        icut=0
         try:
-            coadd_obs = self._get_band_observation(band, mindex, 0)
+            coadd_obs = self._get_band_observation(band, mindex, icut)
             coadd_obs_list.append( coadd_obs )
+            flags=0
         except GMixMaxIterEM:
-            pass
+            flags=PSF_FIT_FAILURE
+        self._set_psf_meta(meds, mindex, band, icut, flags)
+        self.psf_index += 1
 
         for icut in xrange(1,ncutout):
             try:
                 obs = self._get_band_observation(band, mindex, icut)
                 obs_list.append(obs)
+                flags=0
             except GMixMaxIterEM:
-                pass
+                flags=PSF_FIT_FAILURE
+
+            # we set the metadata even if the fit fails
+            self._set_psf_meta(meds, mindex, band, icut, flags)
+            self.psf_index += 1
         
         return coadd_obs_list, obs_list
 
@@ -372,6 +387,10 @@ class MedsFit(object):
         psf_fitter = self._fit_psf(psf_obs)
         psf_gmix = psf_fitter.get_gmix()
 
+        # the psf fit only gets set if we succeed; not other metadata should
+        # always get set above.  relies on global variable self.psf_index
+        self._set_psf_result(psf_gmix)
+
         psf_obs.set_gmix(psf_gmix)
 
         obs=Observation(im,
@@ -381,11 +400,7 @@ class MedsFit(object):
 
         psf_fwhm=2.35*numpy.sqrt(psf_gmix.get_T()/2.0)
         print("        psf fwhm:",psf_fwhm)
-        #images.multiview(psf_obs.image,title='psf %s' % icut)
 
-
-        #images.multiview(im,title='im icut: %s' % icut)
-        #images.multiview(wt,title='wt icut: %s' % icut)
         return obs
 
     def _fit_psf(self, obs):
@@ -495,8 +510,7 @@ class MedsFit(object):
 
     def _set_psf_result(self, gm):
         """
-        Set psf fit data. Index can be got from the main model
-        fits struct
+        Set psf fit data.
         """
 
         psf_index=self.psf_index
@@ -510,7 +524,7 @@ class MedsFit(object):
         ed['psf_fit_T'][psf_index]      = T
         ed['psf_fit_pars'][psf_index,:] = pars
 
-    def _set_psf_data(self, meds, mindex, band, icut, flags):
+    def _set_psf_meta(self, meds, mindex, band, icut, flags):
         """
         Set all the meta data for the psf result
         """
@@ -654,7 +668,7 @@ class MedsFit(object):
             data['coadd_em1_flux_err'][dindex,band] = res['flux_err']
             data['coadd_em1_chi2per'][dindex,band] = res['chi2per']
             data['coadd_em1_dof'][dindex,band] = res['dof']
-            print("        robust coadd flux(%s): %g +/- %g" % (band,res['flux'],res['flux_err']))
+            print("        coadd em1 flux(%s): %g +/- %g" % (band,res['flux'],res['flux_err']))
         else:
             print("        could not fit template for band:",band)
 
