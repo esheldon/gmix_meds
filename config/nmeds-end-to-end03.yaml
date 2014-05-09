@@ -7,7 +7,7 @@ mca_a: 2.0
 
 # if we burn in from coadd
 guess_burnin: 400
-guess_nstep: 400
+guess_nstep: 800
 
 # Mike has used a single gaussian PSF
 psf_em_pars:
@@ -39,8 +39,7 @@ max_box_size: 192
 # in addition to em 1gauss and a psf flux
 fit_models: ['exp']
 
-do_pqr: True
-do_lensfit: True
+do_shear: True
 
 reject_outliers: True
 

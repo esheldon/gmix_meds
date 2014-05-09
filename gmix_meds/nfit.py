@@ -1,7 +1,13 @@
 """
 todo
+
     - copy coadd model fits as well
-        - always do the fit and just maybe do the ME guess from that
+        - always do the fit and optionally do the ME guess from that
+
+    - allow shear expand?  Only works for constant shear
+
+    - use base 10 for logs?  I only used e based for the lognormal distributions
+
 """
 from __future__ import print_function
 
@@ -89,9 +95,9 @@ class MedsFit(object):
         self.nwalkers=keys['nwalkers']
         self.burnin=keys['burnin']
         self.nstep=keys['nstep']
-        self.do_pqr=keys.get("do_pqr",False)
-        self.do_lensfit=keys.get("do_lensfit",False)
         self.mca_a=keys.get('mca_a',2.0)
+
+        self.do_shear=keys.get("do_shear",False)
 
         self._unpack_priors()
 
@@ -798,6 +804,41 @@ class MedsFit(object):
         data['psf_dof'][dindex,band] = res['dof']
         print("        psf flux(%s): %g +/- %g" % (band,res['flux'],res['flux_err']))
 
+    def _add_shear_info(self, res, fitter, model):
+        """
+        Add pqr or lensfit info
+        """
+
+        trials=fitter.get_trials()
+        g=trials[:,2:2+2]
+
+        g_prior=self.priors[model].g_prior
+
+        ls=ngmix.lensfit.LensfitSensitivity(g, g_prior)
+        res['g_sens'] = ls.get_g_sens()
+        res['nuse'] = ls.get_nuse()
+
+        pqrobj=ngmix.pqr.PQR(g, g_prior)
+        P,Q,R = pqrobj.get_pqr()
+        res['P']=P
+        res['Q']=Q
+        res['R']=R
+
+    def _calc_mcmc_stats(self, fitter, model):
+        """
+        Add some stats for the mcmc chain
+
+        Also add a weights attribute to the fitter
+        """
+        log_trials=fitter.get_trials()
+
+        g_prior=self.priors[model].g_prior
+        weights = g_prior.get_prob_array2d(log_trials[:,2], log_trials[:,3])
+        fitter.calc_result(weights=weights)
+        fitter.calc_lin_result(weights=weights)
+
+        fitter.weights=weights
+
     def _fit_model(self, dindex, sdata, model):
         """
         Fit all the simple models
@@ -810,11 +851,16 @@ class MedsFit(object):
 
         fitter=self._fit_simple(dindex, sdata, model)
 
+        self._calc_mcmc_stats(fitter, model)
+
         log_res=fitter.get_result()
         lin_res=fitter.get_lin_result()
 
-        self._print_simple_res(lin_res)
+        if self.do_shear:
+            self._add_shear_info(log_res, fitter, model)
 
+        self._print_simple_res(lin_res)
+        self._copy_simple_pars(dindex, log_res, lin_res)
 
         if self.make_plots:
             mindex = self.index_list[dindex]
@@ -839,7 +885,6 @@ class MedsFit(object):
 
 
 
-        #self._copy_simple_pars(dindex, log_res, lin_res)
 
     def _fit_simple(self, dindex, sdata, model):
         """
@@ -858,14 +903,6 @@ class MedsFit(object):
                                    self.nstep,
                                    guess)
 
-        log_trials=fitter.get_trials()
-
-        g_prior=self.priors[model].g_prior
-        weights = g_prior.get_prob_array2d(log_trials[:,2], log_trials[:,3])
-        fitter.calc_result(weights=weights)
-        fitter.calc_lin_result(weights=weights)
-
-        fitter.weights=weights
 
         return fitter
 
@@ -1030,10 +1067,8 @@ class MedsFit(object):
             for sn in _stat_names:
                 self.data[n[sn]][dindex] = log_res[sn]
 
-            if self.do_lensfit:
+            if self.do_shear:
                 self.data[n['g_sens']][dindex,:] = log_res['g_sens']
-
-            if self.do_pqr:
                 self.data[n['P']][dindex] = log_res['P']
                 self.data[n['Q']][dindex,:] = log_res['Q']
                 self.data[n['R']][dindex,:,:] = log_res['R']
@@ -1367,10 +1402,9 @@ class MedsFit(object):
                  (n['arate'],'f8'),
                  (n['tau'],'f8'),
                 ]
-            if self.do_lensfit:
-                dt += [(n['g_sens'], 'f8', 2)]
-            if self.do_pqr:
-                dt += [(n['P'], 'f8'),
+            if self.do_shear:
+                dt += [(n['g_sens'], 'f8', 2),
+                       (n['P'], 'f8'),
                        (n['Q'], 'f8', 2),
                        (n['R'], 'f8', (2,2))]
 
@@ -1417,9 +1451,8 @@ class MedsFit(object):
 
             data[n['tau']] = PDEFVAL
 
-            if self.do_lensfit:
+            if self.do_shear:
                 data[n['g_sens']] = DEFVAL
-            if self.do_pqr:
                 data[n['P']] = DEFVAL
                 data[n['Q']] = DEFVAL
                 data[n['R']] = DEFVAL
