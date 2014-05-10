@@ -1,12 +1,8 @@
 """
 todo
 
-    - copy coadd model fits as well
-        - always do the fit and optionally do the ME guess from that
-
+    - better to guess from coadd or em1?
     - allow shear expand?  Only works for constant shear
-
-    - use base 10 for logs?  I only used e based for the lognormal distributions
 
 """
 from __future__ import print_function
