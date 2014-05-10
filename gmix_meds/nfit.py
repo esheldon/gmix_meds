@@ -251,7 +251,7 @@ class MedsFit(object):
         coadd_mb_obs_list, mb_obs_list, n_im = \
                 self._get_multi_band_observations(mindex)
 
-        if (len(coadd_mb_obs_list) == 0 and self.guess_from_coadd):
+        if (len(coadd_mb_obs_list) == 0 and self.guess_type=='coadd'):
             print("  Coadd psf fitting failed, Could not guess from coadd")
             self.data['flags'][dindex] = PSF_FIT_FAILURE 
             return
@@ -588,7 +588,7 @@ class MedsFit(object):
                                     coadd=False)
         else:
             mess="    em1 s/n too low: %s (%s)"
-            mess=mess % (max_psf_s2n,self.conf['min_em1_s2n'])
+            mess=mess % (max_s2n,self.conf['min_em1_s2n'])
             print(mess)
 
         return flags
@@ -718,6 +718,10 @@ class MedsFit(object):
                 print( 'try:',i+1,'fdiff:',res['fdiff'],'numiter:',res['numiter'] )
                 if i == (ntry-1):
                     raise
+            except GMixRangeError as e:
+                print("range: %s" % str(e))
+                if i == (ntry-1):
+                    raise GMixMaxIterEM("too many iter")
 
         return fitter
 
