@@ -55,18 +55,25 @@ g_prior_during: True
 draw_g_prior: True
 
 T_prior_types: ["flat"]
+# linear
 #T_prior_pars: [ [0.0001,3000.0] ]
+# log10
+# -5 is about error bar on T
+T_prior_pars: [ [-5.0, 3.5] ]
 # natural log
-T_prior_pars: [ [-9.21034037,  8.00636757] ]
+#T_prior_pars: [ [-9.21034037,  8.00636757] ]
 
 # some objects have absolutely crazy flux values
 counts_prior_types: ["flat"]
-#counts_prior_pars: [ [0.0001,100000.0] ]
-# natural log
-counts_prior_pars: [ [ -9.21034037,  11.51292546] ]
 
-# over-rides draw_g_prior for the multi-epoch
-guess_from_coadd: False
+# linear
+#counts_prior_pars: [ [0.0001,100000.0] ]
+# log10
+counts_prior_pars: [ [-4.0,5.0] ]
+# natural log
+#counts_prior_pars: [ [ -9.21034037,  11.51292546] ]
+
+guess_type: 'coadd'
 
 # checkpoint times in minutes, needed for condor in case we pass a batch system
 # limit such as in the condor scavenge.
