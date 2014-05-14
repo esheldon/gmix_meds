@@ -15,7 +15,7 @@ import psfex
 import ngmix
 from ngmix import srandu
 from ngmix import Jacobian
-from ngmix import GMixMaxIterEM, print_pars
+from ngmix import GMixMaxIterEM, GMixRangeError, print_pars
 from ngmix import Observation, ObsList, MultiBandObsList
 
 from .lmfit import get_model_names
@@ -108,9 +108,6 @@ class MedsFit(object):
         self.obj_range=keys.get('obj_range',None)
         self._set_index_list()
 
-
-        self.debug=keys.get('debug',0)
-
         self.psf_offset_max=keys.get('psf_offset_max',PSF_OFFSET_MAX)
 
         self.region=keys.get('region','seg_and_sky')
@@ -136,6 +133,8 @@ class MedsFit(object):
 
         cen_prior=conf['cen_prior']
 
+        counts_prior_repeat=conf.get('counts_prior_repeat',False)
+
         g_prior_flat=Disk2D([0.0,0.0], 1.0)
 
         g_priors=conf['g_priors']
@@ -154,16 +153,20 @@ class MedsFit(object):
         for i in xrange(nmod):
             model=self.fit_models[i]
 
+            cp = counts_priors[i]
+            if counts_prior_repeat:
+                cp = [cp]*self.nband
+
             prior = PriorSimpleSep(cen_prior,
                                    g_priors[i],
                                    T_priors[i],
-                                   counts_priors[i])
+                                   cp)
 
             # for the exploration, for which we do not apply g prior during
             gflat_prior = PriorSimpleSep(cen_prior,
                                          g_prior_flat,
                                          T_priors[i],
-                                         counts_priors[i])
+                                         cp)
 
             priors[model]=prior
             gflat_priors[model]=gflat_prior
