@@ -18,15 +18,15 @@ psf_em_pars:
 
 # always fit 1 gauss
 # don't need to nail this, set tol lower
-galaxy_em_pars:
-    tol: 5.0e-4
-    maxiter: 5000
-    ntry: 30
+#galaxy_em_pars:
+#    tol: 5.0e-4
+#    maxiter: 5000
+#    ntry: 30
 
 
 # at least one band must have s/n > this or
 # we won't fit the slow mcmc 
-min_em1_s2n: 4
+min_psf_s2n: 4
 
 #region: "seg_and_sky"
 region: "cweight-nearest"
@@ -54,24 +54,13 @@ g_prior_during: True
 # in case the guess is broken
 draw_g_prior: True
 
+# log10
 T_prior_types: ["flat"]
-# linear
-#T_prior_pars: [ [0.0001,3000.0] ]
-# log10
-# -5 is about error bar on T
 T_prior_pars: [ [-5.0, 3.5] ]
-# natural log
-#T_prior_pars: [ [-9.21034037,  8.00636757] ]
 
-# some objects have absolutely crazy flux values
-counts_prior_types: ["flat"]
-
-# linear
-#counts_prior_pars: [ [0.0001,100000.0] ]
 # log10
+counts_prior_types: ["flat"]
 counts_prior_pars: [ [-4.0,6.5] ]
-# natural log
-#counts_prior_pars: [ [ -9.21034037,  11.51292546] ]
 
 guess_type: 'coadd'
 
