@@ -1085,8 +1085,8 @@ class MedsFit(object):
         if log_res['flags'] == 0:
             log_pars=log_res['pars']
             log_pars_cov=log_res['pars_cov']
-            lin_pars=log_res['pars']
-            lin_pars_cov=log_res['pars_cov']
+            lin_pars=lin_res['pars']
+            lin_pars_cov=lin_res['pars_cov']
 
             flux=lin_pars[5:]
             flux_cov=lin_pars_cov[5:, 5:]
