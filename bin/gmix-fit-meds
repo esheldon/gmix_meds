@@ -30,9 +30,8 @@ parser.add_option("--work-dir", default=None,
                         "Also write to local files and copy out."
                         "The local files are not removed."))
 
-parser.add_option("--profile-image", default=None,
-                  help=("Profile the code and create the specified "
-                        "image using pycallgraph"))
+parser.add_option("--profile", action='store_true',
+                  help=("Profile the code"))
 
 parser.add_option("--make-plots", action='store_true',
                   help=("make some plots"))
@@ -393,23 +392,25 @@ def get_range(rng_string):
 
     return rng
 
-def go_profile(config_file, meds_files, out_file, options, img_name):
+def go_profile(config_file, meds_files, out_file, options):
+    import cProfile
+    import pstats
+
+    print("doing profile")
+
     conf=load_config(config_file)
     if conf['fitter']=='ngmix':
         # pycallgraph doesn't like it when the JIT starts up
         import ngmix
 
-    import pycallgraph
-    from pycallgraph import PyCallGraph
-    from pycallgraph.output import GraphvizOutput
 
-    graphviz = GraphvizOutput()
-    print('profile image:',img_name)
-    graphviz.output_file = img_name
-    config=pycallgraph.Config(groups=False)
+    cProfile.runctx('go(config_file, meds_files, out_file, options)',
+                    globals(),locals(),
+                    'profile_stats')
 
-    with PyCallGraph(config=config, output=graphviz):
-        go(config_file, meds_files, out_file, options)
+    p = pstats.Stats('profile_stats')
+    p.sort_stats('time').print_stats()
+
 
 def cleanup_checkpoint(checkpoint_file):
     """
@@ -530,16 +531,9 @@ def main():
     meds_files=args[1].split(',')
     out_file=args[2]
 
-    if options.profile_image is not None:
-        go_profile(config_file, meds_files, out_file, options,
-                   options.profile_image)
+    if options.profile:
+        go_profile(config_file, meds_files, out_file, options)
     else:
         go(config_file, meds_files, out_file, options)
-    """
-    if options.work_dir is not None:
-        go_local(config_file, meds_files, out_file, options)
-    else:
-        go(config_file, meds_files, out_file, options)
-    """
 
 main()

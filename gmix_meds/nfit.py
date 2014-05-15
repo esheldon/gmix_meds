@@ -37,6 +37,8 @@ BOX_SIZE_TOO_BIG=2**5
 
 EM_FIT_FAILURE=2**6
 
+LOW_PSF_FLUX=2**7
+
 NO_ATTEMPT=2**30
 
 #PSF_S2N=1.e6
@@ -170,6 +172,11 @@ class MedsFit(object):
 
             priors[model]=prior
             gflat_priors[model]=gflat_prior
+
+            # for the coadd gaussian fit
+            if i==0:
+                priors["gauss"] = prior
+                gflat_priors["gauss"] = gflat_prior
 
         self.priors=priors
         self.gflat_priors=gflat_priors
@@ -330,12 +337,28 @@ class MedsFit(object):
             if len(cobs_list) > 0:
                 coadd_mb_obs_list.append(cobs_list)
 
+
             this_n_im=len(obs_list)
             if this_n_im > 0:
+                if self.reject_outliers:
+                    self._reject_outliers(obs_list)
                 mb_obs_list.append(obs_list)
             n_im += this_n_im
 
         return coadd_mb_obs_list, mb_obs_list, n_im
+
+    def _reject_outliers(self, obs_list):
+        imlist=[]
+        wtlist=[]
+        for obs in obs_list:
+            imlist.append(obs.image)
+            wtlist.append(obs.weight)
+
+        # weight map is modified
+        nreject=meds.reject_outliers(imlist,wtlist)
+        if nreject > 0:
+            print('        rejected:',nreject)
+
 
     def _get_band_observations(self, band, mindex):
         """
@@ -386,6 +409,9 @@ class MedsFit(object):
         im = self._get_meds_image(meds, mindex, icut)
         wt = self._get_meds_weight(meds, mindex, icut)
         jacob = self._get_jacobian(meds, mindex, icut)
+
+        # for the psf fitting code
+        wt.clip(min=0.0, max=None, out=wt)
 
         psf_obs = self._get_psf_observation(band, mindex, icut, jacob)
 
@@ -566,37 +592,44 @@ class MedsFit(object):
         Fit psf flux and other models
         """
 
-        flags=self._fit_coadd_em1(dindex, sdata)
-        if flags != 0:
-            print("    failure fitting coadd em1")
-            return flags
-
-        # this can fail and we continue
+        flags=0
         self._fit_psf_flux(dindex, sdata)
 
-        s2n=self.data['coadd_em1_flux'][dindex,:]/self.data['coadd_em1_flux_err'][dindex,:]
+        s2n=self.data['psf_flux'][dindex,:]/self.data['psf_flux_err'][dindex,:]
         max_s2n=numpy.nanmax(s2n)
          
-        if max_s2n >= self.conf['min_em1_s2n']:
+        if max_s2n >= self.conf['min_psf_s2n']:
+            # we use this as a guess for the real galaxy models
+            print("    fitting coadd gauss")
+            self._run_model_fit(dindex,
+                                sdata,
+                                'gauss',
+                                coadd=True)
+
             for model in self.fit_models:
                 print('    fitting:',model)
 
+                print('    coadd')
                 self._run_model_fit(dindex,
                                     sdata,
                                     model,
                                     coadd=True)
+                print('    multi-epoch')
                 self._run_model_fit(dindex,
                                     sdata,
                                     model,
                                     coadd=False)
         else:
-            mess="    em1 s/n too low: %s (%s)"
-            mess=mess % (max_s2n,self.conf['min_em1_s2n'])
+            mess="    psf s/n too low: %s (%s)"
+            mess=mess % (max_s2n,self.conf['min_psf_s2n'])
             print(mess)
+            
+            flags |= LOW_PSF_FLUX
 
         return flags
 
 
+    '''
     def _fit_coadd_em1(self, dindex, sdata):
         """
         Fit a the multi-band galaxy observations to one gaussian using EM
@@ -691,6 +724,7 @@ class MedsFit(object):
 
         return flags
 
+    '''
 
     def _fit_with_em(self, obs, sigma_guess, ngauss, maxiter, tol, ntry):
         """
@@ -825,10 +859,13 @@ class MedsFit(object):
         """
         wrapper to run fit, copy pars, maybe make plots
 
-        sets .fitter or .coadd_fitter
+        sets .coadd_gauss_fitter or .fitter or .coadd_fitter
         """
         if coadd:
-            guess_type='em1'
+            if model=='gauss':
+                guess_type='psf'
+            else:
+                guess_type='coadd_gauss'
             mb_obs_list=sdata['coadd_mb_obs_list']
         else:
             guess_type=self.guess_type
@@ -848,11 +885,14 @@ class MedsFit(object):
             self._do_make_plots(dindex, fitter, model, coadd=coadd)
 
         if coadd:
-            self.coadd_fitter=fitter
+            if model=='gauss':
+                self.coadd_gauss_fitter=fitter
+            else:
+                self.coadd_fitter=fitter
         else:
             self.fitter=fitter
 
-    def _fit_model(self, dindex, mb_obs_list, model, guess_type='em1'):
+    def _fit_model(self, dindex, mb_obs_list, model, guess_type='psf'):
         """
         Fit all the simple models
         """
@@ -878,8 +918,10 @@ class MedsFit(object):
         """
         if guess_type=='coadd':
             guess=self._get_guess_from_coadd()
-        elif guess_type=='em1':
-            guess=self._get_guess_from_em1(dindex)
+        elif guess_type=='coadd_gauss':
+            guess=self._get_guess_from_coadd_gauss()
+        elif guess_type=='psf':
+            guess=self._get_guess_from_psf(dindex)
         else:
             raise ValueError("bad guess type: '%s'" % guess_type)
 
@@ -909,34 +951,40 @@ class MedsFit(object):
 
         return fitter
 
-
-    def _get_guess_from_em1(self, dindex):
+    def _get_guess_from_psf(self, dindex):
         """
-        take guesses from em1 except for center and ellipticity.
+        take flux guesses from psf take canonical center (0,0)
+        and near zero ellipticity.  Size is taken from around the
+        expected psf size, which is about 0.9''
 
-        The size will be too big due to the psf...
-
-        Don't take center from em1 because we don't use the mask for em1 and
-        the center may well drift.
+        The size will often be too big
 
         """
         from numpy import log10
 
         data=self.data
 
-        gmix_pars=data['coadd_em1_gmix_pars'][dindex,:]
+        psf_flux=data['psf_flux'][dindex,:].copy()
+        psf_flux=psf_flux.clip(min=0.1, max=1.0e6)
 
         nband=self.nband
-        ind=numpy.arange(nband)
+        w,=numpy.where(data['psf_flags'][dindex,:] != 0)
+        if w.size > 0:
+            print("    found %s/%s psf failures" % (w.size,nband))
+            if w.size == psf_flux.size:
+                val=5.0
+                print("setting all to default:",val)
+            else:
+                wgood,=numpy.where(data['psf_flags'][dindex,:] == 0)
+                val=median(psf_flux[wgood])
+                print("setting to median:",val)
 
-        irr=gmix_pars[3+ind*6]
-        icc=gmix_pars[5+ind*6]
-        T = numpy.median( irr+icc ).clip(min=0.1, max=100.0)
+            psf_flux[w] = val
 
+        # arbitrary
+        T = 2*(0.9/2.35)**2
 
-        flux_vals=data['coadd_em1_flux'][dindex,:].clip(min=0.1, max=1.0e6)
-
-        print("        em1 guess:",T,flux_vals)
+        print("        guess from psf:",T,psf_flux)
 
         nwalkers=self.nwalkers
         np=5+self.nband
@@ -946,9 +994,9 @@ class MedsFit(object):
         guess[:,1] = 0.01*srandu(nwalkers)
         guess[:,2] = 0.1*srandu(nwalkers)
         guess[:,3] = 0.1*srandu(nwalkers)
-        guess[:,4] = log10( T*(1.0 + 0.1*srandu(nwalkers)) )
+        guess[:,4] = log10( T*(1.0 + 0.2*srandu(nwalkers)) )
         for band in self.iband:
-            guess[:,5+band] = log10( flux_vals[band]*(1.0 + 0.1*srandu(nwalkers)) )
+            guess[:,5+band] = log10( psf_flux[band]*(1.0 + 0.1*srandu(nwalkers)) )
 
         return guess
 
@@ -965,6 +1013,21 @@ class MedsFit(object):
         np = log_trials.shape[0]
         rand_int = random.sample(xrange(np), self.nwalkers)
         return log_trials[rand_int, :]
+
+    def _get_guess_from_coadd_gauss(self):
+        """
+        get a random set of points from the coadd chain
+        """
+        import random
+
+        print('        getting guess from coadd gauss')
+
+        # get a random set (the most recent would be from the same walker)
+        log_trials = self.coadd_gauss_fitter.get_trials()
+        np = log_trials.shape[0]
+        rand_int = random.sample(xrange(np), self.nwalkers)
+        return log_trials[rand_int, :]
+
 
     def _calc_mcmc_stats(self, fitter, model):
         """
@@ -1317,6 +1380,8 @@ class MedsFit(object):
         coadd_models=['coadd_%s' % model for model in self.fit_models]
         models = coadd_models + self.fit_models
 
+        models = ['coadd_gauss'] + models
+
         return models
 
     def _count_all_cutouts(self):
@@ -1386,15 +1451,6 @@ class MedsFit(object):
             ('time','f8')]
 
         # coadd fit with em 1 gauss
-        n=get_model_names('coadd_em1')
-        dt += [(n['flags'],'i4',bshape),
-               (n['gmix_pars'],'f8',6*nband),
-               (n['flux'], 'f8', bshape),
-               (n['flux_err'], 'f8', bshape),
-               (n['chi2per'],'f8',bshape),
-               (n['dof'],'f8',bshape)]
-
-
         # the psf flux fits are done for each band separately
         n=get_model_names('psf')
         dt += [(n['flags'],   'i4',bshape),
@@ -1403,13 +1459,13 @@ class MedsFit(object):
                (n['chi2per'],'f8',bshape),
                (n['dof'],'f8',bshape)]
 
+        if nband==1:
+            cov_shape=(nband,)
+        else:
+            cov_shape=(nband,nband)
+
         models=self._get_all_models()
         for model in models:
-
-            if nband==1:
-                cov_shape=(nband,)
-            else:
-                cov_shape=(nband,nband)
 
             n=get_model_names(model)
 
@@ -1456,14 +1512,8 @@ class MedsFit(object):
         data[n['flux_err']] = PDEFVAL
         data[n['chi2per']] = PDEFVAL
 
-        n=get_model_names('coadd_em1')
-        data[n['flags']] = NO_ATTEMPT
-        data[n['gmix_pars']] = DEFVAL
-        data[n['flux']] = DEFVAL
-        data[n['flux_err']] = PDEFVAL
-        data[n['chi2per']] = PDEFVAL
-
-        for model in self.fit_models:
+        models=self._get_all_models()
+        for model in models:
             n=get_model_names(model)
 
             data[n['flags']] = NO_ATTEMPT
