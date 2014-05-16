@@ -27,7 +27,7 @@ BIG_DEFVAL=-9.999e9
 BIG_PDEFVAL=9.999e9
 
 
-NO_SE_CUTOUTS=2**0
+NO_CUTOUTS=2**0
 PSF_FIT_FAILURE=2**1
 PSF_LARGE_OFFSETS=2**2
 EXP_FIT_FAILURE=2**3
@@ -87,6 +87,7 @@ class MedsFit(object):
 
         self.imstart=1
         self.fit_models=self.conf['fit_models']
+        self.fit_me_galaxy=self.conf['fit_me_galaxy']
 
         self.guess_type=keys['guess_type']
 
@@ -261,16 +262,16 @@ class MedsFit(object):
         coadd_mb_obs_list, mb_obs_list, n_im = \
                 self._get_multi_band_observations(mindex)
 
-        if (len(coadd_mb_obs_list) == 0 and self.guess_type=='coadd'):
-            print("  Coadd psf fitting failed, Could not guess from coadd")
+        if len(coadd_mb_obs_list) == 0:
+            print("  no coadd images survived psf fitting")
             self.data['flags'][dindex] = PSF_FIT_FAILURE 
             return
-        if len(mb_obs_list) == 0:
-            print("  psf fitting failed")
-            self.data['flags'][dindex] = PSF_FIT_FAILURE 
-            return
+        #if len(mb_obs_list) == 0:
+        #    print("  psf fitting failed")
+        #    self.data['flags'][dindex] = PSF_FIT_FAILURE 
+        #    return
 
-        print(mb_obs_list[0][0].image.shape)
+        print(coadd_mb_obs_list[0][0].image.shape)
 
         self.data['nimage_use'][dindex, :] = n_im
 
@@ -278,8 +279,8 @@ class MedsFit(object):
                'mb_obs_list':mb_obs_list}
 
         flags=self._fit_all_models(dindex, sdata)
-        self.data['flags'][dindex] = flags
 
+        self.data['flags'][dindex] = flags
         self.data['time'][dindex] = time.time()-t0
 
     def _get_object_ncutout(self, mindex):
@@ -313,9 +314,9 @@ class MedsFit(object):
             print('Box size too big:',box_size)
             flags |= BOX_SIZE_TOO_BIG
 
-        if meds['ncutout'][mindex] < 2:
-            print('No SE cutouts')
-            flags |= NO_SE_CUTOUTS
+        if meds['ncutout'][mindex] < 1:
+            print('No cutouts')
+            flags |= NO_CUTOUTS
         return flags
 
 
@@ -593,10 +594,13 @@ class MedsFit(object):
         """
 
         flags=0
+        # fit both coadd and se psf flux if exists
         self._fit_psf_flux(dindex, sdata)
 
-        s2n=self.data['psf_flux'][dindex,:]/self.data['psf_flux_err'][dindex,:]
+        s2n=self.data['coadd_psf_flux'][dindex,:]/self.data['coadd_psf_flux_err'][dindex,:]
         max_s2n=numpy.nanmax(s2n)
+
+        n_se_images=len(sdata['mb_obs_list'])
          
         if max_s2n >= self.conf['min_psf_s2n']:
             # we use this as a guess for the real galaxy models
@@ -614,11 +618,12 @@ class MedsFit(object):
                                     sdata,
                                     model,
                                     coadd=True)
-                print('    multi-epoch')
-                self._run_model_fit(dindex,
-                                    sdata,
-                                    model,
-                                    coadd=False)
+                if self.fit_me_galaxy and n_se_images > 0:
+                    print('    multi-epoch')
+                    self._run_model_fit(dindex,
+                                        sdata,
+                                        model,
+                                        coadd=False)
         else:
             mess="    psf s/n too low: %s (%s)"
             mess=mess % (max_s2n,self.conf['min_psf_s2n'])
@@ -829,29 +834,36 @@ class MedsFit(object):
         """
 
         print('    fitting: psf')
+        for band,obs_list in enumerate(sdata['coadd_mb_obs_list']):
+            self._fit_psf_flux_oneband(dindex, band, obs_list,coadd=True)
+
+        # this can be zero length
         for band,obs_list in enumerate(sdata['mb_obs_list']):
-            self._fit_psf_flux_oneband(dindex, band, obs_list)
-
-        #print_pars(self.data['psf_flux'][dindex],     front='        ')
-        #print_pars(self.data['psf_flux_err'][dindex], front='        ')
+            self._fit_psf_flux_oneband(dindex, band, obs_list,coadd=False)
 
 
-    def _fit_psf_flux_oneband(self, dindex, band, obs_list):
+    def _fit_psf_flux_oneband(self, dindex, band, obs_list, coadd=False):
         """
         Fit the PSF flux in a single band
         """
+        if coadd:
+            name='coadd_psf'
+        else:
+            name='psf'
+
         fitter=ngmix.fitting.TemplateFluxFitter(obs_list, do_psf=True)
         fitter.go()
 
         res=fitter.get_result()
         data=self.data
 
-        data['psf_flags'][dindex,band] = res['flags']
-        data['psf_flux'][dindex,band] = res['flux']
-        data['psf_flux_err'][dindex,band] = res['flux_err']
-        data['psf_chi2per'][dindex,band] = res['chi2per']
-        data['psf_dof'][dindex,band] = res['dof']
-        print("        psf flux(%s): %g +/- %g" % (band,res['flux'],res['flux_err']))
+        n=get_model_names(name)
+        data[n['flags']][dindex,band] = res['flags']
+        data[n['flux']][dindex,band] = res['flux']
+        data[n['flux_err']][dindex,band] = res['flux_err']
+        data[n['chi2per']][dindex,band] = res['chi2per']
+        data[n['dof']][dindex,band] = res['dof']
+        print("        %s flux(%s): %g +/- %g" % (name,band,res['flux'],res['flux_err']))
 
 
 
@@ -863,7 +875,7 @@ class MedsFit(object):
         """
         if coadd:
             if model=='gauss':
-                guess_type='psf'
+                guess_type='coadd_psf'
             else:
                 guess_type='coadd_gauss'
             mb_obs_list=sdata['coadd_mb_obs_list']
@@ -892,7 +904,7 @@ class MedsFit(object):
         else:
             self.fitter=fitter
 
-    def _fit_model(self, dindex, mb_obs_list, model, guess_type='psf'):
+    def _fit_model(self, dindex, mb_obs_list, model, guess_type='coadd_psf'):
         """
         Fit all the simple models
         """
@@ -920,8 +932,8 @@ class MedsFit(object):
             guess=self._get_guess_from_coadd()
         elif guess_type=='coadd_gauss':
             guess=self._get_guess_from_coadd_gauss()
-        elif guess_type=='psf':
-            guess=self._get_guess_from_psf(dindex)
+        elif guess_type=='coadd_psf':
+            guess=self._get_guess_from_coadd_psf(dindex)
         else:
             raise ValueError("bad guess type: '%s'" % guess_type)
 
@@ -951,7 +963,7 @@ class MedsFit(object):
 
         return fitter
 
-    def _get_guess_from_psf(self, dindex):
+    def _get_guess_from_coadd_psf(self, dindex):
         """
         take flux guesses from psf take canonical center (0,0)
         and near zero ellipticity.  Size is taken from around the
@@ -964,19 +976,19 @@ class MedsFit(object):
 
         data=self.data
 
-        psf_flux=data['psf_flux'][dindex,:].copy()
+        psf_flux=data['coadd_psf_flux'][dindex,:].copy()
         psf_flux=psf_flux.clip(min=0.1, max=1.0e6)
 
         nband=self.nband
-        w,=numpy.where(data['psf_flags'][dindex,:] != 0)
+        w,=numpy.where(data['coadd_psf_flags'][dindex,:] != 0)
         if w.size > 0:
             print("    found %s/%s psf failures" % (w.size,nband))
             if w.size == psf_flux.size:
                 val=5.0
                 print("setting all to default:",val)
             else:
-                wgood,=numpy.where(data['psf_flags'][dindex,:] == 0)
-                val=median(psf_flux[wgood])
+                wgood,=numpy.where(data['coadd_psf_flags'][dindex,:] == 0)
+                val=numpy.median(psf_flux[wgood])
                 print("setting to median:",val)
 
             psf_flux[w] = val
@@ -1377,8 +1389,10 @@ class MedsFit(object):
         """
         get all model names, includeing the coadd_ ones
         """
-        coadd_models=['coadd_%s' % model for model in self.fit_models]
-        models = coadd_models + self.fit_models
+        models=['coadd_%s' % model for model in self.fit_models]
+
+        if self.fit_me_galaxy:
+            models = models + self.fit_models
 
         models = ['coadd_gauss'] + models
 
@@ -1452,12 +1466,13 @@ class MedsFit(object):
 
         # coadd fit with em 1 gauss
         # the psf flux fits are done for each band separately
-        n=get_model_names('psf')
-        dt += [(n['flags'],   'i4',bshape),
-               (n['flux'],    'f8',bshape),
-               (n['flux_err'],'f8',bshape),
-               (n['chi2per'],'f8',bshape),
-               (n['dof'],'f8',bshape)]
+        for name in ['coadd_psf','psf']:
+            n=get_model_names(name)
+            dt += [(n['flags'],   'i4',bshape),
+                   (n['flux'],    'f8',bshape),
+                   (n['flux_err'],'f8',bshape),
+                   (n['chi2per'],'f8',bshape),
+                   (n['dof'],'f8',bshape)]
 
         if nband==1:
             cov_shape=(nband,)
@@ -1506,11 +1521,12 @@ class MedsFit(object):
         num=self.index_list.size
         data=numpy.zeros(num, dtype=dt)
 
-        n=get_model_names('psf')
-        data[n['flags']] = NO_ATTEMPT
-        data[n['flux']] = DEFVAL
-        data[n['flux_err']] = PDEFVAL
-        data[n['chi2per']] = PDEFVAL
+        for name in ['coadd_psf','psf']:
+            n=get_model_names(name)
+            data[n['flags']] = NO_ATTEMPT
+            data[n['flux']] = DEFVAL
+            data[n['flux_err']] = PDEFVAL
+            data[n['chi2per']] = PDEFVAL
 
         models=self._get_all_models()
         for model in models:

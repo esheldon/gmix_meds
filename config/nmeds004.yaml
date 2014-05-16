@@ -35,6 +35,9 @@ max_box_size: 192
 # in addition to gauss fit on coadd and a psf flux
 fit_models: ['exp','dev']
 
+# we still do psf
+fit_me_galaxy: False
+
 do_shear: True
 
 reject_outliers: True
