@@ -7,8 +7,8 @@ mca_a: 2.0
 
 psf_em_pars:
     ngauss: 3
-    ntry: 2000
-    maxiter: 50000
+    ntry: 20
+    maxiter: 5000
     tol: 5.0e-6
 
 # always fit 1 gauss

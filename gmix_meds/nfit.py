@@ -262,14 +262,15 @@ class MedsFit(object):
         coadd_mb_obs_list, mb_obs_list, n_im = \
                 self._get_multi_band_observations(mindex)
 
-        if len(coadd_mb_obs_list) == 0:
-            print("  no coadd images survived psf fitting")
+        if len(coadd_mb_obs_list) != self.nband:
+            print("  some coadd failed to fit psf")
             self.data['flags'][dindex] = PSF_FIT_FAILURE 
             return
-        #if len(mb_obs_list) == 0:
-        #    print("  psf fitting failed")
-        #    self.data['flags'][dindex] = PSF_FIT_FAILURE 
-        #    return
+
+        if len(mb_obs_list) == 0:
+            print("  not all bands had at least one psf fit succeed")
+            self.data['flags'][dindex] = PSF_FIT_FAILURE 
+            return
 
         print(coadd_mb_obs_list[0][0].image.shape)
 
