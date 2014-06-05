@@ -1,5 +1,5 @@
 fitter: "ngmix"
-fitter_type: "emcee"
+fitter_class: "emcee"
 
 nwalkers: 80
 burnin: 400
@@ -11,6 +11,14 @@ psf_em_pars:
     ntry: 20
     maxiter: 5000
     tol: 5.0e-6
+
+gal_lm_ntry: 10
+
+gal_lm_pars:
+    maxfev: 300
+    ftol:   1.0e-6
+    xtol:   1.0e-6
+    epsfcn: 1.0e-6
 
 # always fit 1 gauss
 # don't need to nail this, set tol lower. also need fewer ntry since
@@ -61,7 +69,7 @@ counts_prior_pars: [ [-4.0,6.5],[-4.0,6.5] ]
 # this means repeat the above for each band
 counts_prior_repeat: True
 
-guess_type: 'coadd'
+guess_type: 'coadd_mcmc'
 
 # checkpoint times in minutes, needed for condor in case we pass a batch system
 # limit such as in the condor scavenge.
