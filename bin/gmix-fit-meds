@@ -232,10 +232,21 @@ def run_ngmix(meds_files,
     import gmix_meds.nfit
     
     priors={}
-    priors['g_priors'] = get_g_priors_ngmix(conf)
-    priors['cen_prior'] = get_cen_prior_ngmix(conf)
-    priors['T_priors'] = get_T_priors_ngmix(conf)
-    priors['counts_priors'] = get_counts_priors_ngmix(conf)
+
+    if 'joint_prior' in conf:
+        import great3
+        cen_width=conf['cen_width']
+        priors['joint_prior']=great3.joint_prior.make_joint_prior_simple(conf['joint_prior'],
+                                                                         cen_width,
+                                                                         g_prior_during=True)
+        priors['joint_prior_gflat']=great3.joint_prior.make_joint_prior_simple(conf['joint_prior'],
+                                                                               cen_width,
+                                                                               g_prior_during=False)
+    else:
+        priors['g_priors'] = get_g_priors_ngmix(conf)
+        priors['cen_prior'] = get_cen_prior_ngmix(conf)
+        priors['T_priors'] = get_T_priors_ngmix(conf)
+        priors['counts_priors'] = get_counts_priors_ngmix(conf)
 
     if conf['fitter_class']=='mh':
         meds_fitter=gmix_meds.nfit.MHMedsFit

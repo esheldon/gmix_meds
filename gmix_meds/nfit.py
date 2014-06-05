@@ -106,7 +106,7 @@ class MedsFit(dict):
         self['reject_outliers']=self.get('reject_outliers',True) # from cutouts
         self['make_plots']=self.get('make_plots',False)
 
-    def _unpack_priors(self, priors):
+    def _unpack_priors(self, priors_in):
         """
         Currently only separable priors
         """
@@ -114,50 +114,60 @@ class MedsFit(dict):
         from ngmix.joint_prior import PriorSimpleSep
         from ngmix.priors import ZDisk2D
 
-        cen_prior=priors['cen_prior']
-
-        counts_prior_repeat=self.get('counts_prior_repeat',False)
-
-        g_prior_flat=ZDisk2D(1.0)
-
-        g_priors=priors['g_priors']
-        T_priors=priors['T_priors']
-        counts_priors=priors['counts_priors']
-
-        models = self['fit_models']
-        nmod=len(models)
-
-        nprior=len(g_priors)
-        if nprior != nmod:
-            raise ValueError("len(models)=%d but got len(priors)=%d" % (nmod,nprior))
-
         priors={}
         gflat_priors={}
-        for i in xrange(nmod):
-            model=self['fit_models'][i]
 
-            cp = counts_priors[i]
-            if counts_prior_repeat:
-                cp = [cp]*self['nband']
+        if 'joint_prior' in priors_in:
+            print("NEED TO SUPPORT MULTIPLE BANDS FOR JOINT")
+            prior=priors_in['joint_prior']
+            prior_gflat=priors_in['joint_prior_gflat']
 
-            prior = PriorSimpleSep(cen_prior,
-                                   g_priors[i],
-                                   T_priors[i],
-                                   cp)
+            for model in self['fit_models']:
+                priors[model]=prior
+                gflat_priors[model]=prior_gflat
+        else:
+            cen_prior=priors_in['cen_prior']
 
-            # for the exploration, for which we do not apply g prior during
-            gflat_prior = PriorSimpleSep(cen_prior,
-                                         g_prior_flat,
-                                         T_priors[i],
-                                         cp)
+            counts_prior_repeat=self.get('counts_prior_repeat',False)
 
-            priors[model]=prior
-            gflat_priors[model]=gflat_prior
+            g_prior_flat=ZDisk2D(1.0)
 
-            # for the coadd gaussian fit
-            if i==0:
-                priors["gauss"] = prior
-                gflat_priors["gauss"] = gflat_prior
+            g_priors=priors_in['g_priors']
+            T_priors=priors_in['T_priors']
+            counts_priors=priors_in['counts_priors']
+
+            models = self['fit_models']
+            nmod=len(models)
+
+            nprior=len(g_priors)
+            if nprior != nmod:
+                raise ValueError("len(models)=%d but got len(priors)=%d" % (nmod,nprior))
+
+            for i in xrange(nmod):
+                model=self['fit_models'][i]
+
+                cp = counts_priors[i]
+                if counts_prior_repeat:
+                    cp = [cp]*self['nband']
+
+                prior = PriorSimpleSep(cen_prior,
+                                       g_priors[i],
+                                       T_priors[i],
+                                       cp)
+
+                # for the exploration, for which we do not apply g prior during
+                gflat_prior = PriorSimpleSep(cen_prior,
+                                             g_prior_flat,
+                                             T_priors[i],
+                                             cp)
+
+                priors[model]=prior
+                gflat_priors[model]=gflat_prior
+
+                # for the coadd gaussian fit
+                if i==0:
+                    priors["gauss"] = prior
+                    gflat_priors["gauss"] = gflat_prior
 
         self.priors=priors
         self.gflat_priors=gflat_priors
@@ -1163,13 +1173,13 @@ class MedsFit(dict):
             print("            ",wtrials_png)
             pdict['wtrials'].write_img(1200,1200,wtrials_png)
 
-        #for band, band_plots in enumerate(pdict['resid']):
 
-        for band, band_plots in enumerate(res_plots):
-            for icut, plt in enumerate(band_plots):
-                fname='%s-resid-%06d-%s-band%d-im%d.png' % (type,mindex,model,band,icut+1)
-                print("            ",fname)
-                plt.write_img(1920,1200,fname)
+        if res_plots is not None:
+            for band, band_plots in enumerate(res_plots):
+                for icut, plt in enumerate(band_plots):
+                    fname='%s-resid-%06d-%s-band%d-im%d.png' % (type,mindex,model,band,icut+1)
+                    print("            ",fname)
+                    plt.write_img(1920,1200,fname)
 
 
     def _load_meds_files(self):
@@ -2085,6 +2095,8 @@ class FromPSFGuesser(object):
     """
     get full guesses from just T,fluxes associated with
     psf
+
+    should make this take log values...
     """
     def __init__(self, T, fluxes):
         self.T=T
