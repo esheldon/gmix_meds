@@ -1,4 +1,5 @@
 fitter: "ngmix"
+fitter_type: "emcee"
 
 nwalkers: 80
 burnin: 400

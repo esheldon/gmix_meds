@@ -49,7 +49,7 @@ EM_MAX_ITER=100
 
 _CHECKPOINTS_DEFAULT_MINUTES=[30,60,110]
 
-class MedsFit(object):
+class MedsFit(dict):
     def __init__(self, meds_files, **keys):
         """
         Model fitting
@@ -79,31 +79,17 @@ class MedsFit(object):
             psf fits
         """
 
-        self.conf={}
-        self.conf.update(keys)
+        self.update(keys)
 
         self.meds_files=_get_as_list(meds_files)
-        self.nband=len(self.meds_files)
+        self['nband']=len(self.meds_files)
 
-        self.imstart=1
-        self.fit_models=self.conf['fit_models']
-        self.fit_me_galaxy=self.conf['fit_me_galaxy']
-
-        self.guess_type=keys['guess_type']
-
-        self.nwalkers=keys['nwalkers']
-        self.burnin=keys['burnin']
-        self.nstep=keys['nstep']
-        self.mca_a=keys.get('mca_a',2.0)
-
-        self.do_shear=keys.get("do_shear",False)
+        self['imstart']=1
 
         self._unpack_priors()
-
-
         self._setup_checkpoints()
 
-        self.iband = range(self.nband)
+        self.iband = range(self['nband'])
 
         self._load_meds_files()
         self.psfex_lol = self._get_psfex_lol()
@@ -111,15 +97,14 @@ class MedsFit(object):
         self.obj_range=keys.get('obj_range',None)
         self._set_index_list()
 
-        self.psf_offset_max=keys.get('psf_offset_max',PSF_OFFSET_MAX)
+        self['psf_offset_max']=self.get('psf_offset_max',PSF_OFFSET_MAX)
 
-        self.region=keys.get('region','seg_and_sky')
-        self.max_box_size=keys.get('max_box_size',2048)
+        self['region']=self.get('region','cweight-nearest')
+        self['max_box_size']=self.get('max_box_size',2048)
 
-        self.reject_outliers=keys.get('reject_outliers',False) # from cutouts
+        self['reject_outliers']=self.get('reject_outliers',True) # from cutouts
 
-        self.make_plots=keys.get('make_plots',False)
-        self.prompt=keys.get('prompt',True)
+        self['make_plots']=self.get('make_plots',False)
 
         if self._checkpoint_data is None:
             self._make_struct()
@@ -132,19 +117,18 @@ class MedsFit(object):
 
         from ngmix.joint_prior import PriorSimpleSep
         from ngmix.priors import Disk2D
-        conf=self.conf
 
-        cen_prior=conf['cen_prior']
+        cen_prior=self['cen_prior']
 
-        counts_prior_repeat=conf.get('counts_prior_repeat',False)
+        counts_prior_repeat=self.get('counts_prior_repeat',False)
 
         g_prior_flat=Disk2D([0.0,0.0], 1.0)
 
-        g_priors=conf['g_priors']
-        T_priors=conf['T_priors']
-        counts_priors=conf['counts_priors']
+        g_priors=self['g_priors']
+        T_priors=self['T_priors']
+        counts_priors=self['counts_priors']
 
-        models = self.fit_models
+        models = self['fit_models']
         nmod=len(models)
 
         nprior=len(g_priors)
@@ -154,11 +138,11 @@ class MedsFit(object):
         priors={}
         gflat_priors={}
         for i in xrange(nmod):
-            model=self.fit_models[i]
+            model=self['fit_models'][i]
 
             cp = counts_priors[i]
             if counts_prior_repeat:
-                cp = [cp]*self.nband
+                cp = [cp]*self['nband']
 
             prior = PriorSimpleSep(cen_prior,
                                    g_priors[i],
@@ -262,7 +246,7 @@ class MedsFit(object):
         coadd_mb_obs_list, mb_obs_list, n_im = \
                 self._get_multi_band_observations(mindex)
 
-        if len(coadd_mb_obs_list) != self.nband:
+        if len(coadd_mb_obs_list) != self['nband']:
             print("  some coadd failed to fit psf")
             self.data['flags'][dindex] = PSF_FIT_FAILURE 
             return
@@ -311,7 +295,7 @@ class MedsFit(object):
         flags=0
 
         box_size=meds['box_size'][mindex]
-        if box_size > self.max_box_size:
+        if box_size > self['max_box_size']:
             print('Box size too big:',box_size)
             flags |= BOX_SIZE_TOO_BIG
 
@@ -342,7 +326,7 @@ class MedsFit(object):
 
             this_n_im=len(obs_list)
             if this_n_im > 0:
-                if self.reject_outliers:
+                if self['reject_outliers']:
                     self._reject_outliers(obs_list)
                 mb_obs_list.append(obs_list)
             n_im += this_n_im
@@ -448,7 +432,7 @@ class MedsFit(object):
         # already in sky coordinates
         sigma_guess=obs.meta['sigma_sky']
 
-        empars=self.conf['psf_em_pars']
+        empars=self['psf_em_pars']
         fitter = self._fit_with_em(obs,
                                    sigma_guess,
                                    empars['ngauss'],
@@ -517,9 +501,9 @@ class MedsFit(object):
         """
         Get a weight map from the input MEDS file
         """
-        if self.region=='seg_and_sky':
+        if self['region']=='seg_and_sky':
             wt=meds.get_cweight_cutout(mindex, icut)
-        elif self.region=="cweight-nearest":
+        elif self['region']=="cweight-nearest":
             wt=meds.get_cweight_cutout_nearest(mindex, icut)
         else:
             raise ValueError("support other region types")
@@ -580,10 +564,10 @@ class MedsFit(object):
         """
         keep=True
         offset_arcsec=0.0
-        psf_ngauss=self.conf['psf_em_pars']['ngauss']
+        psf_ngauss=self['psf_em_pars']['ngauss']
         if psf_ngauss == 2:
             offset_arcsec = calc_offset_arcsec(gm)
-            if offset_arcsec > self.psf_offset_max:
+            if offset_arcsec > self['psf_offset_max']:
                 keep=False
 
         return keep, offset_arcsec
@@ -603,7 +587,7 @@ class MedsFit(object):
 
         n_se_images=len(sdata['mb_obs_list'])
          
-        if max_s2n >= self.conf['min_psf_s2n']:
+        if max_s2n >= self['min_psf_s2n']:
             # we use this as a guess for the real galaxy models
             print("    fitting coadd gauss")
             self._run_model_fit(dindex,
@@ -611,7 +595,7 @@ class MedsFit(object):
                                 'gauss',
                                 coadd=True)
 
-            for model in self.fit_models:
+            for model in self['fit_models']:
                 print('    fitting:',model)
 
                 print('    coadd')
@@ -619,7 +603,7 @@ class MedsFit(object):
                                     sdata,
                                     model,
                                     coadd=True)
-                if self.fit_me_galaxy and n_se_images > 0:
+                if self['fit_me_galaxy'] and n_se_images > 0:
                     print('    multi-epoch')
                     self._run_model_fit(dindex,
                                         sdata,
@@ -627,7 +611,7 @@ class MedsFit(object):
                                         coadd=False)
         else:
             mess="    psf s/n too low: %s (%s)"
-            mess=mess % (max_s2n,self.conf['min_psf_s2n'])
+            mess=mess % (max_s2n,self['min_psf_s2n'])
             print(mess)
             
             flags |= LOW_PSF_FLUX
@@ -674,7 +658,7 @@ class MedsFit(object):
         #print('    galaxy sigma guess:',sigma_guess)
 
         ngauss=1
-        empars=self.conf['galaxy_em_pars']
+        empars=self['galaxy_em_pars']
 
         flags=0
         try:
@@ -881,7 +865,7 @@ class MedsFit(object):
                 guess_type='coadd_gauss'
             mb_obs_list=sdata['coadd_mb_obs_list']
         else:
-            guess_type=self.guess_type
+            guess_type=self['guess_type']
             mb_obs_list=sdata['mb_obs_list']
 
         fitter=self._fit_model(dindex,
@@ -894,7 +878,7 @@ class MedsFit(object):
         lin_res=fitter.get_lin_result()
         self._print_res(lin_res, coadd=coadd)
 
-        if self.make_plots:
+        if self['make_plots']:
             self._do_make_plots(dindex, fitter, model, coadd=coadd)
 
         if coadd:
@@ -920,7 +904,7 @@ class MedsFit(object):
         log_res=fitter.get_result()
         lin_res=fitter.get_lin_result()
 
-        if self.do_shear:
+        if self['do_shear']:
             self._add_shear_info(log_res, fitter, model)
 
         return fitter
@@ -956,11 +940,11 @@ class MedsFit(object):
         fitter=MCMCSimple(mb_obs_list,
                           model,
                           prior=prior,
-                          nwalkers=self.nwalkers,
-                          mca_a=self.mca_a)
+                          nwalkers=self['nwalkers'],
+                          mca_a=self['mca_a'])
 
-        pos=fitter.run_mcmc(guess,self.burnin)
-        pos=fitter.run_mcmc(pos,self.nstep)
+        pos=fitter.run_mcmc(guess,self['burnin'])
+        pos=fitter.run_mcmc(pos,self['nstep'])
 
         return fitter
 
@@ -980,7 +964,7 @@ class MedsFit(object):
         psf_flux=data['coadd_psf_flux'][dindex,:].copy()
         psf_flux=psf_flux.clip(min=0.1, max=1.0e6)
 
-        nband=self.nband
+        nband=self['nband']
         w,=numpy.where(data['coadd_psf_flags'][dindex,:] != 0)
         if w.size > 0:
             print("    found %s/%s psf failures" % (w.size,nband))
@@ -999,8 +983,8 @@ class MedsFit(object):
 
         print("        guess from psf:",T,psf_flux)
 
-        nwalkers=self.nwalkers
-        np=5+self.nband
+        nwalkers=self['nwalkers']
+        np=5+self['nband']
 
         guess=numpy.zeros( (nwalkers, np) )
         guess[:,0] = 0.01*srandu(nwalkers)
@@ -1024,7 +1008,7 @@ class MedsFit(object):
         # get a random set (the most recent would be from the same walker)
         log_trials = self.coadd_fitter.get_trials()
         np = log_trials.shape[0]
-        rand_int = random.sample(xrange(np), self.nwalkers)
+        rand_int = random.sample(xrange(np), self['nwalkers'])
         return log_trials[rand_int, :]
 
     def _get_guess_from_coadd_gauss(self):
@@ -1038,7 +1022,7 @@ class MedsFit(object):
         # get a random set (the most recent would be from the same walker)
         log_trials = self.coadd_gauss_fitter.get_trials()
         np = log_trials.shape[0]
-        rand_int = random.sample(xrange(np), self.nwalkers)
+        rand_int = random.sample(xrange(np), self['nwalkers'])
         return log_trials[rand_int, :]
 
 
@@ -1123,7 +1107,7 @@ class MedsFit(object):
             for sn in _stat_names:
                 self.data[n[sn]][dindex] = log_res[sn]
 
-            if self.do_shear:
+            if self['do_shear']:
                 self.data[n['g_sens']][dindex,:] = log_res['g_sens']
                 self.data[n['P']][dindex] = log_res['P']
                 self.data[n['Q']][dindex,:] = log_res['Q']
@@ -1301,10 +1285,10 @@ class MedsFit(object):
         """
         Set up the checkpoint times in minutes and data
         """
-        self.checkpoints = self.conf.get('checkpoints',_CHECKPOINTS_DEFAULT_MINUTES)
+        self.checkpoints = self.get('checkpoints',_CHECKPOINTS_DEFAULT_MINUTES)
         self.n_checkpoint    = len(self.checkpoints)
         self.checkpointed    = [0]*self.n_checkpoint
-        self.checkpoint_file = self.conf.get('checkpoint_file',None)
+        self.checkpoint_file = self.get('checkpoint_file',None)
 
         self._set_checkpoint_data()
 
@@ -1317,7 +1301,7 @@ class MedsFit(object):
         """
         See if checkpoint data was sent
         """
-        self._checkpoint_data=self.conf.get('checkpoint_data',None)
+        self._checkpoint_data=self.get('checkpoint_data',None)
         if self._checkpoint_data is not None:
             self.data=self._checkpoint_data['data']
 
@@ -1382,7 +1366,7 @@ class MedsFit(object):
         """
         make sure all models are supported
         """
-        for model in self.fit_models:
+        for model in self['fit_models']:
             if model not in ['exp','dev']:
                 raise ValueError("model '%s' not supported" % model)
 
@@ -1390,10 +1374,10 @@ class MedsFit(object):
         """
         get all model names, includeing the coadd_ ones
         """
-        models=['coadd_%s' % model for model in self.fit_models]
+        models=['coadd_%s' % model for model in self['fit_models']]
 
-        if self.fit_me_galaxy:
-            models = models + self.fit_models
+        if self['fit_me_galaxy']:
+            models = models + self['fit_models']
 
         models = ['coadd_gauss'] + models
 
@@ -1417,7 +1401,7 @@ class MedsFit(object):
         to the cutout count, not counting the coadd
         """
 
-        psf_ngauss=self.conf['psf_em_pars']['ngauss']
+        psf_ngauss=self['psf_em_pars']['ngauss']
         npars=psf_ngauss*6
         dt=[('number','i4'), # 1-n as in sextractor
             ('band_num','i2'),
@@ -1454,7 +1438,7 @@ class MedsFit(object):
     def _get_dtype(self):
         self._check_models()
 
-        nband=self.nband
+        nband=self['nband']
         bshape=(nband,)
         simple_npars=5+nband
 
@@ -1505,7 +1489,7 @@ class MedsFit(object):
                  (n['arate'],'f8'),
                  (n['tau'],'f8'),
                 ]
-            if self.do_shear:
+            if self['do_shear']:
                 dt += [(n['g_sens'], 'f8', 2),
                        (n['P'], 'f8'),
                        (n['Q'], 'f8', 2),
@@ -1549,7 +1533,7 @@ class MedsFit(object):
 
             data[n['tau']] = PDEFVAL
 
-            if self.do_shear:
+            if self['do_shear']:
                 data[n['g_sens']] = DEFVAL
                 data[n['P']] = DEFVAL
                 data[n['Q']] = DEFVAL
@@ -1559,7 +1543,12 @@ class MedsFit(object):
         self.data=data
 
 
+    #
+    #
     # methods below here not used
+    #
+    #
+
     def _extract_sub_lists(self,
                            keep_lol0,
                            im_lol0,
@@ -1610,7 +1599,7 @@ class MedsFit(object):
             imlist,coadd_imlist=self._get_imlist(meds,mindex)
             wtlist,coadd_wtlist=self._get_wtlist(meds,mindex)
 
-            if self.reject_outliers:
+            if self['reject_outliers']:
                 nreject=reject_outliers(imlist,wtlist)
                 if nreject > 0:
                     print('        rejected:',nreject)
@@ -1632,7 +1621,7 @@ class MedsFit(object):
         imlist_all = meds.get_cutout_list(mindex,type=type)
 
         coadd_imlist = [ imlist_all[0].astype('f8') ]
-        se_imlist  = imlist_all[self.imstart:]
+        se_imlist  = imlist_all[self['imstart']:]
 
         se_imlist = [im.astype('f8') for im in se_imlist]
         return se_imlist, coadd_imlist
@@ -1645,11 +1634,11 @@ class MedsFit(object):
         If using the seg map, mark pixels outside the coadd object region as
         zero weight
         """
-        if self.region=='seg_and_sky':
+        if self['region']=='seg_and_sky':
             wtlist_all=meds.get_cweight_cutout_list(mindex)
 
             coadd_wtlist  = [ wtlist_all[0].astype('f8') ]
-            se_wtlist     = wtlist_all[self.imstart:]
+            se_wtlist     = wtlist_all[self['imstart']:]
 
             se_wtlist=[wt.astype('f8') for wt in se_wtlist]
         else:
@@ -1692,7 +1681,7 @@ class MedsFit(object):
             jlist_all.append(j)
 
         jcoadd_jlist   = [jlist_all[0]]
-        se_jlist       =  jlist_all[self.imstart:]
+        se_jlist       =  jlist_all[self['imstart']:]
         return se_jlist, jcoadd_jlist
 
     def _fit_psfs(self, dindex, jacob_lol, do_coadd=False):
@@ -1867,7 +1856,10 @@ class MedsFit(object):
 
 
 
-
+class MHMedsFit(MedsFit):
+    """
+    This version uses MH for fitting, with guesses from a maxlike fit
+    """
 
 
 _stat_names=['s2n_w',

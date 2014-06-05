@@ -444,15 +444,11 @@ def run_fitter(meds_files, meds_files_full, conf, checkpoint_data=None):
     Run one of a few types of fitters.  Only ngmix is maintained currently
     """
     epoch_data=None
-    if conf['fitter'] == 'lm':
-        data, meta = run_lm(meds_files, conf,
-                            checkpoint_data=checkpoint_data)
-    elif conf['fitter'] == 'ngmix':
+    if conf['fitter'] == 'ngmix':
         data, epoch_data, meta = run_ngmix(meds_files, meds_files_full, conf,
-                                         checkpoint_data=checkpoint_data)
+                                           checkpoint_data=checkpoint_data)
     else:
-        data, meta = run_mcmc(meds_files, conf,
-                              checkpoint_data=checkpoint_data)
+        raise ValueError("bad fitter: '%s'" % conf['fitter'])
 
     return data, epoch_data, meta
 
