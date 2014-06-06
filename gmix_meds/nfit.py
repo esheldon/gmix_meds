@@ -120,11 +120,18 @@ class MedsFit(dict):
         if 'joint_prior' in priors_in:
             print("NEED TO SUPPORT MULTIPLE BANDS FOR JOINT")
             prior=priors_in['joint_prior']
-            prior_gflat=priors_in['joint_prior_gflat']
+            gflat_prior=priors_in['joint_prior_gflat']
 
-            for model in self['fit_models']:
+            for i,model in enumerate(self['fit_models']):
                 priors[model]=prior
-                gflat_priors[model]=prior_gflat
+                gflat_priors[model]=gflat_prior
+
+                # extra for the coadd gaussian fit
+                if i==1:
+                    priors["gauss"] = prior
+                    gflat_priors["gauss"] = gflat_prior
+
+
         else:
             cen_prior=priors_in['cen_prior']
 
@@ -922,6 +929,12 @@ class MedsFit(dict):
 
         return guesser
 
+    def _get_guesser_from_priors(self):
+        """
+        the guesser just draws random values from the priors
+        """
+
+        return self.prior.sample
 
     def _get_guesser_from_coadd_psf(self):
         """
@@ -1904,21 +1917,20 @@ class MHMedsFit(MedsFit):
                 if res['flags']==0:
                     print('    coadd mcmc')
                     self._run_model_fit(model, coadd=True, fitter_type='mcmc')
+
+                    if self['fit_me_galaxy'] and n_se_images > 0:
+                        print('    multi-epoch lm')
+                        self._run_model_fit(model, coadd=False, fitter_type='lm')
+
+                        res=self.fitter_lm.get_result()
+                        if res['flags']==0:
+                            print('    multi-epoch mcmc')
+                            self._run_model_fit(model, coadd=False, fitter_type='mcmc')
+                        else:
+                            print("    LM ME failed, skipping mcmc fit")
+
                 else:
-                    print("    LM coadd failed, skipping mcmc fit")
-
-
-                if self['fit_me_galaxy'] and n_se_images > 0:
-                    print('    multi-epoch lm')
-                    self._run_model_fit(model, coadd=False, fitter_type='lm')
-
-                    res=self.fitter_lm.get_result()
-                    if res['flags']==0:
-                        print('    multi-epoch mcmc')
-                        self._run_model_fit(model, coadd=False, fitter_type='mcmc')
-                    else:
-                        print("    LM ME failed, skipping mcmc fit")
-
+                    print("    LM coadd failed, skipping mcmc and ME fits")
         else:
             mess="    psf s/n too low: %s (%s)"
             mess=mess % (max_s2n,self['min_psf_s2n'])
@@ -1940,6 +1952,8 @@ class MHMedsFit(MedsFit):
         if coadd:
             if fitter_type=='lm':
                 self.guesser=self._get_guesser('coadd_psf')
+                # this might be better for total crap objects
+                #self.guesser=self.priors[model].sample
             else:
                 self.guesser=self._get_guesser('coadd_lm')
             mb_obs_list=self.sdata['coadd_mb_obs_list']
@@ -1956,12 +1970,8 @@ class MHMedsFit(MedsFit):
         else:
             print("        NOT COPYING PARS BECAUSE LM: make lin pars...")
 
-        if fitter_type=='mcmc':
-            lin_res=fitter.get_lin_result()
-            self._print_res(lin_res, coadd=coadd)
-        else:
-            log_res=fitter.get_result()
-            self._print_res(log_res, coadd=coadd)
+        lin_res=fitter.get_lin_result()
+        self._print_res(lin_res, coadd=coadd)
 
         if self['make_plots']:
             self._do_make_plots(fitter, model, coadd=coadd,
@@ -2018,7 +2028,17 @@ class MHMedsFit(MedsFit):
         # note flat on g!
         prior=self.gflat_priors[model]
 
-        guess,step_sizes=self.guesser(n=1, get_sigmas=True)
+        guess,sigmas=self.guesser(get_sigmas=True)
+
+        step_sizes = 0.5*sigmas
+
+        max_step = 0.5*self.priors[model].get_widths()
+        print_pars(max_step, front="        max_step:")
+
+        for i in xrange(guess.size):
+            step_sizes[i] = step_sizes[i].clip(max=max_step[i])
+
+        print_pars(step_sizes, front="        step sizes:")
 
         fitter=MHSimple(mb_obs_list,
                         model,
@@ -2047,7 +2067,7 @@ class MHMedsFit(MedsFit):
 
         ntry=self['gal_lm_ntry']
         for i in xrange(ntry):
-            guess=self.guesser(n=1)
+            guess=self.guesser()
             print_pars(guess, front='            lm guess:')
 
             fitter=LMSimple(mb_obs_list,
@@ -2102,6 +2122,9 @@ class FromPSFGuesser(object):
         self.T=T
         self.fluxes=fluxes
 
+        self.log_T = numpy.log10(T)
+        self.log_fluxes = numpy.log10(fluxes)
+
     def __call__(self, n=1, **keys):
         """
         center, shape are just distributed around zero
@@ -2115,10 +2138,12 @@ class FromPSFGuesser(object):
         guess[:,1] = 0.01*srandu(n)
         guess[:,2] = 0.1*srandu(n)
         guess[:,3] = 0.1*srandu(n)
-        guess[:,4] = numpy.log10( self.T*(1.0 + 0.2*srandu(n)) )
+        #guess[:,4] = numpy.log10( self.T*(1.0 + 0.2*srandu(n)) )
+        guess[:,4] = self.log_T + 0.1*srandu(n)
 
         for band in xrange(nband):
-            guess[:,5+band] = numpy.log10( fluxes[band]*(1.0 + 0.1*srandu(n)) )
+            #guess[:,5+band] = numpy.log10( fluxes[band]*(1.0 + 0.1*srandu(n)) )
+            guess[:,5+band] = self.log_fluxes + 0.1*srandu(n)
 
         if n==1:
             guess=guess[0,:]

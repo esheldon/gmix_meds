@@ -236,12 +236,15 @@ def run_ngmix(meds_files,
     if 'joint_prior' in conf:
         import great3
         cen_width=conf['cen_width']
+        with_TF_bounds=False
         priors['joint_prior']=great3.joint_prior.make_joint_prior_simple(conf['joint_prior'],
                                                                          cen_width,
-                                                                         g_prior_during=True)
+                                                                         g_prior_during=True,
+                                                                         with_TF_bounds=with_TF_bounds)
         priors['joint_prior_gflat']=great3.joint_prior.make_joint_prior_simple(conf['joint_prior'],
                                                                                cen_width,
-                                                                               g_prior_during=False)
+                                                                               g_prior_during=False,
+                                                                               with_TF_bounds=with_TF_bounds)
     else:
         priors['g_priors'] = get_g_priors_ngmix(conf)
         priors['cen_prior'] = get_cen_prior_ngmix(conf)
@@ -250,8 +253,10 @@ def run_ngmix(meds_files,
 
     if conf['fitter_class']=='mh':
         meds_fitter=gmix_meds.nfit.MHMedsFit
-    else:
+    elif conf['fitter_class']=='emcee':
         meds_fitter=gmix_meds.nfit.MedsFit
+    else:
+        raise ValueError("bad fitter class: '%s'" % conf['fitter_class'])
     gm=meds_fitter(conf,
                    priors,
                    meds_files,
