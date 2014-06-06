@@ -1149,12 +1149,12 @@ class MedsFit(dict):
                
 
     def _do_make_plots(self, fitter, model, coadd=False,
-                       fitter_type='mcmc'):
+                       fitter_type='emcee'):
         """
         make plots
         """
 
-        if fitter_type=='mcmc':
+        if fitter_type=['emcee','mh']:
             do_trials=True
         else:
             do_trials=False
@@ -1868,7 +1868,7 @@ class MedsFit(dict):
 
 
 
-class MHMedsFit(MedsFit):
+class MHMedsFitLM(MedsFit):
     """
     This version uses MH for fitting, with guesses from a maxlike fit
     """
@@ -1916,7 +1916,7 @@ class MHMedsFit(MedsFit):
                 res=self.coadd_fitter_lm.get_result()
                 if res['flags']==0:
                     print('    coadd mcmc')
-                    self._run_model_fit(model, coadd=True, fitter_type='mcmc')
+                    self._run_model_fit(model, coadd=True, fitter_type='mh')
 
                     if self['fit_me_galaxy'] and n_se_images > 0:
                         print('    multi-epoch lm')
@@ -1925,7 +1925,7 @@ class MHMedsFit(MedsFit):
                         res=self.fitter_lm.get_result()
                         if res['flags']==0:
                             print('    multi-epoch mcmc')
-                            self._run_model_fit(model, coadd=False, fitter_type='mcmc')
+                            self._run_model_fit(model, coadd=False, fitter_type='mh')
                         else:
                             print("    LM ME failed, skipping mcmc fit")
 
@@ -1940,7 +1940,7 @@ class MHMedsFit(MedsFit):
 
         return flags
 
-    def _run_model_fit(self, model, coadd=False, fitter_type='mcmc'):
+    def _run_model_fit(self, model, coadd=False, fitter_type='mh'):
         """
         wrapper to run fit, copy pars, maybe make plots
 
@@ -1965,7 +1965,7 @@ class MHMedsFit(MedsFit):
                                model,
                                fitter_type=fitter_type)
 
-        if fitter_type=='mcmc':
+        if fitter_type=='mh':
             self._copy_simple_pars(fitter, coadd=coadd)
         else:
             print("        NOT COPYING PARS BECAUSE LM: make lin pars...")
@@ -1991,12 +1991,12 @@ class MHMedsFit(MedsFit):
             else:
                 self.fitter=fitter
 
-    def _fit_model(self, mb_obs_list, model, fitter_type='mcmc'):
+    def _fit_model(self, mb_obs_list, model, fitter_type='mh'):
         """
         Fit all the simple models
         """
 
-        if fitter_type=='mcmc':
+        if fitter_type=='mh':
             fitter=self._fit_simple_mcmc(mb_obs_list, model)
         elif fitter_type=='lm':
             fitter=self._fit_simple_lm(mb_obs_list, model)
@@ -2004,7 +2004,7 @@ class MHMedsFit(MedsFit):
             raise ValueError("bad fitter type: '%s'" % fitter_type)
 
         # also adds .weights attribute
-        if fitter_type=='mcmc':
+        if fitter_type=='mh':
             self._calc_mcmc_stats(fitter, model)
             lin_res=fitter.get_lin_result()
 
@@ -2046,8 +2046,8 @@ class MHMedsFit(MedsFit):
                         prior=prior,
                         random_state=self.random_state)
 
-        pos=fitter.run_mcmc(guess,self['burnin'])
-        pos=fitter.run_mcmc(pos,self['nstep'])
+        pos=fitter.run_mcmc(guess,self['mh_burnin'])
+        pos=fitter.run_mcmc(pos,self['mh_nstep'])
 
         return fitter
 
@@ -2084,6 +2084,154 @@ class MHMedsFit(MedsFit):
 
         res['ntry']=i+1
         return fitter
+
+class MHMedsFitHybrid(MedsFit):
+    """
+    This version uses MH for fitting, with guess/steps from
+    a single-gauss emcee run
+    """
+
+    def _fit_all_models(self):
+        """
+        Fit psf flux and other models
+        """
+
+        flags=0
+        # fit both coadd and se psf flux if exists
+        self._fit_psf_flux()
+
+        dindex=self.dindex
+        s2n=self.data['coadd_psf_flux'][dindex,:]/self.data['coadd_psf_flux_err'][dindex,:]
+        max_s2n=numpy.nanmax(s2n)
+
+        n_se_images=len(self.sdata['mb_obs_list'])
+         
+        if max_s2n >= self['min_psf_s2n']:
+
+            # we use this as a guess for the real galaxy models
+            print("    fitting coadd gauss")
+            self._run_model_fit('gauss', coadd=True, fitter_type='emcee')
+
+            for model in self['fit_models']:
+                print('    fitting:',model)
+
+                print('    coadd')
+                self._run_model_fit(model, coadd=True, fitter_type='mh')
+
+                if self['fit_me_galaxy'] and n_se_images > 0:
+                    print('    multi-epoch')
+                    self._run_model_fit(model, coadd=False, fitter_type='mh')
+
+        else:
+            mess="    psf s/n too low: %s (%s)"
+            mess=mess % (max_s2n,self['min_psf_s2n'])
+            print(mess)
+            
+            flags |= LOW_PSF_FLUX
+
+        return flags
+
+    def _run_model_fit(self, model, coadd=False, fitter_type='mh'):
+        """
+        wrapper to run fit, copy pars, maybe make plots
+
+        sets .coadd_gauss_fitter or .fitter or .coadd_fitter
+
+        this one does not currently use self['guess_type']
+        """
+
+        if coadd:
+            if fitter_type=='emcee' and model=='gauss':
+                # we need to bootstrap
+                self.guesser=self._get_guesser('coadd_psf')
+            else:
+                # get guess and step sizes from coadd gauss fit from
+                # emcee
+                self.guesser=self._get_guesser('coadd_gauss')
+            mb_obs_list=self.sdata['coadd_mb_obs_list']
+        else:
+            # take our guess from the coadd mh fit
+            self.guesser=self._get_guesser('coadd_mcmc')
+            mb_obs_list=self.sdata['mb_obs_list']
+
+        fitter=self._fit_model(mb_obs_list,
+                               model,
+                               fitter_type=fitter_type)
+
+        self._copy_simple_pars(fitter, coadd=coadd)
+
+        lin_res=fitter.get_lin_result()
+        self._print_res(lin_res, coadd=coadd)
+
+        if self['make_plots']:
+            self._do_make_plots(fitter, model, coadd=coadd)
+
+        if coadd:
+            if model=='gauss':
+                self.coadd_gauss_fitter=fitter
+            else:
+                self.coadd_fitter=fitter
+        else:
+            self.fitter=fitter
+
+    def _fit_model(self, mb_obs_list, model, fitter_type='mh'):
+        """
+        Fit all the simple models
+        """
+
+        if fitter_type=='emcee':
+            fitter=self._fit_simple_mcmc(mb_obs_list, model)
+        elif fitter_type=='mh':
+            fitter=self._fit_simple_mh(mb_obs_list, model)
+        else:
+            raise ValueError("bad fitter type: '%s'" % fitter_type)
+
+        self._calc_mcmc_stats(fitter, model)
+        lin_res=fitter.get_lin_result()
+
+        log_res=fitter.get_result()
+
+        if self['do_shear']:
+            self._add_shear_info(log_res, fitter, model)
+
+        return fitter
+
+
+    def _fit_simple_mh(self, mb_obs_list, model):
+        """
+        Fit one of the "simple" models, e.g. exp or dev
+
+        use flat g prior
+        """
+
+        from ngmix.fitting import MHSimple
+
+        # note flat on g!
+        prior=self.gflat_priors[model]
+
+        guess,sigmas=self.guesser(get_sigmas=True)
+
+        step_sizes = 0.5*sigmas
+
+        max_step = 0.5*self.priors[model].get_widths()
+        print_pars(max_step, front="        max_step:")
+
+        for i in xrange(guess.size):
+            step_sizes[i] = step_sizes[i].clip(max=max_step[i])
+
+        print_pars(step_sizes, front="        step sizes:")
+
+        fitter=MHSimple(mb_obs_list,
+                        model,
+                        step_sizes,
+                        prior=prior,
+                        random_state=self.random_state)
+
+        pos=fitter.run_mcmc(guess,self['mh_burnin'])
+        pos=fitter.run_mcmc(pos,self['mh_nstep'])
+
+        return fitter
+
 
 
 class FromMCMCGuesser(object):
