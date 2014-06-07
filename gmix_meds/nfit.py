@@ -1154,7 +1154,7 @@ class MedsFit(dict):
         make plots
         """
 
-        if fitter_type=['emcee','mh']:
+        if fitter_type in ['emcee','mh']:
             do_trials=True
         else:
             do_trials=False
