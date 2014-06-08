@@ -902,7 +902,7 @@ class MedsFit(dict):
         """
 
 
-        fitter=self._fit_simple_mcmc(mb_obs_list, model)
+        fitter=self._fit_simple_emcee(mb_obs_list, model)
 
         # also adds .weights attribute
         self._calc_mcmc_stats(fitter, model)
@@ -918,10 +918,17 @@ class MedsFit(dict):
     def _get_guesser(self, guess_type):
         if guess_type=='coadd_psf':
             guesser=self._get_guesser_from_coadd_psf()
+
         elif guess_type=='coadd_gauss':
             guesser=self._get_guesser_from_coadd_gauss()
+        elif guess_type=='coadd_gauss_best':
+            guesser=self._get_guesser_from_coadd_gauss_best()
+
+
         elif guess_type=='coadd_mcmc':
             guesser=self._get_guesser_from_coadd_mcmc()
+        elif guess_type=='coadd_mcmc_best':
+            guesser=self._get_guesser_from_coadd_mcmc_best() 
         elif guess_type=='coadd_lm':
             guesser=self._get_guesser_from_coadd_lm()
         else:
@@ -973,7 +980,7 @@ class MedsFit(dict):
         guesser=FromPSFGuesser(T, psf_flux)
         return guesser
 
-    def _get_guesser_from_coadd_mcmc(self, n=1):
+    def _get_guesser_from_coadd_mcmc(self):
         """
         get a random set of points from the coadd chain
         """
@@ -989,7 +996,24 @@ class MedsFit(dict):
         guesser=FromMCMCGuesser(log_trials, sigmas)
         return guesser
 
-    def _get_guesser_from_coadd_gauss(self, n=1):
+    def _get_guesser_from_coadd_mcmc_best(self):
+        """
+        get a random set of points from the coadd chain
+        """
+
+        print('        getting guess from coadd mcmc best')
+
+        fitter=self.coadd_fitter
+        best_pars=fitter.best_pars
+
+        res=fitter.get_result()
+        sigmas=res['pars_err']
+
+        guesser=FromParsGuesser(best_pars, sigmas)
+        return guesser
+
+
+    def _get_guesser_from_coadd_gauss(self):
         """
         get a random set of points from the coadd chain
         """
@@ -1005,7 +1029,24 @@ class MedsFit(dict):
         guesser=FromMCMCGuesser(log_trials, sigmas)
         return guesser
 
-    def _get_guesser_from_coadd_lm(self, n=1):
+    def _get_guesser_from_coadd_gauss_best(self):
+        """
+        get a random set of points from the coadd chain
+        """
+
+        print('        getting guess from coadd gauss best')
+
+        fitter=self.coadd_gauss_fitter
+        best_pars=fitter.best_pars
+
+        res=fitter.get_result()
+        sigmas=res['pars_err']
+
+        guesser=FromParsGuesser(best_pars, sigmas)
+        return guesser
+
+
+    def _get_guesser_from_coadd_lm(self):
         """
         get a random set of points from the coadd chain
         """
@@ -1028,7 +1069,7 @@ class MedsFit(dict):
             guesser=FromParsGuesser(res['pars'], res['pars_err'])
         return guesser
 
-    def _fit_simple_mcmc(self, mb_obs_list, model):
+    def _fit_simple_emcee(self, mb_obs_list, model):
         """
         Fit one of the "simple" models, e.g. exp or dev
 
@@ -1040,17 +1081,17 @@ class MedsFit(dict):
         # note flat on g!
         prior=self.gflat_priors[model]
 
-        guess=self.guesser(n=self['nwalkers'])
+        guess=self.guesser(n=self['emcee_nwalkers'])
 
         fitter=MCMCSimple(mb_obs_list,
                           model,
                           prior=prior,
-                          nwalkers=self['nwalkers'],
-                          mca_a=self['mca_a'],
+                          nwalkers=self['emcee_nwalkers'],
+                          mca_a=self['emcee_a'],
                           random_state=self.random_state)
 
-        pos=fitter.run_mcmc(guess,self['burnin'])
-        pos=fitter.run_mcmc(pos,self['nstep'])
+        pos=fitter.run_mcmc(guess,self['emcee_burnin'])
+        pos=fitter.run_mcmc(pos,self['emcee_nstep'])
 
         return fitter
 
@@ -1878,7 +1919,7 @@ class MHMedsFitLM(MedsFit):
                  meds_files,
                  **keys):
         super(MHMedsFit,self).__init__(conf,priors,meds_files,**keys)
-        self['nwalkers']=1
+        self['emcee_nwalkers']=1
 
     def _get_all_models(self):
         """
@@ -1997,7 +2038,7 @@ class MHMedsFitLM(MedsFit):
         """
 
         if fitter_type=='mh':
-            fitter=self._fit_simple_mcmc(mb_obs_list, model)
+            fitter=self._fit_simple_emcee(mb_obs_list, model)
         elif fitter_type=='lm':
             fitter=self._fit_simple_lm(mb_obs_list, model)
         else:
@@ -2016,7 +2057,7 @@ class MHMedsFitLM(MedsFit):
         return fitter
 
 
-    def _fit_simple_mcmc(self, mb_obs_list, model):
+    def _fit_simple_emcee(self, mb_obs_list, model):
         """
         Fit one of the "simple" models, e.g. exp or dev
 
@@ -2108,7 +2149,8 @@ class MHMedsFitHybrid(MedsFit):
          
         if max_s2n >= self['min_psf_s2n']:
 
-            # we use this as a guess for the real galaxy models
+            # we use this as a guess for the real galaxy models, and for
+            # step sizes
             print("    fitting coadd gauss")
             self._run_model_fit('gauss', coadd=True, fitter_type='emcee')
 
@@ -2147,11 +2189,11 @@ class MHMedsFitHybrid(MedsFit):
             else:
                 # get guess and step sizes from coadd gauss fit from
                 # emcee
-                self.guesser=self._get_guesser('coadd_gauss')
+                self.guesser=self._get_guesser('coadd_gauss_best')
             mb_obs_list=self.sdata['coadd_mb_obs_list']
         else:
             # take our guess from the coadd mh fit
-            self.guesser=self._get_guesser('coadd_mcmc')
+            self.guesser=self._get_guesser('coadd_mcmc_best')
             mb_obs_list=self.sdata['mb_obs_list']
 
         fitter=self._fit_model(mb_obs_list,
@@ -2164,7 +2206,7 @@ class MHMedsFitHybrid(MedsFit):
         self._print_res(lin_res, coadd=coadd)
 
         if self['make_plots']:
-            self._do_make_plots(fitter, model, coadd=coadd)
+            self._do_make_plots(fitter, model, coadd=coadd, fitter_type=fitter_type)
 
         if coadd:
             if model=='gauss':
@@ -2180,7 +2222,7 @@ class MHMedsFitHybrid(MedsFit):
         """
 
         if fitter_type=='emcee':
-            fitter=self._fit_simple_mcmc(mb_obs_list, model)
+            fitter=self._fit_simple_emcee(mb_obs_list, model)
         elif fitter_type=='mh':
             fitter=self._fit_simple_mh(mb_obs_list, model)
         else:
