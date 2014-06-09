@@ -291,8 +291,8 @@ class TileConcat(object):
         pick out some fields, add some fields, rename some fields
         """
         import esutil
-        nband = data0['psf_flux'].shape[1]
 
+        nbands=self.nbands
         name_map={'number':     'coadd_object_number',
                   'exp_g':      'exp_e',
                   'exp_g_cov':  'exp_e_cov',
@@ -319,44 +319,42 @@ class TileConcat(object):
 
         
         flux_ind = names.index('psf_flux_err')
-        dt.insert(flux_ind+1, ('psf_flux_s2n','f8',nband) )
+        dt.insert(flux_ind+1, ('psf_flux_s2n','f8',nbands) )
         names.insert(flux_ind+1,'psf_flux_s2n')
 
-        dt.insert(flux_ind+2, ('psf_mag','f8',nband) )
+        dt.insert(flux_ind+2, ('psf_mag','f8',nbands) )
         names.insert(flux_ind+2,'psf_mag')
 
-        simple_models=self.config.get('simple_models',
-                                      lmfit.SIMPLE_MODELS_DEFAULT )
+        models=self.config['fit_models']
 
         do_T=False
-        if 'simple' in self.config['fit_types']:
-            for ft in simple_models:
+        for ft in models:
 
-                s2n_name='%s_flux_s2n' % ft
-                flux_ind = names.index('%s_flux' % ft)
-                dt.insert(flux_ind+1, (s2n_name, 'f8', nband) )
-                names.insert(flux_ind+1,s2n_name)
+            s2n_name='%s_flux_s2n' % ft
+            flux_ind = names.index('%s_flux' % ft)
+            dt.insert(flux_ind+1, (s2n_name, 'f8', nbands) )
+            names.insert(flux_ind+1,s2n_name)
 
-                mag_name='%s_mag' % ft
-                magf = (mag_name, 'f8', nband)
-                dt.insert(flux_ind+2, magf)
-                names.insert(flux_ind+2, mag_name)
+            mag_name='%s_mag' % ft
+            magf = (mag_name, 'f8', nbands)
+            dt.insert(flux_ind+2, magf)
+            names.insert(flux_ind+2, mag_name)
 
-                Tn = '%s_T' % ft
-                Ten = '%s_err' % Tn
-                Ts2n = '%s_s2n' % Tn
+            Tn = '%s_T' % ft
+            Ten = '%s_err' % Tn
+            Ts2n = '%s_s2n' % Tn
 
-                if Tn not in data0.dtype.names:
-                    fadd=[(Tn,'f8'),
-                          (Ten,'f8'),
-                          (Ts2n,'f8')]
-                    ind = names.index('%s_flux_cov' % ft)
-                    for f in fadd:
-                        dt.insert(ind+1, f)
-                        names.insert(ind+1, f[0])
-                        ind += 1
+            if Tn not in data0.dtype.names:
+                fadd=[(Tn,'f8'),
+                      (Ten,'f8'),
+                      (Ts2n,'f8')]
+                ind = names.index('%s_flux_cov' % ft)
+                for f in fadd:
+                    dt.insert(ind+1, f)
+                    names.insert(ind+1, f[0])
+                    ind += 1
 
-                    do_T=True
+                do_T=True
 
 
         data=numpy.zeros(data0.size, dtype=dt)
@@ -365,20 +363,23 @@ class TileConcat(object):
 
         self.add_coadd_objects_id(data)
 
-        all_models=['psf'] + simple_models 
+        all_models=['psf'] + models 
         for ft in all_models:
-            for band in xrange(nband):
-                self.calc_mag_and_flux_stuff(data, meta, ft, band)
+            if self.nbands==1:
+                self.calc_mag_and_flux_stuff_scalar(data, meta, ft)
+            else:
+                for band in xrange(nbands):
+                    self.calc_mag_and_flux_stuff(data, meta, ft, band)
         
         if do_T:
-            self.add_T_info(data, simple_models)
+            self.add_T_info(data, models)
         return data
 
-    def add_T_info(self, data, simple_models):
+    def add_T_info(self, data, models):
         """
         Add T S/N etc.
         """
-        for ft in simple_models:
+        for ft in models:
             pn = '%s_pars' % ft
             pcn = '%s_pars_cov' % ft
 
@@ -430,7 +431,6 @@ class TileConcat(object):
         """
         Get magnitudes
         """
-        nband = data['psf_flux'].shape[1]
 
         flux_name='%s_flux' % model
         cov_name='%s_flux_cov' % model
@@ -447,28 +447,70 @@ class TileConcat(object):
             w,=numpy.where(data[flag_name] == 0)
 
         if w.size > 0:
-            for band in xrange(nband):
-                flux = ( data[flux_name][w,band]/PIXSCALE2 ).clip(min=0.001)
-                magzero=meta['magzp_ref'][band]
-                data[mag_name][w,band] = magzero - 2.5*numpy.log10( flux )
+            flux = ( data[flux_name][w,band]/PIXSCALE2 ).clip(min=0.001)
+            magzero=meta['magzp_ref'][band]
+            data[mag_name][w,band] = magzero - 2.5*numpy.log10( flux )
 
-                if model=='psf':
-                    flux=data['psf_flux'][w,band]
-                    flux_err=data['psf_flux_err'][w,band]
-                    w2,=numpy.where(flux_err > 0)
-                    if w2.size > 0:
-                        flux=flux[w2]
-                        flux_err=flux_err[w2]
-                        data[s2n_name][w[w2],band] = flux/flux_err
-                else:
-                    flux=data[cov_name][w,band,band]
-                    flux_var=data[cov_name][w,band,band]
+            if model=='psf':
+                flux=data['psf_flux'][w,band]
+                flux_err=data['psf_flux_err'][w,band]
+                w2,=numpy.where(flux_err > 0)
+                if w2.size > 0:
+                    flux=flux[w2]
+                    flux_err=flux_err[w2]
+                    data[s2n_name][w[w2],band] = flux/flux_err
+            else:
+                flux=data[cov_name][w,band,band]
+                flux_var=data[cov_name][w,band,band]
 
-                    w2,=numpy.where(flux_var > 0)
-                    if w.size > 0:
-                        flux=flux[w2]
-                        flux_err=numpy.sqrt(flux_var[w2])
-                        data[s2n_name][w[w2], band] = flux/flux_err
+                w2,=numpy.where(flux_var > 0)
+                if w.size > 0:
+                    flux=flux[w2]
+                    flux_err=numpy.sqrt(flux_var[w2])
+                    data[s2n_name][w[w2], band] = flux/flux_err
+
+    def calc_mag_and_flux_stuff_scalar(self, data, meta, model):
+        """
+        Get magnitudes
+        """
+
+        flux_name='%s_flux' % model
+        cov_name='%s_flux_cov' % model
+        s2n_name='%s_flux_s2n' % model
+        flag_name = '%s_flags' % model
+        mag_name='%s_mag' % model
+
+        data[mag_name][:] = -9999.
+        data[s2n_name][:] = 0.0
+
+        if model=='psf':
+            w,=numpy.where(data[flag_name][:] == 0)
+        else:
+            w,=numpy.where(data[flag_name] == 0)
+
+        if w.size > 0:
+            flux = ( data[flux_name][w]/PIXSCALE2 ).clip(min=0.001)
+            magzero=meta['magzp_ref'][0]
+            data[mag_name][w] = magzero - 2.5*numpy.log10( flux )
+
+            if model=='psf':
+                flux=data['psf_flux'][w]
+                flux_err=data['psf_flux_err'][w]
+                w2,=numpy.where(flux_err > 0)
+                if w2.size > 0:
+                    flux=flux[w2]
+                    flux_err=flux_err[w2]
+                    data[s2n_name][w[w2]] = flux/flux_err
+            else:
+                flux=data[cov_name][w]
+                flux_var=data[cov_name][w]
+
+                w2,=numpy.where(flux_var > 0)
+                if w.size > 0:
+                    flux=flux[w2]
+                    flux_err=numpy.sqrt(flux_var[w2])
+                    data[s2n_name][w[w2]] = flux/flux_err
+
 
 
     def read_data(self, fname):
@@ -480,7 +522,9 @@ class TileConcat(object):
             epoch_data0 = fobj['epoch_data'][:]
             meta        = fobj['meta_data'][:]
 
+
         coadd=fitsio.read(meta['coaddcat_file'][0],lower=True)
+
         data = self.pick_fields(data0,meta)
 
         if epoch_data0.dtype.names is not None:
