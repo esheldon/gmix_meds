@@ -38,11 +38,14 @@ def main():
         blind=True
 
     rc=deswl.files.Runconfig(run)
-    bands=rc['band']
+    if 'withbands' in rc:
+        withbands=rc['withbands']
+    else:
+        withbands=rc['band']
 
     info_list = desdb.files.get_coadd_info_by_release(rc['dataset'],
                                                       'i',
-                                                      withbands=bands)
+                                                      withbands=withbands)
     print 'found',len(info_list),'tiles'
     print info_list[0]
 
