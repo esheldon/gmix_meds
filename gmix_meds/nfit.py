@@ -80,11 +80,11 @@ class MedsFit(dict):
 
         self._unpack_priors(priors)
 
+        self._load_meds_files()
+
         self.obj_range=obj_range
         self._set_index_list()
 
-
-        self._load_meds_files()
         self.psfex_lol = self._get_psfex_lol()
 
         self._set_some_defaults()
