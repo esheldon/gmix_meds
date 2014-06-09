@@ -1,3 +1,4 @@
+from __future__ import print_function
 import os
 import copy
 import numpy
@@ -60,7 +61,7 @@ class TileConcat(object):
         Load the associated meds files
         """
         import meds
-        print 'loading meds'
+        print('loading meds')
 
         self.meds_list=[]
         for band in self.bands:
@@ -80,7 +81,7 @@ class TileConcat(object):
         """
         import desdb
 
-        print 'getting image ids'
+        print('getting image ids')
         conn=desdb.Connection()
 
         for band in xrange(self.nbands):
@@ -118,6 +119,8 @@ class TileConcat(object):
         import glob
         meds_dir = self.df.dir('meds_run',medsconf=self.rc['medsconf'])
         pattern = os.path.join(meds_dir,'*%s*' % self.tilename)
+
+        print(pattern)
 
         flist=glob.glob(pattern)
         if len(flist) != 1:
@@ -158,14 +161,14 @@ class TileConcat(object):
         import esutil as eu
         from deswl.generic import get_chunks, extract_start_end
         out_file=self.out_file
-        print 'writing:',out_file
+        print('writing:',out_file)
 
         nper=self.rc['nper']
         startlist,endlist=get_chunks(self.nrows,nper)
         nchunk=len(startlist)
 
         if os.path.exists(out_file) and not self.clobber:
-            print 'file already exists, skipping'
+            print('file already exists, skipping')
             return
 
         dlist=[]
@@ -186,7 +189,7 @@ class TileConcat(object):
                               filetype=self.ftype,
                               ext='fits')
 
-            print '\t%d/%d %s' %(i+1,nchunk,fname)
+            print('\t%d/%d %s' %(i+1,nchunk,fname))
             data, epoch_data = self.read_data(fname)
 
             if self.blind:
@@ -212,7 +215,7 @@ class TileConcat(object):
 
             fobj.write(meta,extname="meta_data")
 
-        print 'output is in:',out_file
+        print('output is in:',out_file)
 
     def blind_data(self,data):
         """
@@ -538,7 +541,7 @@ class TileConcat(object):
 
     def set_coadd_objects_info(self):
         import desdb
-        print 'getting coadd_objects ids'
+        print('getting coadd_objects ids')
 
         query="""
         select
@@ -596,7 +599,7 @@ def concat_all(goodlist_file, badlist_file, ftype):
     keys=list(data.keys())
     ntot=len(keys)
     for i,key in enumerate(keys):
-        print '%d/%d' % (i+1,ntot)
+        print('%d/%d' % (i+1,ntot))
         flist = data[key]
         tc=TileConcat(flist)
         tc.concat()
@@ -612,7 +615,7 @@ def key_by_tile_band(data0, ftype):
     """
     Group files from a goodlist by tilename-band and sort the lists
     """
-    print 'grouping by tile/band'
+    print('grouping by tile/band')
     data={}
 
     for d in data0:
@@ -627,7 +630,7 @@ def key_by_tile_band(data0, ftype):
     for key in data:
         data[key].sort()
 
-    print 'found %d tile/band combinations' % len(data)
+    print('found %d tile/band combinations' % len(data))
 
     return data
 
