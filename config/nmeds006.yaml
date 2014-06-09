@@ -1,3 +1,4 @@
+# flat priors
 fitter: "ngmix"
 fitter_class: "mh"
 
