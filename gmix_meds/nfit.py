@@ -152,17 +152,20 @@ class MedsFit(dict):
 
             for i in xrange(nmod):
                 model=self['fit_models'][i]
+                print("loading prior for:",model)
 
                 cp = counts_priors[i]
                 if counts_prior_repeat:
                     cp = [cp]*self['nband']
 
+                print("    full")
                 prior = PriorSimpleSep(cen_prior,
                                        g_priors[i],
                                        T_priors[i],
                                        cp)
 
                 # for the exploration, for which we do not apply g prior during
+                print("    gflat")
                 gflat_prior = PriorSimpleSep(cen_prior,
                                              g_prior_flat,
                                              T_priors[i],
