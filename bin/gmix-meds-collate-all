@@ -8,6 +8,7 @@ e.g.
 
 """
 
+from __future__ import print_function
 import sys
 import json
 import fitsio
@@ -16,8 +17,12 @@ import desdb
 import deswl
 import gmix_meds
 
+from gmix_meds.collate import ConcatError
+
 from optparse import OptionParser
 parser = OptionParser(__doc__)
+parser.add_option('--verify',action='store_true',
+                  help="just verify the data")
 parser.add_option('--noblind',action='store_true',
                   help="don't blind the catalog")
 parser.add_option('--clobber',action='store_true',
@@ -46,14 +51,25 @@ def main():
     info_list = desdb.files.get_coadd_info_by_release(rc['dataset'],
                                                       'i',
                                                       withbands=withbands)
-    print 'found',len(info_list),'tiles'
-    print info_list[0]
+    print('found',len(info_list),'tiles')
+    print(info_list[0])
 
     for fi in info_list:
-        tc=gmix_meds.collate.TileConcat(run, fi['tilename'], ftype,
-                                        blind=blind,
-                                        clobber=options.clobber)
-        tc.concat()
+        print(fi['tilename'])
+
+    print()
+    for fi in info_list:
+        try:
+            tc=gmix_meds.collate.TileConcat(run, fi['tilename'], ftype,
+                                            blind=blind,
+                                            clobber=options.clobber)
+            if options.verify:
+                tc.verify()
+            else:
+                tc.concat()
+        except ConcatError as e:
+            print("\nerror found: %s" % str(e))
+            print("continuing\n")
 
 
 main()
