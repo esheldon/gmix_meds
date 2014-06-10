@@ -6,6 +6,16 @@ import fitsio
 import json
 from . import lmfit
 
+class ConcatError(Exception):
+    """
+    EM algorithm hit max iter
+    """
+    def __init__(self, value):
+         self.value = value
+    def __str__(self):
+        return repr(self.value)
+
+
 # need to fix up the images instead of this
 from .constants import PIXSCALE, PIXSCALE2
 
@@ -108,8 +118,8 @@ class TileConcat(object):
                                    ccd=ii['ccd'])
                 res=conn.quick(query)
                 if len(res) != 1:
-                    raise ValueError("expected one image match, "
-                                     "got %s" % repr(res))
+                    raise ConcatError("expected one image match, "
+                                      "got %s" % repr(res))
                 m._image_ids[file_id] = res[0]['id']
 
     def find_coadd_run(self):
@@ -124,7 +134,7 @@ class TileConcat(object):
 
         flist=glob.glob(pattern)
         if len(flist) != 1:
-            raise RuntimeError("expected 1 dir, found %d" % len(flist))
+            raise ConcatError("expected 1 dir, found %d" % len(flist))
 
         self.coadd_run = os.path.basename(flist[0])
 
@@ -156,6 +166,45 @@ class TileConcat(object):
                                     tilename=self.tilename,
                                     filetype=self.ftype,
                                     ext='fits')
+
+    def verify(self):
+        """
+        just run through and read the data, verifying we
+        can read it and that it matches to the coadd
+        """
+        import esutil as eu
+        from deswl.generic import get_chunks, extract_start_end
+        out_file=self.out_file
+        print('writing:',out_file)
+
+        nper=self.rc['nper']
+        startlist,endlist=get_chunks(self.nrows,nper)
+        nchunk=len(startlist)
+
+        dlist=[]
+        elist=[]
+        npsf=0
+
+        for i in xrange(nchunk):
+
+            start=startlist[i]
+            end=endlist[i]
+            sstr,estr = extract_start_end(start=start, end=end)
+
+            fname=self.df.url('wlpipe_me_split',
+                              run=self.run,
+                              tilename=self.tilename,
+                              start=sstr,
+                              end=estr,
+                              filetype=self.ftype,
+                              ext='fits')
+
+            print('\t%d/%d %s' %(i+1,nchunk,fname))
+            try:
+                data, epoch_data = self.read_data(fname)
+            except ConcatError as err:
+                print("error found: %s" % str(err))
+
 
     def concat(self):
         import esutil as eu
@@ -427,8 +476,8 @@ class TileConcat(object):
                 nmatch += w.size
 
         if nmatch != data.size:
-            raise ValueError("only %d/%d matched by "
-                             "coadd_object_number" % (nmatch,data.size))
+            raise ConcatError("only %d/%d matched by "
+                              "coadd_object_number" % (nmatch,data.size))
 
     def calc_mag_and_flux_stuff(self, data, meta, model, band):
         """
@@ -520,13 +569,18 @@ class TileConcat(object):
         """
         Read the chunk data
         """
-        with fitsio.FITS(fname) as fobj:
-            data0       = fobj['model_fits'][:]
-            epoch_data0 = fobj['epoch_data'][:]
-            meta        = fobj['meta_data'][:]
+        try:
+            with fitsio.FITS(fname) as fobj:
+                data0       = fobj['model_fits'][:]
+                epoch_data0 = fobj['epoch_data'][:]
+                meta        = fobj['meta_data'][:]
+        except IOError as err:
+            raise ConcatError(str(err))
 
-
-        coadd=fitsio.read(meta['coaddcat_file'][0],lower=True)
+        try:
+            coadd=fitsio.read(meta['coaddcat_file'][0],lower=True)
+        except IOError as err:
+            raise ConcatError(str(err))
 
         data = self.pick_fields(data0,meta)
 
@@ -562,8 +616,8 @@ class TileConcat(object):
 
         nmax=res['coadd_object_number'].max()
         if nmax != res.size:
-            raise ValueError("some missing object_number, got "
-                             "max %d for nobj %d" % (nmax,res.size))
+            raise ConcatError("some missing object_number, got "
+                              "max %d for nobj %d" % (nmax,res.size))
 
 
         self.coadd_objects_data=res
@@ -643,8 +697,8 @@ def _load_and_check_lists(goodlist,badlist):
     ngood=len(good_data)
     nbad=len(bad_data)
     if len(bad_data) != 0:
-        raise ValueError("there were some failures: "
-                         "%d/%d" % (nbad,nbad+ngood))
+        raise ConcatError("there were some failures: "
+                          "%d/%d" % (nbad,nbad+ngood))
 
     return good_data
 
