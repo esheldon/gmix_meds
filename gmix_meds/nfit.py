@@ -39,6 +39,8 @@ EM_FIT_FAILURE=2**6
 
 LOW_PSF_FLUX=2**7
 
+UTTER_FAILURE=2**8
+
 NO_ATTEMPT=2**30
 
 #PSF_S2N=1.e6
@@ -48,6 +50,16 @@ EM_MAX_TRY=3
 EM_MAX_ITER=100
 
 _CHECKPOINTS_DEFAULT_MINUTES=[30,60,110]
+
+class UtterFailure(Exception):
+    """
+    could not make a good guess
+    """
+    def __init__(self, value):
+         self.value = value
+    def __str__(self):
+        return repr(self.value)
+
 
 class MedsFit(dict):
     def __init__(self,
@@ -280,7 +292,11 @@ class MedsFit(dict):
                     'mb_obs_list':mb_obs_list}
         self.dindex=dindex
 
-        flags=self._fit_all_models()
+        try:
+            flags=self._fit_all_models()
+        except UtterFailure as err:
+            print("Got utter failure error: %s" % str(err))
+            flags=UTTER_FAILURE
 
         self.data['flags'][dindex] = flags
         self.data['time'][dindex] = time.time()-t0
@@ -2254,7 +2270,7 @@ class MHMedsFitHybrid(MedsFit):
         # note flat on g!
         prior=self.gflat_priors[model]
 
-        guess,sigmas=self.guesser(get_sigmas=True)
+        guess,sigmas=self.guesser(get_sigmas=True, prior=prior)
 
         step_sizes = 0.5*sigmas
 
@@ -2351,10 +2367,16 @@ class FromParsGuesser(object):
         self.pars=pars
         self.pars_err=pars_err
 
-    def __call__(self, n=1, get_sigmas=False):
+    def __call__(self, n=None, get_sigmas=False, ntry=4, prior=None):
         """
         center, shape are just distributed around zero
         """
+
+        if n is None:
+            n=1
+            is_scalar=True
+        else:
+            is_scalar=False
 
         pars=self.pars
         npars=pars.size
@@ -2363,18 +2385,39 @@ class FromParsGuesser(object):
 
         guess=numpy.zeros( (n, npars) )
 
-        guess[:,0] = width[0]*srandu(n)
-        guess[:,1] = width[1]*srandu(n)
+        if prior is not None:
+            for j in xrange(n):
+                for itry in xrange(ntry):
+                    guess[j,0] = width[0]*srandu()
+                    guess[j,1] = width[1]*srandu()
 
-        guess_shape=get_shape_guess(pars[2],pars[3],n,width[2:2+2])
-        guess[:,2]=guess_shape[:,0]
-        guess[:,3]=guess_shape[:,1]
+                    guess_shape=get_shape_guess(pars[2],pars[3],1,width[2:2+2])
+                    guess[j,2]=guess_shape[0,0]
+                    guess[j,3]=guess_shape[0,1]
 
-        # we add to log pars!
-        for i in xrange(4,npars):
-            guess[:,i] = pars[i] + width[i]*srandu(n)
+                    # we add to log pars!
+                    for i in xrange(4,npars):
+                        guess[j,i] = pars[i] + width[i]*srandu(n)
+                    try:
+                        lnp=prior.get_lnprob_scalar(guess[j,:])
+                    except GMixRangeError as err:
+                        if itry < ntry:
+                            continue
+                        else:
+                            raise UtterFailure("could not find a good guess")
+        else:
+            guess[:,0] = width[0]*srandu(n)
+            guess[:,1] = width[1]*srandu(n)
 
-        if n==1:
+            guess_shape=get_shape_guess(pars[2],pars[3],n,width[2:2+2])
+            guess[:,2]=guess_shape[:,0]
+            guess[:,3]=guess_shape[:,1]
+
+            # we add to log pars!
+            for i in xrange(4,npars):
+                guess[:,i] = pars[i] + width[i]*srandu(n)
+
+        if is_scalar:
             guess=guess[0,:]
 
         if get_sigmas:
