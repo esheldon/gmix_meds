@@ -2375,7 +2375,7 @@ class FromPSFGuesser(GuesserBase):
 
         for band in xrange(nband):
             #guess[:,5+band] = numpy.log10( fluxes[band]*(1.0 + 0.1*srandu(n)) )
-            guess[:,5+band] = self.log_fluxes + 0.1*srandu(n)
+            guess[:,5+band] = self.log_fluxes[band] + 0.1*srandu(n)
 
         if prior is not None:
             self._fix_guess(guess, prior)
