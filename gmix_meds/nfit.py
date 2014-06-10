@@ -901,8 +901,7 @@ class MedsFit(dict):
 
         self._copy_simple_pars(fitter, coadd=coadd)
 
-        lin_res=fitter.get_lin_result()
-        self._print_res(lin_res, coadd=coadd)
+        self._print_res(fitter, coadd=coadd)
 
         if self['make_plots']:
             self._do_make_plots(fitter, model, coadd=coadd)
@@ -1100,7 +1099,7 @@ class MedsFit(dict):
         # note flat on g!
         prior=self.gflat_priors[model]
 
-        guess=self.guesser(n=self['emcee_nwalkers'])
+        guess=self.guesser(n=self['emcee_nwalkers'], prior=prior)
 
         fitter=MCMCSimple(mb_obs_list,
                           model,
@@ -1339,17 +1338,24 @@ class MedsFit(dict):
         self.index_list = numpy.arange(start,end+1)
 
 
-    def _print_res(self, res, coadd=False):
-        if res['flags']==0:
+    def _print_res(self, fitter, coadd=False):
+        lin_res=fitter.get_lin_result()
+        if lin_res['flags']==0:
+            log_res=fitter.get_result()
             if coadd:
                 type='coadd'
             else:
                 type='mb'
+
+            print("        %s logpars:" % type)
+            print_pars(log_res['pars'],    front='        ')
+            print_pars(log_res['pars_err'],front='        ')
+
             print("        %s linear pars:" % type)
-            print_pars(res['pars'],    front='        ')
-            print_pars(res['pars_err'],front='        ')
-            if 'arate' in res:
-                print('        arate:',res['arate'])
+            print_pars(lin_res['pars'],    front='        ')
+            print_pars(lin_res['pars_err'],front='        ')
+            if 'arate' in lin_res:
+                print('        arate:',lin_res['arate'])
 
     def _setup_checkpoints(self):
         """
@@ -2030,8 +2036,7 @@ class MHMedsFitLM(MedsFit):
         else:
             print("        NOT COPYING PARS BECAUSE LM: make lin pars...")
 
-        lin_res=fitter.get_lin_result()
-        self._print_res(lin_res, coadd=coadd)
+        self._print_res(fitter, coadd=coadd)
 
         if self['make_plots']:
             self._do_make_plots(fitter, model, coadd=coadd,
@@ -2221,8 +2226,7 @@ class MHMedsFitHybrid(MedsFit):
 
         self._copy_simple_pars(fitter, coadd=coadd)
 
-        lin_res=fitter.get_lin_result()
-        self._print_res(lin_res, coadd=coadd)
+        self._print_res(fitter, coadd=coadd)
 
         if self['make_plots']:
             self._do_make_plots(fitter, model, coadd=coadd, fitter_type=fitter_type)
@@ -2294,8 +2298,24 @@ class MHMedsFitHybrid(MedsFit):
         return fitter
 
 
+class GuesserBase(object):
+    def _fix_guess(self, guess, prior, ntry=4):
+        #guess[:,2]=-9999
+        n=guess.shape[0]
+        for j in xrange(n):
+            for itry in xrange(ntry):
 
-class FromMCMCGuesser(object):
+                try:
+                    lnp=prior.get_lnprob_scalar(guess[j,:])
+                except GMixRangeError as err:
+                    print_pars(guess[j,:], front="bad guess:")
+                    if itry < ntry:
+                        guess[j,:] = prior.sample()
+                    else:
+                        raise UtterFailure("could not find a good guess")
+
+
+class FromMCMCGuesser(GuesserBase):
     """
     get guesses from a set of trials
     """
@@ -2303,7 +2323,7 @@ class FromMCMCGuesser(object):
         self.trials=trials
         self.sigmas=sigmas
 
-    def __call__(self, n=1, get_sigmas=False):
+    def __call__(self, n=1, get_sigmas=False, prior=None):
         """
         get a random set of points from the trials
         """
@@ -2315,12 +2335,15 @@ class FromMCMCGuesser(object):
         rand_int = random.sample(xrange(np), n)
         guess=trials[rand_int, :]
 
+        if prior is not None:
+            self._fix_guess(guess, prior)
+
         if get_sigmas:
             return guess, self.sigmas
         else:
             return guess
 
-class FromPSFGuesser(object):
+class FromPSFGuesser(GuesserBase):
     """
     get full guesses from just T,fluxes associated with
     psf
@@ -2334,7 +2357,7 @@ class FromPSFGuesser(object):
         self.log_T = numpy.log10(T)
         self.log_fluxes = numpy.log10(fluxes)
 
-    def __call__(self, n=1, **keys):
+    def __call__(self, n=1, prior=None, **keys):
         """
         center, shape are just distributed around zero
         """
@@ -2354,11 +2377,14 @@ class FromPSFGuesser(object):
             #guess[:,5+band] = numpy.log10( fluxes[band]*(1.0 + 0.1*srandu(n)) )
             guess[:,5+band] = self.log_fluxes + 0.1*srandu(n)
 
+        if prior is not None:
+            self._fix_guess(guess, prior)
+
         if n==1:
             guess=guess[0,:]
         return guess
 
-class FromParsGuesser(object):
+class FromParsGuesser(GuesserBase):
     """
     get full guesses from just T,fluxes associated with
     psf
@@ -2367,7 +2393,7 @@ class FromParsGuesser(object):
         self.pars=pars
         self.pars_err=pars_err
 
-    def __call__(self, n=None, get_sigmas=False, ntry=4, prior=None):
+    def __call__(self, n=None, get_sigmas=False, prior=None):
         """
         center, shape are just distributed around zero
         """
@@ -2385,37 +2411,19 @@ class FromParsGuesser(object):
 
         guess=numpy.zeros( (n, npars) )
 
+        guess[:,0] = width[0]*srandu(n)
+        guess[:,1] = width[1]*srandu(n)
+
+        guess_shape=get_shape_guess(pars[2],pars[3],n,width[2:2+2])
+        guess[:,2]=guess_shape[:,0]
+        guess[:,3]=guess_shape[:,1]
+
+        # we add to log pars!
+        for i in xrange(4,npars):
+            guess[:,i] = pars[i] + width[i]*srandu(n)
+
         if prior is not None:
-            for j in xrange(n):
-                for itry in xrange(ntry):
-                    guess[j,0] = width[0]*srandu()
-                    guess[j,1] = width[1]*srandu()
-
-                    guess_shape=get_shape_guess(pars[2],pars[3],1,width[2:2+2])
-                    guess[j,2]=guess_shape[0,0]
-                    guess[j,3]=guess_shape[0,1]
-
-                    # we add to log pars!
-                    for i in xrange(4,npars):
-                        guess[j,i] = pars[i] + width[i]*srandu(n)
-                    try:
-                        lnp=prior.get_lnprob_scalar(guess[j,:])
-                    except GMixRangeError as err:
-                        if itry < ntry:
-                            continue
-                        else:
-                            raise UtterFailure("could not find a good guess")
-        else:
-            guess[:,0] = width[0]*srandu(n)
-            guess[:,1] = width[1]*srandu(n)
-
-            guess_shape=get_shape_guess(pars[2],pars[3],n,width[2:2+2])
-            guess[:,2]=guess_shape[:,0]
-            guess[:,3]=guess_shape[:,1]
-
-            # we add to log pars!
-            for i in xrange(4,npars):
-                guess[:,i] = pars[i] + width[i]*srandu(n)
+            self._fix_guess(guess, prior)
 
         if is_scalar:
             guess=guess[0,:]
