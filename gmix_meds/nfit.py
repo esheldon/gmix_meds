@@ -254,6 +254,8 @@ class MedsFit(dict):
 
         t0=time.time()
 
+        self.dindex=dindex
+
         # for checkpointing
         self.data['processed'][dindex]=1
 
@@ -290,7 +292,6 @@ class MedsFit(dict):
 
         self.sdata={'coadd_mb_obs_list':coadd_mb_obs_list,
                     'mb_obs_list':mb_obs_list}
-        self.dindex=dindex
 
         try:
             flags=self._fit_all_models()
@@ -350,12 +351,18 @@ class MedsFit(dict):
 
         # number used
         n_im = 0
+
         for band in self.iband:
+
+            self.coadd_wsum=0.0
+            self.coadd_psf_counts_wsum=0.0
+            self.wsum=0.0
+            self.psf_counts_wsum=0.0
+
             cobs_list, obs_list = self._get_band_observations(band, mindex)
 
             if len(cobs_list) > 0:
                 coadd_mb_obs_list.append(cobs_list)
-
 
             this_n_im=len(obs_list)
             if this_n_im > 0:
@@ -364,7 +371,32 @@ class MedsFit(dict):
                 mb_obs_list.append(obs_list)
             n_im += this_n_im
 
+            self.set_psfrec_counts_mean(band)
+
         return coadd_mb_obs_list, mb_obs_list, n_im
+
+    def set_psfrec_counts_mean(self, band):
+        dindex=self.dindex
+
+        wsum=self.coadd_wsum
+        wcounts_sum=self.coadd_psf_counts_wsum
+        if wsum > 0:
+            counts=wcounts_sum/wsum
+        else:
+            counts=DEFVAL
+        print("        coadd psfrec counts band",band,"mean:",counts)
+        self.data['coadd_psfrec_counts_mean'][dindex,band]=counts
+
+        wsum=self.wsum
+        wcounts_sum=self.psf_counts_wsum
+        if wsum > 0:
+            counts=wcounts_sum/wsum
+        else:
+            counts=DEFVAL
+
+        print("        psfrec counts band",band,"mean:",counts)
+        self.data['psfrec_counts_mean'][dindex,band]=counts
+
 
     def _reject_outliers(self, obs_list):
         imlist=[]
@@ -400,7 +432,7 @@ class MedsFit(dict):
         except GMixMaxIterEM:
             flags=PSF_FIT_FAILURE
         self._set_psf_meta(meds, mindex, band, icut, flags)
-        self.psf_index += 1
+        self.epoch_index += 1
 
         for icut in xrange(1,ncutout):
             try:
@@ -412,7 +444,7 @@ class MedsFit(dict):
 
             # we set the metadata even if the fit fails
             self._set_psf_meta(meds, mindex, band, icut, flags)
-            self.psf_index += 1
+            self.epoch_index += 1
         
         return coadd_obs_list, obs_list
 
@@ -437,9 +469,25 @@ class MedsFit(dict):
         psf_fitter = self._fit_psf(psf_obs)
         psf_gmix = psf_fitter.get_gmix()
 
-        # the psf fit only gets set if we succeed; not other metadata should
-        # always get set above.  relies on global variable self.psf_index
-        self._set_psf_result(psf_gmix)
+        # we only get here if psf fitting succeeds because an exception gets
+        # raised on fit failure; note other metadata should always get set
+        # above.  relies on global variable self.epoch_index
+        #
+        # note this means that the psf counts sum and wsum should always
+        # be incremented together
+
+        wsum = wt.sum()
+        imsum = psf_obs.image.sum()
+
+        if icut==0:
+            self.coadd_psf_counts_wsum += imsum*wsum
+            self.coadd_wsum += wsum
+        else:
+            self.psf_counts_wsum += imsum*wsum
+            self.wsum += wsum
+
+        self._set_psf_result(psf_gmix, imsum)
+        self._set_wsum(wsum)
 
         psf_obs.set_gmix(psf_gmix)
 
@@ -447,6 +495,7 @@ class MedsFit(dict):
                         weight=wt,
                         jacobian=jacob,
                         psf=psf_obs)
+
 
         psf_fwhm=2.35*numpy.sqrt(psf_gmix.get_T()/2.0)
         print("        psf fwhm:",psf_fwhm)
@@ -558,37 +607,56 @@ class MedsFit(dict):
 
 
 
-    def _set_psf_result(self, gm):
+    def _set_psf_result(self, gm, counts):
         """
         Set psf fit data.
+
+        im is the psf image
         """
 
-        psf_index=self.psf_index
+        epoch_index=self.epoch_index
 
         pars=gm.get_full_pars()
         g1,g2,T=gm.get_g1g2T()
 
         ed=self.epoch_data
-        ed['psf_fit_g'][psf_index,0]    = g1
-        ed['psf_fit_g'][psf_index,1]    = g2
-        ed['psf_fit_T'][psf_index]      = T
-        ed['psf_fit_pars'][psf_index,:] = pars
+
+        ed['psf_counts'][epoch_index]    = counts
+        print("        psf counts:",ed['psf_counts'][epoch_index])
+        ed['psf_fit_g'][epoch_index,0]    = g1
+        ed['psf_fit_g'][epoch_index,1]    = g2
+        ed['psf_fit_T'][epoch_index]      = T
+        ed['psf_fit_pars'][epoch_index,:] = pars
+
+
+    def _set_wsum(self, wsum):
+        """
+        Set psf fit data.
+
+        im is the psf image
+        """
+
+        epoch_index=self.epoch_index
+        self.epoch_data['wsum'][epoch_index] = wsum
+
+        print("        wsum:",wsum)
+
 
     def _set_psf_meta(self, meds, mindex, band, icut, flags):
         """
         Set all the meta data for the psf result
         """
-        psf_index=self.psf_index
+        epoch_index=self.epoch_index
         ed=self.epoch_data
 
         # mindex can be an index into a sub-range meds
-        ed['number'][psf_index] = meds['number'][mindex]
-        ed['band_num'][psf_index] = band
-        ed['cutout_index'][psf_index] = icut
-        ed['file_id'][psf_index]  = meds['file_id'][mindex,icut].astype('i4')
-        ed['orig_row'][psf_index] = meds['orig_row'][mindex,icut]
-        ed['orig_col'][psf_index] = meds['orig_col'][mindex,icut]
-        ed['psf_fit_flags'][psf_index] = flags
+        ed['number'][epoch_index] = meds['number'][mindex]
+        ed['band_num'][epoch_index] = band
+        ed['cutout_index'][epoch_index] = icut
+        ed['file_id'][epoch_index]  = meds['file_id'][mindex,icut].astype('i4')
+        ed['orig_row'][epoch_index] = meds['orig_row'][mindex,icut]
+        ed['orig_col'][epoch_index] = meds['orig_col'][mindex,icut]
+        ed['psf_fit_flags'][epoch_index] = flags
 
 
     def _should_keep_psf(self, gm):
@@ -1390,7 +1458,7 @@ class MedsFit(dict):
             if self.epoch_data.dtype.names is not None:
                 # start where we left off
                 w,=numpy.where( self.epoch_data['number'] == -1)
-                self.psf_index = w.min()
+                self.epoch_index = w.min()
 
     def _try_checkpoint(self, tm):
         """
@@ -1487,7 +1555,9 @@ class MedsFit(dict):
             ('orig_row','f8'),
             ('orig_col','f8'),
             ('file_id','i4'),
+            ('wsum','f8'),
             ('psf_fit_flags','i4'),
+            ('psf_counts','f8'),
             ('psf_fit_g','f8',2),
             ('psf_fit_T','f8'),
             ('psf_fit_pars','f8',npars)]
@@ -1500,6 +1570,7 @@ class MedsFit(dict):
             epoch_data['band_num'] = -1
             epoch_data['cutout_index'] = -1
             epoch_data['file_id'] = -1
+            epoch_data['psf_counts'] = DEFVAL
             epoch_data['psf_fit_g'] = PDEFVAL
             epoch_data['psf_fit_T'] = PDEFVAL
             epoch_data['psf_fit_pars'] = PDEFVAL
@@ -1510,7 +1581,7 @@ class MedsFit(dict):
             self.epoch_data=numpy.zeros(1)
 
         # where the next psf data will be written
-        self.psf_index = 0
+        self.epoch_index = 0
 
 
     def _get_dtype(self):
@@ -1525,7 +1596,9 @@ class MedsFit(dict):
             ('flags','i4'),
             ('nimage_tot','i4',bshape),
             ('nimage_use','i4',bshape),
-            ('time','f8')]
+            ('time','f8'),
+            ('coadd_psfrec_counts_mean','f8',bshape),
+            ('psfrec_counts_mean','f8',bshape)]
 
         # coadd fit with em 1 gauss
         # the psf flux fits are done for each band separately
@@ -1584,6 +1657,9 @@ class MedsFit(dict):
         num=self.index_list.size
         data=numpy.zeros(num, dtype=dt)
 
+        data['coadd_psfrec_counts_mean'] = DEFVAL
+        data['psfrec_counts_mean'] = DEFVAL
+
         for name in ['coadd_psf','psf']:
             n=get_model_names(name)
             data[n['flags']] = NO_ATTEMPT
@@ -1627,6 +1703,7 @@ class MedsFit(dict):
     #
     #
 
+    '''
     def _extract_sub_lists(self,
                            keep_lol0,
                            im_lol0,
@@ -1858,7 +1935,7 @@ class MedsFit(dict):
 
             if not do_coadd:
                 self._set_psf_data(meds, mindex, band, icut, tflags)
-                self.psf_index += 1
+                self.epoch_index += 1
 
         return keep_list, gmix_list, flags
 
@@ -1931,7 +2008,7 @@ class MedsFit(dict):
                     raise
 
         return fitter
-
+    '''
 
 
 class MHMedsFitLM(MedsFit):
