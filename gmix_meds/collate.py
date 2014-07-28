@@ -6,6 +6,8 @@ import fitsio
 import json
 from . import lmfit
 
+from .files import DEFAULT_NPER
+
 class ConcatError(Exception):
     """
     EM algorithm hit max iter
@@ -31,9 +33,455 @@ def load_config_path(fname):
         data=yaml.load(fobj)
     return data
 
+class Concat(object):
+    """
+    Concatenate the split files
+    
+    This is the more generic interface
+    """
+    def __init__(self,
+                 run,
+                 config_file,
+                 meds_files,
+                 bands=None, # band names for each meds file
+                 ftype=None,
+                 root_dir=None,
+                 sub_dir=None,
+                 blind=True,
+                 clobber=False,
+                 nper=DEFAULT_NPER):
+
+        from . import files
+
+        self.run=run
+        self.config_file=config_file
+        self.meds_file_list=meds_files
+        self.nbands=len(meds_files)
+        if bands is None:
+            bands = [str(i) for i in xrange(nbands)]
+        else:
+            assert len(bands)==self.nbands,"wrong number of bands: %d" % len(bands)
+        self.bands=bands
+
+        self.sub_dir=sub_dir
+        self.ftype=ftype
+        self.blind=blind
+        self.clobber=clobber
+
+        self.config = load_config(config_file)
+
+        self.nper=nper
+
+        self.file_obj=files.Files(run, root_dir=root_dir)
+
+        self.make_collated_dir()
+        self.set_collated_file()
+        self.find_coadd_run()
+
+        self.load_meds()
+        self.set_chunks()
+
+        if self.blind:
+            self.blind_factor = get_blind_factor()
+
+
+    def verify(self):
+        """
+        just run through and read the data, verifying we can read it
+        """
+
+        for i,split in enumerate(self.chunklist):
+
+            print('\t%d/%d %s' %(i+1,nchunk,fname), end='')
+            try:
+                data, epoch_data = self.read_chunk(split)
+            except ConcatError as err:
+                print("error found: %s" % str(err))
+
+
+    def concat(self):
+        """
+        actually concatenate the data, and add any new fields
+        """
+        print('writing:',self.collated_file)
+
+        if os.path.exists(self.collated_file) and not self.clobber:
+            print('file already exists, skipping')
+            return
+
+        dlist=[]
+        elist=[]
+
+        for i,split in enumerate(self.chunklist):
+
+            print('\t%d/%d %s' %(i+1,nchunk,fname), end='')
+            data, epoch_data = self.read_chunk(split)
+
+            if self.blind:
+                self.blind_data(data)
+
+            dlist.append(data)
+            if epoch_data.dtype.names is not None:
+                elist.append(epoch_data)
+
+        data=eu.numpy_util.combine_arrlist(dlist)
+        if len(elist) > 0:
+            do_epochs=True
+            epoch_data=eu.numpy_util.combine_arrlist(elist)
+        else:
+            do_epochs=False
+
+        with fitsio.FITS(self.collated_file,'rw',clobber=True) as fobj:
+            meta=fitsio.read(fname, ext="meta_data")
+            fobj.write(data,extname="model_fits")
+
+            if do_epochs > 0:
+                fobj.write(epoch_data,extname='epoch_data')
+
+            fobj.write(meta,extname="meta_data")
+
+        print('output is in:',self.collated_file)
+
+    def blind_data(self,data):
+        """
+        multiply all shear type values by the blinding factor
+
+        This also includes the Q values from B&A
+        """
+        from .lmfit import get_model_names
+        simple_models=self.config.get('simple_models',lmfit.SIMPLE_MODELS_DEFAULT )
+
+        names=data.dtype.names
+        for model in simple_models:
+            n=get_model_names(model)
+
+            g_name=n['g']
+            e_name=n['e']
+            Q_name=n['Q']
+            flag_name=n['flags']
+
+            if flag_name in names:
+                w,=numpy.where(data[flag_name] == 0)
+                if w.size > 0:
+                    if g_name in names:
+                        data[g_name][w,:] *= self.blind_factor
+
+                    if e_name in names:
+                        data[e_name][w,:] *= self.blind_factor
+
+                    if Q_name in names:
+                        data[Q_name][w,:] *= self.blind_factor
+
+    def pick_epoch_fields(self, epoch_data0):
+        """
+        pick out some fields, add some fields, rename some fields
+        """
+        import esutil
+        name_map={'number':'coadd_object_number', # to match the database
+                  'psf_fit_g':'psf_fit_e'}
+        rename_columns(epoch_data0, name_map)
+
+        # we can loosen this when we store the cutout sub-id
+        # in the output file....  right now file_id can be
+        # not set
+        wkeep,=numpy.where(epoch_data0['coadd_object_number'] > 0)
+        if wkeep.size==0:
+            return numpy.zeros(1)
+
+        epoch_data0=epoch_data0[wkeep]
+
+        dt=epoch_data0.dtype.descr
+
+        names=epoch_data0.dtype.names
+        ind=names.index('band_num')
+        dt.insert( ind, ('band','S1') )
+
+        epoch_data = numpy.zeros(epoch_data0.size, dtype=dt)
+        esutil.numpy_util.copy_fields(epoch_data0, epoch_data)
+
+        self.add_coadd_objects_id(epoch_data)
+
+        for band_num in xrange(self.nbands):
+            w,=numpy.where(epoch_data['band_num'] == band_num)
+            if w.size > 0:
+
+                epoch_data['band'][w] = self.bands[band_num]
+
+        return epoch_data
+
+    def pick_fields(self, data0, meta):
+        """
+        pick out some fields, add some fields, rename some fields
+        """
+        import esutil
+
+        nbands=self.nbands
+        name_map={'number':     'coadd_object_number',
+                  'exp_g':      'exp_e',
+                  'exp_g_cov':  'exp_e_cov',
+                  'exp_g_sens': 'exp_e_sens',
+                  'dev_g':      'dev_e',
+                  'dev_g_cov':  'dev_e_cov',
+                  'dev_g_sens': 'dev_e_sens'}
+        rename_columns(data0, name_map)
+
+        dt=[]
+        names=[]
+        ftypes=[]
+        for d in data0.dtype.descr:
+            n=d[0]
+            if ('psf1' not in n 
+                    and n != 'processed'
+                    and 'aic' not in n
+                    and 'bic' not in n):
+                dt.append(d)
+                names.append(n)
+
+        
+        flux_ind = names.index('psf_flux_err')
+        dt.insert(flux_ind+1, ('psf_flux_s2n','f8',nbands) )
+        names.insert(flux_ind+1,'psf_flux_s2n')
+
+        dt.insert(flux_ind+2, ('psf_mag','f8',nbands) )
+        names.insert(flux_ind+2,'psf_mag')
+
+        models=self.config['fit_models']
+
+        do_T=False
+        for ft in models:
+
+            s2n_name='%s_flux_s2n' % ft
+            flux_ind = names.index('%s_flux' % ft)
+            dt.insert(flux_ind+1, (s2n_name, 'f8', nbands) )
+            names.insert(flux_ind+1,s2n_name)
+
+            mag_name='%s_mag' % ft
+            magf = (mag_name, 'f8', nbands)
+            dt.insert(flux_ind+2, magf)
+            names.insert(flux_ind+2, mag_name)
+
+            Tn = '%s_T' % ft
+            Ten = '%s_err' % Tn
+            Ts2n = '%s_s2n' % Tn
+
+            if Tn not in data0.dtype.names:
+                fadd=[(Tn,'f8'),
+                      (Ten,'f8'),
+                      (Ts2n,'f8')]
+                ind = names.index('%s_flux_cov' % ft)
+                for f in fadd:
+                    dt.insert(ind+1, f)
+                    names.insert(ind+1, f[0])
+                    ind += 1
+
+                do_T=True
+
+
+        data=numpy.zeros(data0.size, dtype=dt)
+        esutil.numpy_util.copy_fields(data0, data)
+
+        all_models=['psf'] + models 
+        for ft in all_models:
+            if self.nbands==1:
+                self.calc_mag_and_flux_stuff_scalar(data, meta, ft)
+            else:
+                for band in xrange(nbands):
+                    self.calc_mag_and_flux_stuff(data, meta, ft, band)
+        
+        if do_T:
+            self.add_T_info(data, models)
+        return data
+
+    def add_T_info(self, data, models):
+        """
+        Add T S/N etc.
+        """
+        for ft in models:
+            pn = '%s_pars' % ft
+            pcn = '%s_pars_cov' % ft
+
+            Tn = '%s_T' % ft
+            Ten = '%s_err' % Tn
+            Ts2n = '%s_s2n' % Tn
+            fn='%s_flags' % ft
+
+            data[Tn][:]   = -9999.0
+            data[Ten][:]  =  9999.0
+            data[Ts2n][:] = -9999.0
+
+            Tcov=data[pcn][:,4,4]
+            w,=numpy.where( (data[fn] == 0) & (Tcov > 0.0) )
+            if w.size > 0:
+                data[Tn][w]   = data[pn][w, 4]
+                data[Ten][w]  =  numpy.sqrt(Tcov[w])
+                data[Ts2n][w] = data[Tn][w]/data[Ten][w]
+
+
+
+
+    def calc_mag_and_flux_stuff(self, data, meta, model, band):
+        """
+        Get magnitudes
+        """
+
+        flux_name='%s_flux' % model
+        cov_name='%s_flux_cov' % model
+        s2n_name='%s_flux_s2n' % model
+        flag_name = '%s_flags' % model
+        mag_name='%s_mag' % model
+
+        data[mag_name][:,band] = -9999.
+        data[s2n_name][:,band] = 0.0
+
+        if model=='psf':
+            w,=numpy.where(data[flag_name][:,band] == 0)
+        else:
+            w,=numpy.where(data[flag_name] == 0)
+
+        if w.size > 0:
+            flux = ( data[flux_name][w,band]/PIXSCALE2 ).clip(min=0.001)
+            magzero=meta['magzp_ref'][band]
+            data[mag_name][w,band] = magzero - 2.5*numpy.log10( flux )
+
+            if model=='psf':
+                flux=data['psf_flux'][w,band]
+                flux_err=data['psf_flux_err'][w,band]
+                w2,=numpy.where(flux_err > 0)
+                if w2.size > 0:
+                    flux=flux[w2]
+                    flux_err=flux_err[w2]
+                    data[s2n_name][w[w2],band] = flux/flux_err
+            else:
+                flux=data[cov_name][w,band,band]
+                flux_var=data[cov_name][w,band,band]
+
+                w2,=numpy.where(flux_var > 0)
+                if w.size > 0:
+                    flux=flux[w2]
+                    flux_err=numpy.sqrt(flux_var[w2])
+                    data[s2n_name][w[w2], band] = flux/flux_err
+
+    def calc_mag_and_flux_stuff_scalar(self, data, meta, model):
+        """
+        Get magnitudes
+        """
+
+        flux_name='%s_flux' % model
+        cov_name='%s_flux_cov' % model
+        s2n_name='%s_flux_s2n' % model
+        flag_name = '%s_flags' % model
+        mag_name='%s_mag' % model
+
+        data[mag_name][:] = -9999.
+        data[s2n_name][:] = 0.0
+
+        if model=='psf':
+            w,=numpy.where(data[flag_name][:] == 0)
+        else:
+            w,=numpy.where(data[flag_name] == 0)
+
+        if w.size > 0:
+            flux = ( data[flux_name][w]/PIXSCALE2 ).clip(min=0.001)
+            magzero=meta['magzp_ref'][0]
+            data[mag_name][w] = magzero - 2.5*numpy.log10( flux )
+
+            if model=='psf':
+                flux=data['psf_flux'][w]
+                flux_err=data['psf_flux_err'][w]
+                w2,=numpy.where(flux_err > 0)
+                if w2.size > 0:
+                    flux=flux[w2]
+                    flux_err=flux_err[w2]
+                    data[s2n_name][w[w2]] = flux/flux_err
+            else:
+                flux=data[cov_name][w]
+                flux_var=data[cov_name][w]
+
+                w2,=numpy.where(flux_var > 0)
+                if w.size > 0:
+                    flux=flux[w2]
+                    flux_err=numpy.sqrt(flux_var[w2])
+                    data[s2n_name][w[w2]] = flux/flux_err
+
+
+
+    def read_data(self, fname):
+        """
+        Read the chunk data
+        """
+        print(fname)
+        try:
+            with fitsio.FITS(fname) as fobj:
+                data0       = fobj['model_fits'][:]
+                epoch_data0 = fobj['epoch_data'][:]
+                meta        = fobj['meta_data'][:]
+        except IOError as err:
+            raise ConcatError(str(err))
+
+        data = self.pick_fields(data0,meta)
+
+        if epoch_data0.dtype.names is not None:
+            epoch_data = self.pick_epoch_fields(epoch_data0)
+        else:
+            epoch_data = epoch_data0
+
+            
+        return data, epoch_data
+
+    def set_chunks(self):
+        from gmix_meds.files import get_chunks
+        self.chunk_list=get_chunks(self.nrows, self.nper)
+
+    def load_meds(self):
+        """
+        Load the associated meds files
+        """
+        import meds
+        print('loading meds')
+
+        self.meds_list=[]
+        for fname in self.meds_file_list:
+            m=meds.MEDS(fname)
+            self.meds_list.append(m)
+
+        self.nrows=self.meds_list[0]['object_data'].get_nrows()
+
+    def make_collated_dir(self):
+        collated_dir = self.files_obj.get_collated_dir()
+        if not os.path.exists(collated_dir):
+            os.makedirs(collated_dir)
+
+    def set_collated_file(self):
+
+        if self.blind:
+            extra='blind'
+        else:
+            extra=None
+            
+        self.collated_file = self.files_obj.get_collated_file(sub_dir=self.sub_dir,
+                                                              extra=extra)
+
+
+    def read_chunk(self, split):
+        chunk_file=self.files_obj.get_output_dir(split,
+                                                 sub_dir=self.sub_dir)
+
+        data, epoch_data=self.read_data(chunk_file) 
+        return data, epoch_data
+
+    def read_meds_meta(self, meds_files):
+        """
+        get the meds metadata
+        """
+        pass
+
+
 class TileConcat(object):
     """
-    Concatenate the split files for a single tile
+    Concatenate the split files
+    
+    This version designed for DES where the sub-dir is a tilename and
+    run info is declared in deswl.  Moving away from this.
     """
     def __init__(self, run, tilename, ftype, blind=True, clobber=False):
         import desdb
@@ -54,7 +502,7 @@ class TileConcat(object):
 
         self.df=desdb.files.DESFiles()
 
-        self.set_output_file()
+        self.set_collated_file()
         self.find_coadd_run()
 
         self.load_meds()
@@ -150,7 +598,7 @@ class TileConcat(object):
         with fitsio.FITS(meds_filename) as fobj:
             self.nrows=fobj['object_data'].get_nrows()
 
-    def set_output_file(self):
+    def set_collated_file(self):
 
         out_dir = self.df.dir('wlpipe_collated', run=self.run)
         if not os.path.exists(out_dir):
@@ -161,7 +609,7 @@ class TileConcat(object):
         else:
             out_ftype='wlpipe_me_collated'
             
-        self.out_file = self.df.url(out_ftype,
+        self.collated_file = self.df.url(out_ftype,
                                     run=self.run,
                                     tilename=self.tilename,
                                     filetype=self.ftype,
@@ -172,10 +620,7 @@ class TileConcat(object):
         just run through and read the data, verifying we
         can read it and that it matches to the coadd
         """
-        import esutil as eu
         from deswl.generic import get_chunks, extract_start_end
-        out_file=self.out_file
-        print('writing:',out_file)
 
         nper=self.rc['nper']
         startlist,endlist=get_chunks(self.nrows,nper)
@@ -183,7 +628,6 @@ class TileConcat(object):
 
         dlist=[]
         elist=[]
-        npsf=0
 
         for i in xrange(nchunk):
 
@@ -209,20 +653,18 @@ class TileConcat(object):
     def concat(self):
         import esutil as eu
         from deswl.generic import get_chunks, extract_start_end
-        out_file=self.out_file
-        print('writing:',out_file)
+        print('writing:',self.collated_file)
 
         nper=self.rc['nper']
         startlist,endlist=get_chunks(self.nrows,nper)
         nchunk=len(startlist)
 
-        if os.path.exists(out_file) and not self.clobber:
+        if os.path.exists(self.collated_file) and not self.clobber:
             print('file already exists, skipping')
             return
 
         dlist=[]
         elist=[]
-        npsf=0
 
         for i in xrange(nchunk):
 
@@ -255,7 +697,7 @@ class TileConcat(object):
         else:
             do_epochs=False
 
-        with fitsio.FITS(out_file,'rw',clobber=True) as fobj:
+        with fitsio.FITS(self.collated_file,'rw',clobber=True) as fobj:
             meta=fitsio.read(fname, ext="meta_data")
             fobj.write(data,extname="model_fits")
 
@@ -264,7 +706,7 @@ class TileConcat(object):
 
             fobj.write(meta,extname="meta_data")
 
-        print('output is in:',out_file)
+        print('output is in:',self.collated_file)
 
     def blind_data(self,data):
         """
@@ -323,8 +765,6 @@ class TileConcat(object):
 
         epoch_data = numpy.zeros(epoch_data0.size, dtype=dt)
         esutil.numpy_util.copy_fields(epoch_data0, epoch_data)
-
-        self.add_coadd_objects_id(epoch_data)
 
         for band_num in xrange(self.nbands):
             w,=numpy.where(epoch_data['band_num'] == band_num)
@@ -413,7 +853,6 @@ class TileConcat(object):
         esutil.numpy_util.copy_fields(data0, data)
         data['tilename'] = self.tilename
 
-        self.add_coadd_objects_id(data)
 
         all_models=['psf'] + models 
         for ft in all_models:
@@ -577,15 +1016,12 @@ class TileConcat(object):
         except IOError as err:
             raise ConcatError(str(err))
 
-        try:
-            coadd=fitsio.read(meta['coaddcat_file'][0],lower=True)
-        except IOError as err:
-            raise ConcatError(str(err))
-
         data = self.pick_fields(data0,meta)
+        self.add_coadd_objects_id(data)
 
         if epoch_data0.dtype.names is not None:
             epoch_data = self.pick_epoch_fields(epoch_data0)
+            self.add_coadd_objects_id(epoch_data)
         else:
             epoch_data = epoch_data0
 

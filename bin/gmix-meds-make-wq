@@ -1,55 +1,148 @@
 #!/usr/bin/env python
 """
-    %prog [options] config_file meds_file(s)
+    %prog [options] run_name config_file meds_file(s)
 """
-
+from __future__ import print_function
+import os
 import sys
-import gmix_meds
-import meds
+import numpy
 import yaml
 
-from optparse import OptionParser
-parser = OptionParser(__doc__)
+import gmix_meds
+from gmix_meds.files import DEFAULT_NPER
+import meds
 
+from optparse import OptionParser
+
+parser = OptionParser(__doc__)
+parser.add_option('--nper',default=DEFAULT_NPER,
+                  help="number of objects per split.  Default %default")
+parser.add_option('--root-dir',
+                  help="root dir for files.  Default is $GMIX_MEDS_DATADIR")
 parser.add_option('--missing',action='store_true',
                   help="generate for missing output files")
+parser.add_option('--sub-dir',
+        help="associate a sub-dir, e.g. a DES tilename 'DES0453-4748'")
+
 
 class Maker(dict):
-    def __init__(self, config_file, meds_files, missing=False):
-        self.config_file=config_file
-        self.meds_files=meds_files
+    def __init__(self, run_name, config_file, meds_files,
+                 root_dir=None, sub_dir=None, missing=False,
+                 nper=DEFAULT_NPER):
+        self['run_name']=run_name
+        self['config_file']=config_file
+
+        self['meds_file_list'] = meds_files
+        self['meds_files_csv']=','.join(meds_files)
+
+        self['root_dir']=root_dir
+        self['sub_dir']=sub_dir
+        self['missing']=missing
+        self['nper']=nper
+
+        self._files=gmix_meds.files.Files(self['run_name'],
+                                          root_dir=self['root_dir'])
+        self['master_script'] = self._files.get_master_script_file()
 
         self._load_config()
         self._count_objects()
 
+    def write(self):
+        """
+        write master script and wq yaml scripts
+        """
+        self._make_dirs()
+        self._write_master_script()
+        self._write_wq_scripts()
+
+    def _write_master_script(self):
+        """
+        write the master script
+        """
+       
+        sfile=self['master_script']
+        print("writing master script:",sfile)
+        with open(sfile,'w') as fobj:
+            master_text=gmix_meds.files.get_master_script_text()
+            fobj.write(master_text)
+
+        cmd='chmod 755 %s' % sfile
+        print(cmd)
+        os.system(cmd)
+
+    def _write_wq_scripts(self):
+        """
+        write the wq scripts
+        """
+        from gmix_meds.files import get_chunks
+
+        nper=self['nper']
+        nobj=self['nobj']
+
+        chunklist = get_chunks(self['nobj'], self['nper'])
+
+        nchunk=len(chunklist)
+
+        for split in chunklist:
+            self._write_wq_file(split)
+
+    def _write_wq_file(self, split):
+
+        self['beg']=split[0]
+        self['end']=split[1]
+        self['out_file']=self._files.get_output_file(split, sub_dir=self['sub_dir'])
+        self['log_file']=self['out_file'].replace('.fits','.log')
+
+        job_name=[]
+        if self['sub_dir'] is not None:
+            job_name.append(self['sub_dir'])
+        job_name.append('%s' % split[0])
+        job_name.append('%s' % split[1])
+
+        self['job_name'] = '-'.join(job_name)
+
+
+        wq_file=self._files.get_wq_file(sub_dir=self['sub_dir'],
+                                        split=split)
+        print(wq_file)
+        with open(wq_file,'w') as fobj:
+            text=gmix_meds.files.get_wq_template()
+            text = text % self
+            fobj.write(text)
+
     def _load_config(self):
-        with open(self.config_file) as fobj:
+        with open(self['config_file']) as fobj:
             conf=yaml.load(fobj)
 
         self.update(conf)
 
     def _count_objects(self):
-        fname=self.meds_files[0]
+        fname=self['meds_file_list'][0]
         with meds.MEDS(fname) as meds_obj:
             nobj=meds_obj.size
 
         self['nobj']=nobj
 
-    def make_scripts(self):
-        nper=self['nper']
-        nobj=self['nobj']
 
-        indices=numpy.arange(nobj)
-        nchunk=nobj/nper
+    def _make_dirs(self):
+        """
+        make all the output directories
+        """
+        dir=self._files.get_output_dir(sub_dir=self['sub_dir'])
+        if not os.path.exists(dir):
+            print("making output dir:",dir)
+            os.makedirs(dir)
 
-        self.fileno=0
-        self.nwrite=0
+        dir=self._files.get_script_dir()
+        if not os.path.exists(dir):
+            print("making script dir:",dir)
+            os.makedirs(dir)
 
-        for i in xrange(nobj):
+        dir=self._files.get_wq_dir(sub_dir=self['sub_dir'])
+        if not os.path.exists(dir):
+            print("making wq dir:",dir)
+            os.makedirs(dir)
 
-            beg=i*nper
-            end=(i+1)*nper
-            olist=indices[beg:end]
 
 def main():
     options, args = parser.parse_args(sys.argv[1:])
@@ -57,5 +150,16 @@ def main():
         parser.print_help()
         sys.exit(45)
 
+    run_name=args[0]
+    config_file=args[1]
+    meds_files=args[2:]
+
+    maker=Maker(run_name, config_file, meds_files,
+                nper=int(options.nper),
+                root_dir=options.root_dir,
+                missing=options.missing,
+                sub_dir=options.sub_dir)
+
+    maker.write()
 
 main()

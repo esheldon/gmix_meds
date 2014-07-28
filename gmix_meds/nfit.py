@@ -384,7 +384,7 @@ class MedsFit(dict):
             counts=wcounts_sum/wsum
         else:
             counts=DEFVAL
-        print("        coadd psfrec counts band",band,"mean:",counts)
+        #print("        coadd psfrec counts band",band,"mean:",counts)
         self.data['coadd_psfrec_counts_mean'][dindex,band]=counts
 
         wsum=self.wsum
@@ -394,7 +394,7 @@ class MedsFit(dict):
         else:
             counts=DEFVAL
 
-        print("        psfrec counts band",band,"mean:",counts)
+        #print("        psfrec counts band",band,"mean:",counts)
         self.data['psfrec_counts_mean'][dindex,band]=counts
 
 
@@ -498,7 +498,7 @@ class MedsFit(dict):
 
 
         psf_fwhm=2.35*numpy.sqrt(psf_gmix.get_T()/2.0)
-        print("        psf fwhm:",psf_fwhm)
+        #print("        psf fwhm:",psf_fwhm)
 
         return obs
 
@@ -622,7 +622,7 @@ class MedsFit(dict):
         ed=self.epoch_data
 
         ed['psf_counts'][epoch_index]    = counts
-        print("        psf counts:",ed['psf_counts'][epoch_index])
+        #print("        psf counts:",ed['psf_counts'][epoch_index])
         ed['psf_fit_g'][epoch_index,0]    = g1
         ed['psf_fit_g'][epoch_index,1]    = g2
         ed['psf_fit_T'][epoch_index]      = T
@@ -639,7 +639,7 @@ class MedsFit(dict):
         epoch_index=self.epoch_index
         self.epoch_data['wsum'][epoch_index] = wsum
 
-        print("        wsum:",wsum)
+        #print("        wsum:",wsum)
 
 
     def _set_psf_meta(self, meds, mindex, band, icut, flags):
