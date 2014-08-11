@@ -1,6 +1,5 @@
 from __future__ import print_function
 import os
-import copy
 import numpy
 import fitsio
 import json
@@ -19,7 +18,7 @@ class ConcatError(Exception):
 
 
 # need to fix up the images instead of this
-from .constants import PIXSCALE, PIXSCALE2
+from .constants import PIXSCALE2
 
 def load_config(name):
     path = '$GMIX_MEDS_DIR/share/config/%s.yaml' % name
@@ -36,7 +35,7 @@ def load_config_path(fname):
 class Concat(object):
     """
     Concatenate the split files
-    
+
     This is the more generic interface
     """
     def __init__(self,
@@ -58,7 +57,7 @@ class Concat(object):
         self.meds_file_list=meds_files
         self.nbands=len(meds_files)
         if bands is None:
-            bands = [str(i) for i in xrange(nbands)]
+            bands = [str(i) for i in xrange(self.nbands)]
         else:
             assert len(bands)==self.nbands,"wrong number of bands: %d" % len(bands)
         self.bands=bands
@@ -409,6 +408,10 @@ class Concat(object):
         """
         Read the chunk data
         """
+
+        if not os.path.exists(fname):
+            raise ConcatError("file not found: %s" % fname)
+
         print(fname)
         try:
             with fitsio.FITS(fname) as fobj:
@@ -460,6 +463,14 @@ class Concat(object):
             
         self.collated_file = self.files_obj.get_collated_file(sub_dir=self.sub_dir,
                                                               extra=extra)
+        """
+        bname=os.path.basename(self.collated_file)
+        if '_CONDOR_SCRATCH_DIR' in os.environ:
+            temp_dir=os.environ['_CONDOR_SCRATCH_DIR']
+        else:
+            temp_dir=os.environ['TMPDIR']
+        self.temp_file=os.path.join(temp_dir, bname)
+        """
 
 
     def read_chunk(self, split):
@@ -483,7 +494,7 @@ class TileConcat(object):
     This version designed for DES where the sub-dir is a tilename and
     run info is declared in deswl.  Moving away from this.
     """
-    def __init__(self, run, tilename, ftype, blind=True, clobber=False):
+    def __init__(self, run, tilename, ftype='mcmc', blind=True, clobber=False):
         import desdb
         import deswl
 
@@ -506,10 +517,8 @@ class TileConcat(object):
         self.find_coadd_run()
 
         self.load_meds()
-        self.find_image_ids()
         self.set_nrows()
 
-        self.set_coadd_objects_info()
 
         if self.blind:
             self.blind_factor = get_blind_factor()
@@ -531,44 +540,119 @@ class TileConcat(object):
             m=meds.MEDS(fname)
             self.meds_list.append(m)
 
-    def find_image_ids(self):
+    def find_band_image_ids(self, medsobj, conn):
+
+        # use hash to get unique run-exp combos
+        runexp_dict={}
+
+        # keyed by run-exp-ccd holding index into _image_ids
+        image_indexes={}
+
+        nimage=medsobj._image_info.size
+        iids = numpy.zeros(nimage, dtype='i8')
+
+        # first get all the run-exposure combinations
+        for index in xrange(1,nimage):
+            fname=medsobj._image_info['image_path'][index]
+            ii=extract_red_info(fname)
+
+            rexp='%(run)s-%(expname)s' % ii
+            rexpccd='%s-%02d' % (rexp, ii['ccd'])
+
+            ii['rexp'] = rexp
+            ii['rexpccd'] = rexpccd
+
+            image_indexes[rexpccd] = index
+
+            runexp_dict[rexp] = ii
+
+
+        # now go through each run-exposure combo, pull out info
+        # for all ccds, and then match against our input
+
+        found=0
+        for rexp,ii in runexp_dict.iteritems():
+            query="""
+            select
+                id,run,exposurename as expname,ccd
+            from
+                location
+            where
+                run='%(run)s'
+                and exposurename='%(expname)s'
+                and filetype='red'""" % ii
+
+            res=conn.quick(query)
+            for r in res:
+                rexpccd='%(run)s-%(expname)s-%(ccd)02d' % r
+
+                index=image_indexes.get(rexpccd,None)
+                if index is not None:
+                    iids[index] = r['id']
+                    found += 1
+
+        if found != nimage-1:
+            raise RuntimeError("expected to find %d but "
+                               "found %d" % (nimage-1,found))
+
+        return iids
+
+    def cache_allband_se_image_ids(self):
+        """
+        cache for all bands
+        """
+        import desdb
+        conn=desdb.Connection()
+        for band in xrange(self.nbands):
+
+            self.cache_se_image_ids(band, conn=conn)
+        conn.close()
+
+    def cache_se_image_ids(self, band, conn=None):
         """
         Get the image id from the database for each of the 
-        SE exposures.  Note we keep a slot for the coadd but
-        it is not used
+        SE exposures.  Cache on disk
         """
         import desdb
 
-        print('getting image ids')
-        conn=desdb.Connection()
+        self.ensure_cache_dir_exists()
 
+        print('cacheing image ids for band:',band)
+        if conn is None:
+            conn_use=desdb.Connection()
+        else:
+            conn_use=conn
+
+        cache_name=self.get_se_band_cache_filename(band)
+
+        m=self.meds_list[band]
+
+        iids=self.find_band_image_ids(m, conn_use)
+
+        print(cache_name)
+        fitsio.write(cache_name,iids, extname="image_ids", clobber=True)
+
+        if conn is None:
+            conn_use.close()
+
+    def read_se_image_ids(self, band):
+        """
+        read from the image id cache
+        """
+        cache_name=self.get_se_band_cache_filename(band)
+        if not os.path.exists(cache_name):
+            raise ConcatError("cache file does not exist: %s" % cache_name)
+            #self.cache_se_image_ids(band)
+        print("reading:",cache_name)
+        return fitsio.read(cache_name) 
+
+    def set_se_image_ids(self):
+        """
+        set the image ids on the meds object for the requested band
+        """
         for band in xrange(self.nbands):
-            m=self.meds_list[band]
-
-            nimage=m._image_info.size
-            m._image_ids = numpy.zeros(nimage,dtype='i8')
-
-            for file_id in xrange(1,nimage):
-                fname=m._image_info['image_path'][file_id]
-                ii=extract_red_info(fname)
-                query="""
-                select
-                    id
-                from
-                    location
-                where
-                    run='{run}'
-                    and exposurename='{expname}'
-                    and filetype='red'
-                    and ccd={ccd}"""
-                query=query.format(run=ii['run'],
-                                   expname=ii['expname'],
-                                   ccd=ii['ccd'])
-                res=conn.quick(query)
-                if len(res) != 1:
-                    raise ConcatError("expected one image match, "
-                                      "got %s" % repr(res))
-                m._image_ids[file_id] = res[0]['id']
+            se_ids = self.read_se_image_ids(band)
+            self.meds_list[band]._image_ids = se_ids
 
     def find_coadd_run(self):
         """
@@ -598,6 +682,31 @@ class TileConcat(object):
         with fitsio.FITS(meds_filename) as fobj:
             self.nrows=fobj['object_data'].get_nrows()
 
+    def get_cache_dir(self):
+        cache_dir = self.df.dir('wlpipe_collated', run=self.run)
+        cache_dir=os.path.join(cache_dir,'cache')
+        return cache_dir
+
+    def ensure_cache_dir_exists(self):
+        cache_dir=self.get_cache_dir()
+        if not os.path.exists(cache_dir):
+            print("making cache dir:",cache_dir)
+            os.makedirs(cache_dir)
+
+
+    def get_se_band_cache_filename(self, band):
+        cache_dir=self.get_cache_dir()
+        fname='%s-se-image-id-cache-%d.fits' % (self.tilename,band)
+        path=os.path.join(cache_dir, fname)
+        return path
+
+    def get_coadd_cache_filename(self):
+        cache_dir=self.get_cache_dir()
+        fname='%s-coadd-image-info.fits' % self.tilename
+        path=os.path.join(cache_dir, fname)
+        return path
+
+
     def set_collated_file(self):
 
         out_dir = self.df.dir('wlpipe_collated', run=self.run)
@@ -610,17 +719,29 @@ class TileConcat(object):
             out_ftype='wlpipe_me_collated'
             
         self.collated_file = self.df.url(out_ftype,
-                                    run=self.run,
-                                    tilename=self.tilename,
-                                    filetype=self.ftype,
-                                    ext='fits')
+                                         run=self.run,
+                                         tilename=self.tilename,
+                                         filetype=self.ftype,
+                                         ext='fits')
 
+        bname=os.path.basename(self.collated_file)
+        if '_CONDOR_SCRATCH_DIR' in os.environ:
+            temp_dir=os.environ['_CONDOR_SCRATCH_DIR']
+        else:
+            temp_dir=os.environ['TMPDIR']
+        self.temp_file=os.path.join(temp_dir, bname)
+
+    def do_setup(self):
+        self.set_se_image_ids()
+        self.set_coadd_objects_info()
     def verify(self):
         """
         just run through and read the data, verifying we
         can read it and that it matches to the coadd
         """
         from deswl.generic import get_chunks, extract_start_end
+
+        self.do_setup()
 
         nper=self.rc['nper']
         startlist,endlist=get_chunks(self.nrows,nper)
@@ -645,15 +766,18 @@ class TileConcat(object):
 
             print('\t%d/%d %s' %(i+1,nchunk,fname))
             try:
-                data, epoch_data = self.read_data(fname)
+                data, epoch_data = self.read_data(fname,start,end)
             except ConcatError as err:
                 print("error found: %s" % str(err))
 
 
     def concat(self):
         import esutil as eu
+        import shutil
         from deswl.generic import get_chunks, extract_start_end
-        print('writing:',self.collated_file)
+        print('will write:',self.collated_file)
+
+        self.do_setup()
 
         nper=self.rc['nper']
         startlist,endlist=get_chunks(self.nrows,nper)
@@ -680,8 +804,9 @@ class TileConcat(object):
                               filetype=self.ftype,
                               ext='fits')
 
-            print('\t%d/%d %s' %(i+1,nchunk,fname))
-            data, epoch_data = self.read_data(fname)
+            if ((i+1) % 100) == 0:
+                print('\t%d/%d %s' %(i+1,nchunk,fname))
+            data, epoch_data = self.read_data(fname,start,end)
 
             if self.blind:
                 self.blind_data(data)
@@ -697,7 +822,8 @@ class TileConcat(object):
         else:
             do_epochs=False
 
-        with fitsio.FITS(self.collated_file,'rw',clobber=True) as fobj:
+        print("writing temp file:",self.temp_file)
+        with fitsio.FITS(self.temp_file,'rw',clobber=True) as fobj:
             meta=fitsio.read(fname, ext="meta_data")
             fobj.write(data,extname="model_fits")
 
@@ -706,7 +832,10 @@ class TileConcat(object):
 
             fobj.write(meta,extname="meta_data")
 
+        print("moving temp file:",self.temp_file,self.collated_file)
+        shutil.move(self.temp_file,self.collated_file)
         print('output is in:',self.collated_file)
+
 
     def blind_data(self,data):
         """
@@ -752,6 +881,8 @@ class TileConcat(object):
         # not set
         wkeep,=numpy.where(epoch_data0['coadd_object_number'] > 0)
         if wkeep.size==0:
+            print("None found with coadd_object_number > 0")
+            print(epoch_data0['coadd_object_number'])
             return numpy.zeros(1)
 
         epoch_data0=epoch_data0[wkeep]
@@ -786,6 +917,14 @@ class TileConcat(object):
 
         nbands=self.nbands
         name_map={'number':     'coadd_object_number',
+
+                  'coadd_exp_g':      'coadd_exp_e',
+                  'coadd_exp_g_cov':  'coadd_exp_e_cov',
+                  'coadd_exp_g_sens': 'coadd_exp_e_sens',
+                  'coadd_dev_g':      'coadd_dev_e',
+                  'coadd_dev_g_cov':  'coadd_dev_e_cov',
+                  'coadd_dev_g_sens': 'coadd_dev_e_sens',
+
                   'exp_g':      'exp_e',
                   'exp_g_cov':  'exp_e_cov',
                   'exp_g_sens': 'exp_e_sens',
@@ -818,6 +957,7 @@ class TileConcat(object):
         names.insert(flux_ind+2,'psf_mag')
 
         models=self.config['fit_models']
+        models = ['coadd_%s' % mod for mod in models] + models
 
         do_T=False
         for ft in models:
@@ -895,6 +1035,8 @@ class TileConcat(object):
     def add_coadd_objects_id(self, data):
         """
         match by coadd_object_number and add the coadd_objects_id
+
+        if we have a corrupted file, this will raise ConcatError
         """
         import esutil
         cdata=self.coadd_objects_data
@@ -915,6 +1057,8 @@ class TileConcat(object):
                 nmatch += w.size
 
         if nmatch != data.size:
+            for i in xrange(data.size):
+                print(data['coadd_object_number'], data['coadd_objects_id'])
             raise ConcatError("only %d/%d matched by "
                               "coadd_object_number" % (nmatch,data.size))
 
@@ -1004,10 +1148,13 @@ class TileConcat(object):
 
 
 
-    def read_data(self, fname):
+    def read_data(self, fname, start, end):
         """
         Read the chunk data
         """
+        if not os.path.exists(fname):
+            raise ConcatError("file not found: %s" % fname)
+
         try:
             with fitsio.FITS(fname) as fobj:
                 data0       = fobj['model_fits'][:]
@@ -1016,22 +1163,30 @@ class TileConcat(object):
         except IOError as err:
             raise ConcatError(str(err))
 
+        expected_index = numpy.arange(start,end+1)+1
+        w,=numpy.where(data0['number'] != expected_index)
+        if w.size > 0:
+            raise ConcatError("number field is corrupted in file: %s" % fname)
+
         data = self.pick_fields(data0,meta)
         self.add_coadd_objects_id(data)
 
         if epoch_data0.dtype.names is not None:
             epoch_data = self.pick_epoch_fields(epoch_data0)
-            self.add_coadd_objects_id(epoch_data)
+            if epoch_data.dtype.names is not None:
+                self.add_coadd_objects_id(epoch_data)
         else:
             epoch_data = epoch_data0
 
             
         return data, epoch_data
 
-
-    def set_coadd_objects_info(self):
+    def cache_coadd_objects_info(self):
+        """
+        cache the coadd info on disk
+        """
         import desdb
-        print('getting coadd_objects ids')
+        print('cacheing coadd_objects ids')
 
         query="""
         select
@@ -1046,9 +1201,36 @@ class TileConcat(object):
             coadd_object_number
         """.format(run=self.coadd_run)
 
+        self.ensure_cache_dir_exists()
+
+        print('getting coadd objects info')
         conn=desdb.Connection()
         res=conn.quick(query, array=True)
         conn.close()
+
+        cache_name=self.get_coadd_cache_filename()
+        print(cache_name)
+        fitsio.write(cache_name,res,extname="coadd_info",clobber=True)
+
+    def read_coadd_objects_info(self):
+        """
+        read the coadd info cache
+        """
+        cache_name=self.get_coadd_cache_filename()
+        if not os.path.exists(cache_name):
+            raise ConcatError("cache file does not exist: %s" % cache_name)
+            #self.cache_coadd_objects_info()
+
+        print("reading:",cache_name)
+        res=fitsio.read(cache_name,extname="coadd_info")
+        return res
+
+
+    def set_coadd_objects_info(self):
+        """
+        set the coadd info 
+        """
+        res=self.read_coadd_objects_info()
 
         nmax=res['coadd_object_number'].max()
         if nmax != res.size:

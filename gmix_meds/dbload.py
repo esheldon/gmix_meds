@@ -4,8 +4,6 @@ def make_all_oracle_input(run, ftype, table_name, blind=True):
     """
     Make inputs for all tiles used in the specified run
     """
-    import desdb
-    import deswl
 
     tilenames = get_tilenames(run)
     ntiles=len(tilenames)
@@ -17,7 +15,8 @@ def make_all_oracle_input(run, ftype, table_name, blind=True):
         make_oracle_input(run, tilename, ftype, table_name,
                           blind=blind, create=create)
 
-def make_oracle_input(run, tilename, ftype, table_name, blind=True, create=False):
+def make_oracle_input(run, tilename, ftype, table_name,
+                      blind=True, create=False):
     """
     convenience function to create the oracle input
     """
@@ -31,7 +30,8 @@ class OracleInputMaker(object):
     Create the input csv and control file.  Potentially make the sql statement
     for table creation.
     """
-    def __init__(self, run, tilename, ftype, table_name, blind=True, create=False):
+    def __init__(self, run, tilename, ftype, table_name,
+                 blind=True, create=False):
         self.run=run
         self.tilename=tilename
         self.ftype=ftype
@@ -206,6 +206,7 @@ def get_epoch_index_cols():
             'band_num',
             'psf_fit_flags']
 
+_TILE_BLACKLIST=['DES0503-6414', 'DES0557-6122']
 def get_tilenames(run):
     """
     Get all associated tilenames
@@ -221,6 +222,7 @@ def get_tilenames(run):
                                                     withbands=bands)
 
     tiles = [info['tilename'] for info in info_list]
+    tiles=[tile for tile in tiles if tile not in _TILE_BLACKLIST]
     tiles.sort()
 
     return tiles
