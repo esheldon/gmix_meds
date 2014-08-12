@@ -1448,8 +1448,12 @@ class MedsFit(dict):
 
         self._checkpoint_data should be set on construction
         """
+        import fitsio
         if self.checkpoint_data is not None:
             self.data=self.checkpoint_data['data']
+
+            # need the data to be native for the operation below
+            fitsio.fitslib.array_to_native(self.data, inplace=True)
 
             # for nband==1 the written array drops the arrayness
             self.data.dtype=self._get_dtype()

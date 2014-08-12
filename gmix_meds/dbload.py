@@ -1,6 +1,6 @@
 import os
 
-def make_all_oracle_input(run, ftype, table_name, blind=True):
+def make_all_oracle_input(run, table_name, blind=True):
     """
     Make inputs for all tiles used in the specified run
     """
@@ -12,15 +12,15 @@ def make_all_oracle_input(run, ftype, table_name, blind=True):
         print '%03d/%03d %s' % (i+1,ntiles,tilename)
 
         create=(i==0)
-        make_oracle_input(run, tilename, ftype, table_name,
+        make_oracle_input(run, tilename, table_name,
                           blind=blind, create=create)
 
-def make_oracle_input(run, tilename, ftype, table_name,
+def make_oracle_input(run, tilename, table_name,
                       blind=True, create=False):
     """
     convenience function to create the oracle input
     """
-    oim=OracleInputMaker(run, tilename, ftype, table_name,
+    oim=OracleInputMaker(run, tilename, table_name,
                          blind=blind, create=create)
 
     oim.make_tile_input()
@@ -30,7 +30,7 @@ class OracleInputMaker(object):
     Create the input csv and control file.  Potentially make the sql statement
     for table creation.
     """
-    def __init__(self, run, tilename, ftype, table_name,
+    def __init__(self, run, tilename, table_name, ftype='mcmc',
                  blind=True, create=False):
         self.run=run
         self.tilename=tilename
