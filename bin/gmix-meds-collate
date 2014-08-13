@@ -10,6 +10,8 @@ from __future__ import print_function
 import sys
 import gmix_meds
 
+from gmix_meds.collate import ConcatError
+
 from optparse import OptionParser
 parser = OptionParser(__doc__)
 
