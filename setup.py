@@ -7,7 +7,8 @@ scripts=['gmix-fit-meds',
          'gmix-meds-collate-all',
          'gmix-fit-double-psf',
          'gmix-fit-meds-stars',
-         'gmix-meds-make-wq']
+         'gmix-meds-make-wq',
+         'gmix-meds-make-oracle']
 
 
 scripts=[os.path.join('bin',s) for s in scripts]

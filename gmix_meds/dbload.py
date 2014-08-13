@@ -1,3 +1,12 @@
+"""
+todo
+
+    - pick columns to keep
+    - pick columns to index
+
+    - ask todd to do his magic
+"""
+from __future__ import print_function
 import os
 
 def make_all_oracle_input(run, table_name, blind=True):
@@ -7,9 +16,38 @@ def make_all_oracle_input(run, table_name, blind=True):
 
     tilenames = get_tilenames(run)
     ntiles=len(tilenames)
-    print 'found',ntiles,'tiles'
+    print('found',ntiles,'tiles')
     for i,tilename in enumerate(tilenames):
-        print '%03d/%03d %s' % (i+1,ntiles,tilename)
+        print('%03d/%03d %s' % (i+1,ntiles,tilename))
+
+        create=(i==0)
+        make_oracle_input(run, tilename, table_name,
+                          blind=blind, create=create)
+
+def make_oracle_input_split(run, table_name, nsplit, split, blind=True):
+    """
+    Make inputs for all tiles used in the specified run
+    """
+
+    if split >= nsplit:
+        raise ValueError("split should be < nsplit")
+
+    tilenames = get_tilenames(run)
+    ntiles_total=len(tilenames)
+    print('found',ntiles_total,'tiles')
+
+    ntiles_per=ntiles_total/nsplit
+    nleft = ntiles_total % nsplit
+
+    beg=split*ntiles_per
+    if split < (nsplit-1):
+        end=(split+1)*ntiles_per
+    else:
+        end=(split+1)*ntiles_per + nleft
+
+    for i in xrange(beg,end):
+        tilename=tilenames[i]
+        print('%03d:%03d %s' % (i,end-1,tilename))
 
         create=(i==0)
         make_oracle_input(run, tilename, table_name,
@@ -50,14 +88,23 @@ class OracleInputMaker(object):
         """
         import desdb
         import fitsio
+        import time
 
+        print("reading data:",self.fname)
         with fitsio.FITS(self.fname) as fobj:
-            model_fits=fobj['model_fits'][:]
+            tmodel_fits=fobj['model_fits'][0]
+            cols2keep=self.extract_keep_cols(tmodel_fits)
+
+            print("    reading model fits")
+            model_fits=fobj['model_fits'].read(columns=cols2keep)
+            print("    reading epoch data")
             epoch_data=fobj['epoch_data'][:]
 
         if not os.path.exists(self.outdir):
             os.makedirs(self.outdir)
 
+        print()
+        print("array2table model fits")
         desdb.array2table(model_fits,
                           self.table_name,
                           self.control_file,
@@ -66,11 +113,42 @@ class OracleInputMaker(object):
                           create=self.create,
                           primary_key=self.primary_key)
 
+
+        print()
+        print("array2table epoch data")
         desdb.array2table(epoch_data,
                           self.epochs_table_name,
                           self.epochs_control_file,
                           create=self.create)
 
+        '''
+        time.sleep(1)
+        print("moving:",self.temp_pattern,"to",self.outdir)
+        res=os.system('mv -fv %s %s/' % (self.temp_pattern, self.outdir))
+        if res != 0:
+            raise RuntimeError("error moving files")
+        '''
+
+    def extract_keep_cols(self, data):
+        """
+        throw out columns that match certain patterns
+        """
+
+        drop_patterns=['coadd_gauss','logpars','tau','pars','pars_cov']
+
+        names2keep=[]
+        for name in data.dtype.names:
+            keep=True
+            for pattern in drop_patterns:
+                if pattern in name:
+                    keep=False
+                    break
+
+            if keep:
+                names2keep.append(name)
+
+        return names2keep
+        
     def set_info(self):
         """
         Set some info needed to do our work
@@ -98,12 +176,20 @@ class OracleInputMaker(object):
         bname=os.path.basename(self.fname)
 
         self.outdir=os.path.join( dirname, 'oracle' )
+        #self.tmpdir=get_temp_dir()
 
         control_file=os.path.basename(bname).replace('.fits','.ctl')
         self.control_file=os.path.join(self.outdir, control_file)
+        #self.temp_control_file=os.path.join(self.tmpdir, control_file)
 
         self.epochs_control_file=self.control_file.replace('.ctl','-epochs.ctl')
+        #self.temp_epochs_control_file=self.temp_control_file.replace('.ctl','-epochs.ctl')
+        #self.temp_epochs_pattern=\
+        #    os.path.join(self.tmpdir, self.temp_epochs_control_file.replace('.ctl','*'))
 
+        #self.temp_pattern=os.path.join(self.tmpdir, self.temp_control_file.replace('.ctl','*'))
+
+        #print(self.temp_pattern)
 
         self.bands=self.rc['band']
         self.band_cols=get_band_cols()
@@ -126,13 +212,13 @@ def add_indexes(table_name):
     curs = conn.cursor()
     for col in index_cols:
         query = qt.format(table_name=table_name, col=col)
-        print query
+        print(query)
 
         curs.execute(query)
 
     for col in epoch_index_cols:
         query = qt.format(table_name=epochs_table_name, col=col)
-        print query
+        print(query)
 
         curs.execute(query)
 
@@ -149,6 +235,15 @@ def get_epochs_table_name(table_name):
 def get_band_cols():
     colnames=['nimage_tot',
               'nimage_use',
+
+              'coadd_psfrec_counts_mean',
+              'coadd_psf_flags',
+              'coadd_psf_flux',
+              'coadd_psf_flux_err',
+              'coadd_psf_chi2per',
+              'coadd_psf_dof',
+
+              'psfrec_counts_mean',
               'psf_flags',
               'psf_flux',
               'psf_flux_err',
@@ -156,10 +251,22 @@ def get_band_cols():
               'psf_mag',
               'psf_chi2per',
               'psf_dof',
+
+              'coadd_exp_flux',
+              'coadd_exp_flux_s2n',
+              'coadd_exp_mag',
+              'coadd_exp_flux_cov',
+
+              'coadd_dev_flux',
+              'coadd_dev_flux_s2n',
+              'coadd_dev_mag',
+              'coadd_dev_flux_cov',
+ 
               'exp_flux',
               'exp_flux_s2n',
               'exp_mag',
               'exp_flux_cov',
+
               'dev_flux',
               'dev_flux_s2n',
               'dev_mag',
@@ -172,6 +279,16 @@ def get_index_cols():
             'coadd_object_number',
             'flags',
 
+            'coadd_psf_flags_g',
+            'coadd_psf_flags_r',
+            'coadd_psf_flags_i',
+            'coadd_psf_flags_z',
+            # forgot to make psf mag for coadd
+            #'coadd_psf_mag_g',
+            #'coadd_psf_mag_r',
+            #'coadd_psf_mag_i',
+            #'coadd_psf_mag_z',
+
             'psf_flags_g',
             'psf_flags_r',
             'psf_flags_i',
@@ -181,6 +298,30 @@ def get_index_cols():
             'psf_mag_i',
             'psf_mag_z',
 
+            'coadd_exp_flags',
+            'coadd_exp_chi2per',
+            'coadd_exp_mag_g',
+            'coadd_exp_mag_r',
+            'coadd_exp_mag_i',
+            'coadd_exp_mag_z',
+            'coadd_exp_s2n_w',
+            'coadd_exp_T_s2n',
+            'coadd_exp_e_1',
+            'coadd_exp_e_2',
+            'coadd_exp_arate',
+
+            'coadd_dev_flags',
+            'coadd_dev_chi2per',
+            'coadd_dev_mag_g',
+            'coadd_dev_mag_r',
+            'coadd_dev_mag_i',
+            'coadd_dev_mag_z',
+            'coadd_dev_s2n_w',
+            'coadd_dev_T_s2n',
+            'coadd_dev_e_1',
+            'coadd_dev_e_2',
+            'coadd_dev_arate',
+
             'exp_flags',
             'exp_chi2per',
             'exp_mag_g',
@@ -189,6 +330,9 @@ def get_index_cols():
             'exp_mag_z',
             'exp_s2n_w',
             'exp_T_s2n',
+            'exp_e_1',
+            'exp_e_2',
+            'exp_arate',
 
             'dev_flags',
             'dev_chi2per',
@@ -197,7 +341,11 @@ def get_index_cols():
             'dev_mag_i',
             'dev_mag_z',
             'dev_s2n_w',
-            'dev_T_s2n']
+            'dev_T_s2n',
+            'dev_e_1',
+            'dev_e_2',
+            'dev_arate',
+            ]
 
 def get_epoch_index_cols():
     return ['coadd_objects_id',
@@ -218,13 +366,25 @@ def get_tilenames(run):
     releases=rc['dataset']
     bands=rc['band']
 
-    info_list=desdb.files.get_coadd_info_by_release(releases,'g',
-                                                    withbands=bands)
+    runs=desdb.files.get_release_runs(releases, withbands=bands)
+    #info_list=desdb.files.get_coadd_info_by_release(releases,'g',
+    #                                                withbands=bands)
 
-    tiles = [info['tilename'] for info in info_list]
-    tiles=[tile for tile in tiles if tile not in _TILE_BLACKLIST]
+    #tiles = [info['tilename'] for info in info_list]
+    #tiles=[tile for tile in tiles if tile not in _TILE_BLACKLIST]
+
+    tiles=[]
+    for run in runs:
+        rs=run.split('_')
+        tilename=rs[1]
+        tiles.append(tilename)
+
     tiles.sort()
-
     return tiles
 
 
+def get_temp_dir():
+    if '_CONDOR_SCRATCH_DIR' in os.environ:
+        return os.environ['_CONDOR_SCRATCH_DIR']
+    else:
+        return os.environ['TMPDIR']

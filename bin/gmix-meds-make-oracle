@@ -14,6 +14,10 @@ parser = OptionParser(__doc__)
 
 parser.add_option('--noblind',action='store_true',
                   help="use unblinded catalog")
+parser.add_option('--nsplit',default=None,
+                  help="use this number of split")
+parser.add_option('--split',default=None,
+                  help="process this split")
 
 def main():
     options, args = parser.parse_args(sys.argv[1:])
@@ -29,8 +33,22 @@ def main():
     else:
         blind=True
 
-    gmix_meds.dbload.make_all_oracle_input(run,
-                                           table_name,
-                                           blind=blind)
+    if options.nsplit is not None:
+        nsplit=int(options.nsplit)
+        if options.split is None:
+            raise ValueError("send --split with --nsplit")
+        split=int(options.split)
+
+        gmix_meds.dbload.make_oracle_input_split(run,
+                                                 table_name,
+                                                 nsplit,
+                                                 split,
+                                                 blind=blind)
+
+
+    else:
+        gmix_meds.dbload.make_all_oracle_input(run,
+                                               table_name,
+                                               blind=blind)
 
 main()
