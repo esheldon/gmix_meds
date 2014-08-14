@@ -5,14 +5,10 @@ run the gaussian mixture codes on meds files
 
 dependencies
 ------------
-numpy
-scipy
-fitsio
-meds
-gmix_image
-psfex
-ngmix
-numba
+- numpy
+- scipy
+- fitsio
+- meds
+- ngmix
 
-for the script gmix-fit-meds
-yaml (https://bitbucket.org/xi/pyyaml)
+- yaml for the script gmix-fit-meds (https://bitbucket.org/xi/pyyaml)

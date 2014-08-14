@@ -46,6 +46,8 @@ def make_oracle_input_split(run, table_name, nsplit, split, blind=True):
         end=(split+1)*ntiles_per + nleft
 
     for i in xrange(beg,end):
+        if tilename in _TILE_BLACKLIST:
+            continue
         tilename=tilenames[i]
         print('%03d:%03d %s' % (i,end-1,tilename))
 
@@ -377,7 +379,9 @@ def get_tilenames(run):
     for run in runs:
         rs=run.split('_')
         tilename=rs[1]
-        tiles.append(tilename)
+        if tilename not in _TILE_BLACKLIST:
+            tiles.append(tilename)
+        #tiles.append(tilename)
 
     tiles.sort()
     return tiles
