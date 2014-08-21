@@ -267,6 +267,7 @@ class MedsFit(dict):
         self.data['nimage_tot'][dindex, :] = ncutout_tot
 
         # need to do this because we work on subset files
+        self.data['id'][dindex] = self.meds_list[0]['id'][mindex]
         self.data['number'][dindex] = self.meds_list[0]['number'][mindex]
 
         flags = self._obj_check(mindex)
@@ -352,14 +353,31 @@ class MedsFit(dict):
         mb_obs_list=MultiBandObsList()
 
         # number used in each band
-        n_im = numpy.array(self['nband'])
+        n_im = numpy.zeros(self['nband'])
+
+        self.coadd_npix=0
+        self.coadd_wsum=0.0
+        self.coadd_wmax=0.0
+        self.coadd_mask_frac=0.0
+        self.coadd_psfrec_T_wsum=0.0
+        self.coadd_psfrec_g1_wsum=0.0
+        self.coadd_psfrec_g2_wsum=0.0
+
+        self.npix=0
+        self.wsum=0.0
+        self.wmax=0.0
+        self.mask_frac=0.0
+        self.psfrec_T_wsum=0.0
+        self.psfrec_g1_wsum=0.0
+        self.psfrec_g2_wsum=0.0
 
         for band in self.iband:
 
-            self.coadd_wsum=0.0
-            self.coadd_psf_counts_wsum=0.0
-            self.wsum=0.0
-            self.psf_counts_wsum=0.0
+            self.coadd_band_wsum=0.0
+            self.coadd_psfrec_counts_wsum=0.0
+
+            self.band_wsum=0.0
+            self.psfrec_counts_wsum=0.0
 
             cobs_list, obs_list = self._get_band_observations(band, mindex)
 
@@ -372,31 +390,75 @@ class MedsFit(dict):
                     self._reject_outliers(obs_list)
                 mb_obs_list.append(obs_list)
 
-            self.set_psfrec_counts_mean(band)
+            self.set_psfrec_counts_mean_byband(band)
 
+        # means must go accross bands
+        self.set_psf_means()
         return coadd_mb_obs_list, mb_obs_list, n_im
 
-    def set_psfrec_counts_mean(self, band):
+    def set_psfrec_counts_mean_byband(self, band):
+        dindex=self.dindex
+
+        wsum=self.coadd_band_wsum
+        wcounts_sum=self.coadd_psfrec_counts_wsum
+        if wsum > 0:
+            counts=wcounts_sum/wsum
+        else:
+            counts=DEFVAL
+
+        self.data['coadd_psfrec_counts_mean'][dindex,band]=counts
+
+        wsum=self.band_wsum
+        wcounts_sum=self.psfrec_counts_wsum
+        if wsum > 0:
+            counts=wcounts_sum/wsum
+        else:
+            counts=DEFVAL
+
+        self.data['psfrec_counts_mean'][dindex,band]=counts
+
+    def set_psf_means(self):
         dindex=self.dindex
 
         wsum=self.coadd_wsum
-        wcounts_sum=self.coadd_psf_counts_wsum
         if wsum > 0:
-            counts=wcounts_sum/wsum
+            T=self.coadd_psfrec_T_wsum/wsum
+            g1=self.coadd_psfrec_g1_wsum/wsum
+            g2=self.coadd_psfrec_g2_wsum/wsum
+            mask_frac=(wsum/self.coadd_wmax)/self.coadd_npix
         else:
-            counts=DEFVAL
-        #print("        coadd psfrec counts band",band,"mean:",counts)
-        self.data['coadd_psfrec_counts_mean'][dindex,band]=counts
+            T=DEFVAL
+            g1=DEFVAL
+            g2=DEFVAL
+            mask_frac=1.0
+
+        self.data['coadd_npix'][dindex]=self.coadd_npix
+        self.data['coadd_wsum'][dindex]=self.coadd_wsum
+        self.data['coadd_wmax'][dindex]=self.coadd_wmax
+        self.data['coadd_mask_frac'][dindex]=mask_frac
+        self.data['coadd_psfrec_T_mean'][dindex]=T
+        self.data['coadd_psfrec_g1_mean'][dindex]=g1
+        self.data['coadd_psfrec_g2_mean'][dindex]=g2
 
         wsum=self.wsum
-        wcounts_sum=self.psf_counts_wsum
         if wsum > 0:
-            counts=wcounts_sum/wsum
+            T=self.psfrec_T_wsum/wsum
+            g1=self.psfrec_g1_wsum/wsum
+            g2=self.psfrec_g2_wsum/wsum
+            mask_frac=(wsum/self.wmax)/self.npix
         else:
-            counts=DEFVAL
+            T=DEFVAL
+            g1=DEFVAL
+            g2=DEFVAL
+            mask_frac=1.0
 
-        #print("        psfrec counts band",band,"mean:",counts)
-        self.data['psfrec_counts_mean'][dindex,band]=counts
+        self.data['npix'][dindex]=self.npix
+        self.data['wsum'][dindex]=self.wsum
+        self.data['wmax'][dindex]=self.wmax
+        self.data['mask_frac'][dindex]=mask_frac
+        self.data['psfrec_T_mean'][dindex]=T
+        self.data['psfrec_g1_mean'][dindex]=g1
+        self.data['psfrec_g2_mean'][dindex]=g2
 
 
     def _reject_outliers(self, obs_list):
@@ -477,18 +539,41 @@ class MedsFit(dict):
         # note this means that the psf counts sum and wsum should always
         # be incremented together
 
+        npix = im.size
+
         wsum = wt.sum()
+        wmax=wt.max()
         imsum = psf_obs.image.sum()
 
+        g1,g2,T=psf_gmix.get_g1g2T()
+
         if icut==0:
-            self.coadd_psf_counts_wsum += imsum*wsum
+            self.coadd_npix += npix
+            self.coadd_psfrec_counts_wsum += imsum*wsum
+            self.coadd_psfrec_T_wsum += T*wsum
+            self.coadd_psfrec_g1_wsum += g1*wsum
+            self.coadd_psfrec_g2_wsum += g2*wsum
             self.coadd_wsum += wsum
+
+            self.coadd_band_wsum += wsum
+
+            if wmax > self.coadd_wmax:
+                self.coadd_wmax=wmax
         else:
-            self.psf_counts_wsum += imsum*wsum
+            self.npix += npix
+            self.psfrec_counts_wsum += imsum*wsum
+            self.psfrec_T_wsum += T*wsum
+            self.psfrec_g1_wsum += g1*wsum
+            self.psfrec_g2_wsum += g2*wsum
             self.wsum += wsum
 
+            self.band_wsum += wsum
+
+            if wmax > self.wmax:
+                self.wmax=wmax
+
         self._set_psf_result(psf_gmix, imsum)
-        self._set_wsum(wsum)
+        self._set_wsum_wmax(wsum,wmax)
 
         psf_obs.set_gmix(psf_gmix)
 
@@ -630,15 +715,14 @@ class MedsFit(dict):
         ed['psf_fit_pars'][epoch_index,:] = pars
 
 
-    def _set_wsum(self, wsum):
+    def _set_wsum_wmax(self, wsum, wmax):
         """
-        Set psf fit data.
-
-        im is the psf image
+        set weight sum and max for this epoch
         """
 
         epoch_index=self.epoch_index
         self.epoch_data['wsum'][epoch_index] = wsum
+        self.epoch_data['wmax'][epoch_index] = wmax
 
         #print("        wsum:",wsum)
 
@@ -651,13 +735,18 @@ class MedsFit(dict):
         ed=self.epoch_data
 
         # mindex can be an index into a sub-range meds
+        ed['id'][epoch_index] = meds['id'][mindex]
         ed['number'][epoch_index] = meds['number'][mindex]
         ed['band_num'][epoch_index] = band
         ed['cutout_index'][epoch_index] = icut
-        ed['file_id'][epoch_index]  = meds['file_id'][mindex,icut].astype('i4')
         ed['orig_row'][epoch_index] = meds['orig_row'][mindex,icut]
         ed['orig_col'][epoch_index] = meds['orig_col'][mindex,icut]
         ed['psf_fit_flags'][epoch_index] = flags
+
+        file_id  = meds['file_id'][mindex,icut].astype('i4')
+        image_id = meds._image_info[file_id]['image_id']
+        ed['file_id'][epoch_index]  = file_id
+        ed['image_id'][epoch_index]  = image_id
 
 
     def _should_keep_psf(self, gm):
@@ -1556,13 +1645,16 @@ class MedsFit(dict):
 
         psf_ngauss=self['psf_em_pars']['ngauss']
         npars=psf_ngauss*6
-        dt=[('number','i4'), # 1-n as in sextractor
+        dt=[('id','i8'),     # could be coadd_objects_id
+            ('number','i4'), # 1-n as in sextractor
             ('band_num','i2'),
             ('cutout_index','i4'), # this is the index into e.g. m['orig_row'][3,index]
             ('orig_row','f8'),
             ('orig_col','f8'),
-            ('file_id','i4'),
+            ('file_id','i4'),   # id in meds file
+            ('image_id','i8'),  # image_id specified in meds creation, e.g. for image table
             ('wsum','f8'),
+            ('wmax','f8'),
             ('psf_fit_flags','i4'),
             ('psf_counts','f8'),
             ('psf_fit_g','f8',2),
@@ -1573,10 +1665,12 @@ class MedsFit(dict):
         if ncutout > 0:
             epoch_data = numpy.zeros(ncutout, dtype=dt)
 
-            epoch_data['number'] = -1
-            epoch_data['band_num'] = -1
-            epoch_data['cutout_index'] = -1
-            epoch_data['file_id'] = -1
+            epoch_data['id'] = DEFVAL
+            epoch_data['number'] = DEFVAL
+            epoch_data['band_num'] = DEFVAL
+            epoch_data['cutout_index'] = DEFVAL
+            epoch_data['file_id'] = DEFVAL
+            epoch_data['image_id'] = DEFVAL
             epoch_data['psf_counts'] = DEFVAL
             epoch_data['psf_fit_g'] = PDEFVAL
             epoch_data['psf_fit_T'] = PDEFVAL
@@ -1598,14 +1692,31 @@ class MedsFit(dict):
         bshape=(nband,)
         simple_npars=5+nband
 
-        dt=[('number','i4'),
+        dt=[('id','i8'),
+            ('number','i4'),
             ('processed','i1'),
             ('flags','i4'),
             ('nimage_tot','i4',bshape),
             ('nimage_use','i4',bshape),
             ('time','f8'),
+
+            ('coadd_npix','i4'),
+            ('coadd_wsum','f8'),
+            ('coadd_wmax','f8'),
+            ('coadd_mask_frac','f8'),
             ('coadd_psfrec_counts_mean','f8',bshape),
-            ('psfrec_counts_mean','f8',bshape)]
+            ('coadd_psfrec_T_mean','f8'),
+            ('coadd_psfrec_g1_mean','f8'),
+            ('coadd_psfrec_g2_mean','f8'),
+
+            ('npix','i4'),
+            ('wsum','f8'),
+            ('wmax','f8'),
+            ('mask_frac','f8'),
+            ('psfrec_counts_mean','f8',bshape),
+            ('psfrec_T_mean','f8'),
+            ('psfrec_g1_mean','f8'),
+            ('psfrec_g2_mean','f8')]
 
         # coadd fit with em 1 gauss
         # the psf flux fits are done for each band separately
@@ -1664,8 +1775,18 @@ class MedsFit(dict):
         num=self.index_list.size
         data=numpy.zeros(num, dtype=dt)
 
+        data['coadd_mask_frac'] = PDEFVAL
         data['coadd_psfrec_counts_mean'] = DEFVAL
+        data['coadd_psfrec_T_mean'] = DEFVAL
+        data['coadd_psfrec_g1_mean'] = DEFVAL
+        data['coadd_psfrec_g2_mean'] = DEFVAL
+
+        data['mask_frac'] = PDEFVAL
         data['psfrec_counts_mean'] = DEFVAL
+        data['psfrec_T_mean'] = DEFVAL
+        data['psfrec_g1_mean'] = DEFVAL
+        data['psfrec_g2_mean'] = DEFVAL
+
 
         for name in ['coadd_psf','psf']:
             n=get_model_names(name)

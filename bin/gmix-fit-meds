@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-    %prog [options] config_file meds_file(s) out_file
+    %prog [options] config_file out_file meds_file1 meds_files2 ...
 
 Process the input meds file.
 """
@@ -560,8 +560,8 @@ def main():
         sys.exit(45)
 
     config_file=args[0]
-    meds_files=args[1].split(',')
-    out_file=args[2]
+    out_file=args[1]
+    meds_files=args[2:]
 
     if options.profile:
         go_profile(config_file, meds_files, out_file, options)

@@ -1,3 +1,4 @@
+from __future__ import print_function
 import os
 import copy
 
@@ -399,7 +400,7 @@ class StagedOutFile(object):
                     os.remove(self.final_path)
 
                 makedir_fromfile(self.final_path)
-                print("staging",self.path,"->",self.final_path)
+                print("staging out",self.path,"->",self.final_path)
                 shutil.move(self.path,self.final_path)
 
         self.was_staged_out=True
