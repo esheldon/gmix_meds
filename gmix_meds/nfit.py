@@ -288,7 +288,7 @@ class MedsFit(dict):
 
         print(coadd_mb_obs_list[0][0].image.shape)
 
-        self.data['nimage_use'][dindex, :] = n_im
+        self.data['nimage_use'][dindex, :] = n_im[:]
 
         self.sdata={'coadd_mb_obs_list':coadd_mb_obs_list,
                     'mb_obs_list':mb_obs_list}
@@ -349,8 +349,8 @@ class MedsFit(dict):
         coadd_mb_obs_list=MultiBandObsList()
         mb_obs_list=MultiBandObsList()
 
-        # number used
-        n_im = 0
+        # number used in each band
+        n_im = numpy.array(self['nband'])
 
         for band in self.iband:
 
@@ -364,12 +364,11 @@ class MedsFit(dict):
             if len(cobs_list) > 0:
                 coadd_mb_obs_list.append(cobs_list)
 
-            this_n_im=len(obs_list)
-            if this_n_im > 0:
+            n_im[band]=len(obs_list)
+            if n_im[band] > 0:
                 if self['reject_outliers']:
                     self._reject_outliers(obs_list)
                 mb_obs_list.append(obs_list)
-            n_im += this_n_im
 
             self.set_psfrec_counts_mean(band)
 
