@@ -204,22 +204,39 @@ def add_indexes(table_name):
     """
     import desdb
     epochs_table_name = get_epochs_table_name(table_name)
+    epochs_table_name_short = get_epochs_table_name(table_name,short=True)
 
     index_cols=get_index_cols()
     epoch_index_cols=get_epoch_index_cols()
 
-    qt="create index {col}_idx on {table_name}({col})"
+
+    qt="create index {index_name} on {table_name}({col})"
 
     conn=desdb.Connection()
     curs = conn.cursor()
+    """
     for col in index_cols:
-        query = qt.format(table_name=table_name, col=col)
+        index_name='{table_name}{col}idx'.format(table_name=table_name,
+                                                   col=col)
+        index_name=index_name.replace('_','')
+
+
+        query = qt.format(index_name=index_name,
+                          table_name=table_name,
+                          col=col)
         print(query)
 
         curs.execute(query)
-
+    """
     for col in epoch_index_cols:
-        query = qt.format(table_name=epochs_table_name, col=col)
+        index_name='{table_name}{col}idx'.format(table_name=epochs_table_name_short,
+                                                 col=col)
+        index_name=index_name.replace('_','')
+
+
+        query = qt.format(index_name=index_name,
+                          table_name=epochs_table_name,
+                          col=col)
         print(query)
 
         curs.execute(query)
@@ -227,12 +244,15 @@ def add_indexes(table_name):
     curs.close()
     conn.close()
 
-def get_epochs_table_name(table_name):
+def get_epochs_table_name(table_name, short=False):
     """
     For a table get the corresponding epochs
     table name
     """
-    return '%s_epochs' % table_name
+    if short:
+        return '%se' % table_name
+    else:
+        return '%s_epochs' % table_name
 
 def get_band_cols():
     colnames=['nimage_tot',
@@ -277,7 +297,8 @@ def get_band_cols():
     return colnames
 
 def get_index_cols():
-    return ['tilename',
+    return [
+            'tilename',
             'coadd_object_number',
             'flags',
 
@@ -285,6 +306,7 @@ def get_index_cols():
             'coadd_psf_flags_r',
             'coadd_psf_flags_i',
             'coadd_psf_flags_z',
+
             # forgot to make psf mag for coadd
             #'coadd_psf_mag_g',
             #'coadd_psf_mag_r',
@@ -295,17 +317,17 @@ def get_index_cols():
             'psf_flags_r',
             'psf_flags_i',
             'psf_flags_z',
-            'psf_mag_g',
-            'psf_mag_r',
+            #'psf_mag_g',
+            #'psf_mag_r',
             'psf_mag_i',
-            'psf_mag_z',
+            #'psf_mag_z',
 
             'coadd_exp_flags',
             'coadd_exp_chi2per',
-            'coadd_exp_mag_g',
-            'coadd_exp_mag_r',
+            #'coadd_exp_mag_g',
+            #'coadd_exp_mag_r',
             'coadd_exp_mag_i',
-            'coadd_exp_mag_z',
+            #'coadd_exp_mag_z',
             'coadd_exp_s2n_w',
             'coadd_exp_T_s2n',
             'coadd_exp_e_1',
@@ -314,10 +336,10 @@ def get_index_cols():
 
             'coadd_dev_flags',
             'coadd_dev_chi2per',
-            'coadd_dev_mag_g',
-            'coadd_dev_mag_r',
+            #'coadd_dev_mag_g',
+            #'coadd_dev_mag_r',
             'coadd_dev_mag_i',
-            'coadd_dev_mag_z',
+            #'coadd_dev_mag_z',
             'coadd_dev_s2n_w',
             'coadd_dev_T_s2n',
             'coadd_dev_e_1',
@@ -326,10 +348,10 @@ def get_index_cols():
 
             'exp_flags',
             'exp_chi2per',
-            'exp_mag_g',
-            'exp_mag_r',
+            #'exp_mag_g',
+            #'exp_mag_r',
             'exp_mag_i',
-            'exp_mag_z',
+            #'exp_mag_z',
             'exp_s2n_w',
             'exp_T_s2n',
             'exp_e_1',
@@ -338,10 +360,10 @@ def get_index_cols():
 
             'dev_flags',
             'dev_chi2per',
-            'dev_mag_g',
-            'dev_mag_r',
+            #'dev_mag_g',
+            #'dev_mag_r',
             'dev_mag_i',
-            'dev_mag_z',
+            #'dev_mag_z',
             'dev_s2n_w',
             'dev_T_s2n',
             'dev_e_1',
