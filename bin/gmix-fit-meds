@@ -12,6 +12,7 @@ import yaml
 import fitsio
 import meds
 import gmix_meds
+from gmix_meds.files import makedir_fromfile
 import pprint
 
 #import esutil as eu
@@ -40,15 +41,6 @@ def load_config(fname):
     with open(fname) as fobj:
         data=yaml.load(fobj)
     return data
-
-def makedir_fromfile(fname):
-    dname=os.path.dirname(fname)
-    if not os.path.exists(dname):
-        try:
-            os.makedirs(dname)
-        except:
-            # probably a race condition
-            pass
 
 def make_ngmix_meta(conf, meds_meta_list, meds_files):
 
@@ -426,12 +418,6 @@ def go_profile(config_file, meds_files, out_file, options):
 
     print("doing profile")
 
-    conf=load_config(config_file)
-    if conf['fitter']=='ngmix':
-        # pycallgraph doesn't like it when the JIT starts up
-        import ngmix
-
-
     cProfile.runctx('go(config_file, meds_files, out_file, options)',
                     globals(),locals(),
                     'profile_stats')
@@ -510,17 +496,25 @@ def setup_work_files(options, meds_files):
     return rng_send, meds_files, meds_files_full, extracted
 
  
-def write_data(data, epoch_data, meta, out_file):
+def write_data(data, epoch_data, meta, out_file, work_dir=None):
     """
     write the actual data.  clobber existing
     """
-    makedir_fromfile(out_file)
-    print('writing:',out_file)
-    with fitsio.FITS(out_file,'rw',clobber=True) as fobj:
-        fobj.write(data,extname="model_fits")
-        if epoch_data is not None:
-            fobj.write(epoch_data,extname="epoch_data")
-        fobj.write(meta,extname="meta_data")
+    from gmix_meds.files import StagedOutFile
+
+    if work_dir is None:
+        work_dir=os.environ.get('TMPDIR','/tmp')
+
+    with StagedOutFile(out_file, tmpdir=work_dir) as sf:
+        print('writing:',sf.path)
+        with fitsio.FITS(sf.path,'rw',clobber=True) as fobj:
+
+            fobj.write(data,extname="model_fits")
+
+            if epoch_data is not None:
+                fobj.write(epoch_data,extname="epoch_data")
+
+            fobj.write(meta,extname="meta_data")
 
 
 def go(config_file, meds_files, out_file, options):
@@ -528,6 +522,9 @@ def go(config_file, meds_files, out_file, options):
     checkpoint_file, checkpoint_data=get_checkpoint_data(out_file)
 
     conf=load_config(config_file)
+
+    if options.work_dir is not None:
+        conf['work_dir']=options.work_dir
     
     conf['make_plots'] = options.make_plots
 
@@ -551,7 +548,7 @@ def go(config_file, meds_files, out_file, options):
     if options.work_dir is not None:
         meta['meds_file'] = meds_files_full
 
-    write_data(data, epoch_data, meta, out_file)
+    write_data(data, epoch_data, meta, out_file, work_dir=options.work_dir)
 
     cleanup_checkpoint(checkpoint_file)
   

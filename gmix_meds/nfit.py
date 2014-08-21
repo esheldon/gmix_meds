@@ -118,6 +118,8 @@ class MedsFit(dict):
         self['reject_outliers']=self.get('reject_outliers',True) # from cutouts
         self['make_plots']=self.get('make_plots',False)
 
+        self['work_dir'] = self.get('work_dir',os.environ.get('TMPDIR','/tmp'))
+
     def _unpack_priors(self, priors_in):
         """
         Currently only separable priors
@@ -1503,13 +1505,15 @@ class MedsFit(dict):
         checkpoint file.
         """
         import fitsio
+        from .files import StagedOutFile
 
         print('checkpointing at',tm/60,'minutes')
         print(self.checkpoint_file)
 
-        with fitsio.FITS(self.checkpoint_file,'rw',clobber=True) as fobj:
-            fobj.write(self.data, extname="model_fits")
-            fobj.write(self.epoch_data, extname="epoch_data")
+        with StagedOutFile(self.checkpoint_file, tmpdir=self['work_dir']) as sf:
+            with fitsio.FITS(sf.path,'rw',clobber=True) as fobj:
+                fobj.write(self.data, extname="model_fits")
+                fobj.write(self.epoch_data, extname="epoch_data")
 
     def _check_models(self):
         """
