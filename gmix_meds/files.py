@@ -1,6 +1,7 @@
 from __future__ import print_function
 import os
 import copy
+import numpy
 
 DEFAULT_NPER=10
 
@@ -209,7 +210,7 @@ def get_chunks(ntot, nper):
     [ [beg1,end1], [beg2,end2], ...]
 
     """
-    indices=numpy.arange(nobj)
+    indices=numpy.arange(ntot)
     nchunk=ntot/nper
 
     chunk_list=[]
@@ -222,9 +223,9 @@ def get_chunks(ntot, nper):
         if end > (ntot-1):
             end=ntot-1
 
-        chunklist.append( [beg,end] )
+        chunk_list.append( [beg,end] )
 
-    return chunklist
+    return chunk_list
 
 def get_condor_head_template():
     text="""
@@ -254,7 +255,7 @@ command: |
     module unload gmix_meds && module load gmix_meds/work
 
     config_file="%(config_file)s"
-    meds_files="%(meds_files_csv)s"
+    meds_files="%(meds_files_spaced)s"
     beg="%(beg)s"
     end="%(end)s"
     out_file="%(out_file)s"
@@ -262,7 +263,7 @@ command: |
 
     master_script=%(master_script)s
 
-    $master_script $config_file $meds_files $beg $end $out_file $log_file
+    $master_script $config_file $beg $end $out_file $log_file "$meds_files"
 
 job_name: %(job_name)s\n"""
 
@@ -276,24 +277,25 @@ function go {
     python -u $GMIX_MEDS_DIR/bin/gmix-fit-meds     \\
             --obj-range $beg,$end                  \\
             --work-dir $tmpdir                     \\
-            $config_file $meds_file $out_file
+            $config_file $out_file "${meds_files[@]}"
     
     exit_status=$?
 
 }
 
-if [ $# -lt 5 ]; then
-    echo "error: config_file meds_file beg end out_file"
+if [ $# -lt 6 ]; then
+    echo "error: config_file beg end out_file log_file meds_file1 [meds_file2 ...]"
     exit 1
 fi
 
-# this can be a list
-config_file="$1"
-meds_file="$2"
-beg="$3"
-end="$4"
-out_file="$5"
-log_file="$6"
+args=("$@")
+
+config_file=${args[0]}
+beg=${args[1]}
+end=${args[2]}
+out_file=${args[3]}
+log_file=${args[4]}
+meds_files=( "${args[@]:5}" )
 
 if [[ -n $_CONDOR_SCRATCH_DIR ]]; then
     tmpdir=$_CONDOR_SCRATCH_DIR

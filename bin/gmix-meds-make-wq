@@ -33,7 +33,7 @@ class Maker(dict):
         self['config_file']=config_file
 
         self['meds_file_list'] = meds_files
-        self['meds_files_csv']=','.join(meds_files)
+        self['meds_files_spaced']=' '.join(meds_files)
 
         self['root_dir']=root_dir
         self['sub_dir']=sub_dir
