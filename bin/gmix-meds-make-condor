@@ -8,7 +8,7 @@ import sys
 import numpy
 
 import gmix_meds
-from gmix_meds.files import WQMaker, DEFAULT_NPER
+from gmix_meds.files import CondorMaker, DEFAULT_NPER
 
 from optparse import OptionParser
 
@@ -33,11 +33,11 @@ def main():
     config_file=args[1]
     meds_files=args[2:]
 
-    maker=WQMaker(run_name, config_file, meds_files,
-                  nper=int(options.nper),
-                  root_dir=options.root_dir,
-                  missing=options.missing,
-                  sub_dir=options.sub_dir)
+    maker=CondorMaker(run_name, config_file, meds_files,
+                      nper=int(options.nper),
+                      root_dir=options.root_dir,
+                      missing=options.missing,
+                      sub_dir=options.sub_dir)
 
     maker.write()
 

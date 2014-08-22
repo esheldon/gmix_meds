@@ -40,127 +40,36 @@ class Files(dict):
         """
         return self._run_dir
 
-    def get_wq_dir(self, sub_dir=None):
+    def get_file_dir(self, *path_elements):
         """
-        wq directory
+        get a directory name starting at run_dir with the
+        additional path elements
 
         parameters
         ----------
-        sub_dir: string, optional
-            An optional sub-directory to use, e.g.
-            a tile name for DES data
+        path_element1, path_element2, ...: each a string
+
+        returns
+        -------
+        $run_dir/$element1/$element2/...
         """
 
-        if sub_dir is not None:
-            return os.path.join(self._run_dir, 'wq', sub_dir)
-        else:
-            return os.path.join(self._run_dir, 'wq')
+        return os.path.join(self._run_dir, *path_elements)
 
-    def get_script_dir(self):
-        """
-        script directory
-        """
-        return os.path.join(self._run_dir,'script')
-
-    def get_output_dir(self, sub_dir=None):
-        """
-        output directory
-
-        parameters
-        ----------
-        sub_dir: string, optional
-            An optional sub-directory to use, e.g.
-            a tile name for DES data
-        """
-        if sub_dir is not None:
-            return os.path.join(self._run_dir, 'output', sub_dir)
-        else:
-            return os.path.join(self._run_dir, 'output')
-
-    def get_collated_dir(self):
-        """
-        collated directory
-        """
-        return os.path.join(self._run_dir, 'collated')
-
-
-    def get_master_script_file(self):
-        """
-        get the path to the master script
-        """
-        sdir=self.get_script_dir()
-        return os.path.join(sdir, 'master.sh')
-
-    def get_output_file(self, split, sub_dir=None):
-        """
-        output directory file name
-
-        parameters
-        ----------
-        split: 2-element sequence
-            [beg,end] for split.
-        sub_dir: string, optional
-            An optional sub-directory name to use, e.g.
-            a tile name for DES data
-
-        %(run)s-%(beg)06d-%(end)%06d.fits
-        %(run)s-%(sub_dir)s-%(beg)06d-%(end)%06d.fits
-        """
-
-        odir=self.get_output_dir(sub_dir=sub_dir)
-
-        name=self._get_name(sub_dir=sub_dir, split=split, ext='fits')
-        return os.path.join(odir, name)
-
-    def get_collated_file(self, sub_dir=None, extra=None):
-        """
-        output directory file name
-
-        parameters
-        ----------
-        sub_dir: string, optional
-            An optional sub-directory name to use, e.g.
-            a tile name for DES data
-        extra: string
-            Extra string, e.g. 'blind'
-
-        %(run)s.fits
-        %(run)s-%(sub_dir)s.fits
-        %(run)s-%(sub_dir)s-%(extra)s.fits
-        """
-
-        odir=self.get_collated_dir()
-
-        name=self._get_name(sub_dir=sub_dir, extra=extra, ext='fits')
-        return os.path.join(odir, name)
-
-
-    def get_wq_file(self, sub_dir=None, split=None):
-        """
-        output directory file name
-
-        parameters
-        ----------
-        sub_dir: string, optional
-            An optional sub-directory name to use, e.g.
-            a tile name for DES data
-        split: optional, 2-element sequence
-            [beg,end] for split.
-        """
-
-        odir=self.get_wq_dir(sub_dir=sub_dir)
-
-        name=self._get_name(sub_dir=sub_dir, split=split, ext='yaml')
-        return os.path.join(odir, name)
-
-    def _get_name(self, sub_dir=None, split=None, extra=None, ext='fits'):
+    def get_file_name(self, *path_elements, **kw):
         """
         get generic name, with sub_dir and split possibility
-        """
-        name=[copy.copy(self._run)]
 
-        if sub_dir is not None:
-            name.append(sub_dir)
+        ftype is generally optional
+        """
+
+        split=kw.get('split',None)
+        extra=kw.get('extra',None)
+        ext=kw.get('ext',None)
+
+        dir=self.get_file_dir(*path_elements)
+
+        name=[copy.copy(self._run)] + list(path_elements)
 
         if split is not None:
             if len(split) != 2:
@@ -175,8 +84,153 @@ class Files(dict):
         name='-'.join(name)
         name='%s.%s' % (name, ext)
 
-        return name
+        return os.path.join(dir, name)
 
+    def get_script_dir(self):
+        """
+        get the directory for the script
+        """
+        return self.get_file_dir('script')
+
+    def get_script_file(self):
+        """
+        get the path to the master script
+        """
+        path=self.get_file_name('script', ext='sh')
+        return path
+
+    def get_output_dir(self, sub_dir=None):
+        """
+        output directory
+
+        parameters
+        ----------
+        sub_dir: string, optional
+            An optional sub-directory name to use, e.g.
+            a tile name for DES data
+
+        %(run)s-%(beg)06d-%(end)%06d.fits
+        %(run)s-%(sub_dir)s-%(beg)06d-%(end)%06d.fits
+        """
+
+        path_elements=['output']
+        if sub_dir is not None:
+            path_elements.append(sub_dir)
+        return self.get_file_dir(*path_elements)
+
+    def get_output_file(self, split, sub_dir=None):
+        """
+        output file name
+
+        parameters
+        ----------
+        split: 2-element sequence
+            [beg,end] for split.
+        sub_dir: string, optional
+            An optional sub-directory name to use, e.g.
+            a tile name for DES data
+        """
+
+        path_elements=['output']
+        if sub_dir is not None:
+            path_elements.append(sub_dir)
+        path=self.get_file_name(*path_elements, split=split, ext='fits')
+        return path
+
+    def get_collated_dir(self):
+        """
+        collated directory
+        """
+        return self.get_file_dir('collated')
+
+    def get_collated_file(self, extra=None):
+        """
+        output directory file name
+
+        parameters
+        ----------
+        sub_dir: string, optional
+            An optional sub-directory name to use, e.g.
+            a tile name for DES data
+        extra: string
+            Extra string, e.g. 'blind'
+        """
+
+        path=self.get_file_name('collated', extra=extra, ext='fits')
+        return path
+
+    def get_wq_dir(self, sub_dir=None):
+        """
+        wq directory
+
+        parameters
+        ----------
+        sub_dir: string, optional
+            An optional sub-directory name to use, e.g.
+            a tile name for DES data
+        """
+
+        path_elements=['wq']
+        if sub_dir is not None:
+            path_elements.append(sub_dir)
+        return self.get_file_dir(*path_elements)
+
+    def get_wq_file(self, sub_dir=None, split=None, extra=None):
+        """
+        wq file name
+
+        parameters
+        ----------
+        sub_dir: string, optional
+            An optional sub-directory name to use, e.g.
+            a tile name for DES data
+        split: optional, 2-element sequence
+            [beg,end] for split.
+        extra: string, optional
+            e.g. 'missing'
+        """
+
+        path_elements=['wq']
+        if sub_dir is not None:
+            path_elements.append(sub_dir)
+
+        path=self.get_file_name(*path_elements, split=split, ext='yaml', extra=extra)
+        return path
+
+    def get_condor_dir(self):
+        """
+        condor directory
+        """
+
+        return self.get_file_dir('condor')
+
+    def get_condor_file(self, sub_dir=None, extra=None):
+        """
+        condor file name
+
+        parameters
+        ----------
+        sub_dir: string, optional
+            This is the subdir for the output files; condor files are all
+            in the same directory but this goes into the name
+        extra: string, optional
+            e.g. 'missing'
+        """
+
+        ex=None
+        if sub_dir is not None:
+            ex=[sub_dir]
+        if extra is not None:
+            if ex is None:
+                ex=[extra]
+            else:
+                ex.append(extra)
+
+        if ex is not None:
+            ex='-'.join(ex)
+
+        path=self.get_file_name('condor', extra=ex, ext='condor')
+        return path
 
     def _set_root_dir(self, root_dir=None):
         """
@@ -209,6 +263,8 @@ def get_chunks(ntot, nper):
 
     [ [beg1,end1], [beg2,end2], ...]
 
+    these are not like python slices where it really means [beg1,end1)
+
     """
     indices=numpy.arange(ntot)
     nchunk=ntot/nper
@@ -218,7 +274,7 @@ def get_chunks(ntot, nper):
     for i in xrange(nchunk):
 
         beg=i*nper
-        end=(i+1)*nper
+        end=(i+1)*nper-1
         
         if end > (ntot-1):
             end=ntot-1
@@ -246,6 +302,13 @@ requirements = (cpu_experiment == "star") || (cpu_experiment == "phenix")
 #requirements = (cpu_experiment == "star")
 
 +Experiment     = "astro"\n\n"""
+    return text
+
+def get_condor_job_template():
+    text="""
++job_name = "%(job_name)s"
+Arguments = %(config_file)s %(beg)d %(end)d %(out_file)s %(log_file)s %(meds_files_spaced)s"
+Queue\n"""
     return text
 
 def get_wq_template():
@@ -420,5 +483,217 @@ def makedir_fromfile(fname):
         except:
             # probably a race condition
             pass
+
+
+class MakerBase(dict):
+    def __init__(self, run_name, config_file, meds_files,
+                 root_dir=None, sub_dir=None, missing=False,
+                 nper=DEFAULT_NPER):
+        self['run_name']=run_name
+        self['config_file']=config_file
+
+        self['meds_file_list'] = meds_files
+        self['meds_files_spaced']=' '.join(meds_files)
+
+        self['root_dir']=root_dir
+        self['sub_dir']=sub_dir
+        self['missing']=missing
+        self['nper']=nper
+
+        self._files=Files(self['run_name'],
+                          root_dir=self['root_dir'])
+        self['master_script'] = self._files.get_script_file()
+
+        self._load_config()
+        self._count_objects()
+
+    def write(self):
+        """
+        write master script and wq yaml scripts
+
+        over-ride this method, calling this one with
+        super to write the master script and  then write the
+        specific files for the child object
+        """
+        self._make_dirs()
+        self._write_master_script()
+
+    def _write_master_script(self):
+        """
+        write the master script
+        """
+       
+        sfile=self['master_script']
+        print("writing master script:",sfile)
+        with open(sfile,'w') as fobj:
+            master_text=get_master_script_text()
+            fobj.write(master_text)
+
+        cmd='chmod 755 %s' % sfile
+        print(cmd)
+        os.system(cmd)
+
+    def _load_config(self):
+        import yaml
+        with open(self['config_file']) as fobj:
+            conf=yaml.load(fobj)
+
+        self.update(conf)
+
+    def _count_objects(self):
+        import meds
+        fname=self['meds_file_list'][0]
+        with meds.MEDS(fname) as meds_obj:
+            nobj=meds_obj.size
+
+        self['nobj']=nobj
+
+
+    def _make_dirs(self):
+        """
+        make all the output directories
+
+        to add new directories, over-ride this method, calling this one with
+        super and then working with your directories
+
+        """
+        dir=self._files.get_output_dir(sub_dir=self['sub_dir'])
+        if not os.path.exists(dir):
+            print("making output dir:",dir)
+            os.makedirs(dir)
+
+        dir=self._files.get_script_dir()
+        if not os.path.exists(dir):
+            print("making script dir:",dir)
+            os.makedirs(dir)
+
+class WQMaker(MakerBase):
+    def write(self):
+        """
+        write master script
+        """
+        super(WQMaker,self).write()
+        self._write_wq_scripts()
+
+    def _write_wq_scripts(self):
+        """
+        write the wq scripts
+        """
+
+        nper=self['nper']
+        nobj=self['nobj']
+
+        chunklist = get_chunks(self['nobj'], self['nper'])
+
+        nchunk=len(chunklist)
+
+        for split in chunklist:
+            self._write_wq_file(split)
+
+    def _write_wq_file(self, split):
+
+        self['beg']=split[0]
+        self['end']=split[1]
+        self['out_file']=self._files.get_output_file(split, sub_dir=self['sub_dir'])
+        self['log_file']=self['out_file'].replace('.fits','.log')
+
+        job_name=[]
+        if self['sub_dir'] is not None:
+            job_name.append(self['sub_dir'])
+        job_name.append('%s' % split[0])
+        job_name.append('%s' % split[1])
+
+        self['job_name'] = '-'.join(job_name)
+
+
+        if self['missing']:
+            extra='missing'
+        else:
+            extra=None
+        wq_file=self._files.get_wq_file(sub_dir=self['sub_dir'],
+                                        split=split,
+                                        extra=extra)
+        print(wq_file)
+        with open(wq_file,'w') as fobj:
+            text=get_wq_template()
+            text = text % self
+            fobj.write(text)
+
+    def _make_dirs(self):
+        """
+        make all the output directories
+        """
+        super(WQMaker,self)._make_dirs()
+        dir=self._files.get_wq_dir(sub_dir=self['sub_dir'])
+        if not os.path.exists(dir):
+            print("making wq dir:",dir)
+            os.makedirs(dir)
+
+class CondorMaker(MakerBase):
+    def write(self):
+        """
+        write master script and condor script
+        """
+        super(CondorMaker,self).write()
+        self._write_condor_script()
+
+    def _write_condor_script(self):
+        """
+        write the one big condor submit script
+        """
+
+        # we dump all the condor files into the same directory
+        if self['missing']:
+            extra='missing'
+        else:
+            extra=None
+
+        condor_file=self._files.get_condor_file(sub_dir=self['sub_dir'],extra=extra)
+        print(condor_file)
+
+        head=get_condor_head_template()
+        head=head % self
+
+
+        nper=self['nper']
+        nobj=self['nobj']
+
+        chunklist = get_chunks(self['nobj'], self['nper'])
+
+        nchunk=len(chunklist)
+
+        ltemplate=get_condor_job_template()
+        with open(condor_file,'w') as fobj:
+            fobj.write(head)
+
+            # $master_script $config_file $beg $end $out_file $log_file "$meds_files"
+
+            for split in chunklist:
+                self['beg']=split[0]
+                self['end']=split[1]
+                self['out_file']=self._files.get_output_file(split, sub_dir=self['sub_dir'])
+                self['log_file']=self['out_file'].replace('.fits','.log')
+
+                job_name=[]
+                if self['sub_dir'] is not None:
+                    job_name.append(self['sub_dir'])
+                job_name.append('%s' % split[0])
+                job_name.append('%s' % split[1])
+
+                self['job_name'] = '-'.join(job_name)
+
+                job=ltemplate % self
+
+                fobj.write(job)
+
+    def _make_dirs(self):
+        """
+        make all the output directories
+        """
+        super(CondorMaker,self)._make_dirs()
+        dir=self._files.get_condor_dir()
+        if not os.path.exists(dir):
+            print("making condor dir:",dir)
+            os.makedirs(dir)
 
 
