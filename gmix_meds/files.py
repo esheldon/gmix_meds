@@ -298,7 +298,7 @@ GetEnv = True
 
 kill_sig        = SIGINT
 
-requirements = (cpu_experiment == "star") || (cpu_experiment == "phenix")
+#requirements = (cpu_experiment == "star") || (cpu_experiment == "phenix")
 #requirements = (cpu_experiment == "star")
 
 +Experiment     = "astro"\n\n"""
@@ -597,6 +597,14 @@ class WQMaker(MakerBase):
         self['out_file']=self._files.get_output_file(split, sub_dir=self['sub_dir'])
         self['log_file']=self['out_file'].replace('.fits','.log')
 
+        if self['missing']:
+            if os.path.exists(self['out_file']):
+                return
+
+            extra='missing'
+        else:
+            extra=None
+
         job_name=[]
         if self['sub_dir'] is not None:
             job_name.append(self['sub_dir'])
@@ -605,14 +613,6 @@ class WQMaker(MakerBase):
 
         self['job_name'] = '-'.join(job_name)
 
-
-        if self['missing']:
-            extra='missing'
-        else:
-            extra=None
-        wq_file=self._files.get_wq_file(sub_dir=self['sub_dir'],
-                                        split=split,
-                                        extra=extra)
         print(wq_file)
         with open(wq_file,'w') as fobj:
             text=get_wq_template()
@@ -673,6 +673,9 @@ class CondorMaker(MakerBase):
                 self['end']=split[1]
                 self['out_file']=self._files.get_output_file(split, sub_dir=self['sub_dir'])
                 self['log_file']=self['out_file'].replace('.fits','.log')
+
+                if self['missing'] and os.path.exists(self['out_file']):
+                    continue
 
                 job_name=[]
                 if self['sub_dir'] is not None:
