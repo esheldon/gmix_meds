@@ -307,7 +307,7 @@ kill_sig        = SIGINT
 def get_condor_job_template():
     text="""
 +job_name = "%(job_name)s"
-Arguments = %(config_file)s %(beg)d %(end)d %(out_file)s %(log_file)s %(meds_files_spaced)s"
+Arguments = %(config_file)s %(beg)d %(end)d %(out_file)s %(log_file)s %(meds_files_spaced)s
 Queue\n"""
     return text
 
