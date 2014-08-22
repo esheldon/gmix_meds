@@ -374,6 +374,7 @@ def get_index_cols():
 def get_epoch_index_cols():
     return ['coadd_objects_id',
             'image_id',
+            'cutout_index',
             'band',
             'band_num',
             'psf_fit_flags']
