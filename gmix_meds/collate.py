@@ -46,7 +46,9 @@ class Concat(object):
         if bands is None:
             bands = [str(i) for i in xrange(self.nbands)]
         else:
-            assert len(bands)==self.nbands,"wrong number of bands: %d" % len(bands)
+            emess=("wrong number of bands: %d "
+                   "instead of %d" % (len(bands),self.nbands))
+            assert len(bands)==self.nbands,emess
         self.bands=bands
 
         self.sub_dir=sub_dir
@@ -56,7 +58,7 @@ class Concat(object):
 
         self.config = files.read_config(config_file)
 
-        self.file_obj=files.Files(run, root_dir=root_dir)
+        self._files=files.Files(run, root_dir=root_dir)
 
         self.make_collated_dir()
         self.set_collated_file()
@@ -75,7 +77,7 @@ class Concat(object):
 
         for i,split in enumerate(self.chunk_list):
 
-            print('\t%d/%d %s' %(i+1,nchunk,fname), end='')
+            print('\t%d/%d ' %(i+1,nchunk), end='')
             try:
                 data, epoch_data, meta = self.read_chunk(split)
             except ConcatError as err:
@@ -94,9 +96,10 @@ class Concat(object):
         dlist=[]
         elist=[]
 
+        nchunk=len(self.chunk_list)
         for i,split in enumerate(self.chunk_list):
 
-            print('\t%d/%d %s' %(i+1,nchunk,fname), end='')
+            print('\t%d/%d ' %(i+1,nchunk), end='')
             data, epoch_data, meta = self.read_chunk(split)
 
             if self.blind:
@@ -145,11 +148,10 @@ class Concat(object):
 
         names=data.dtype.names
         for model in models:
-            n=get_model_names(model)
 
-            g_name=n['g']
-            Q_name=n['Q']
-            flag_name=n['flags']
+            g_name='%s_g' % model
+            Q_name='%s_Q' % model
+            flag_name='%s_flags' % model
 
             w,=numpy.where(data[flag_name] == 0)
             if w.size > 0:
@@ -198,8 +200,8 @@ class Concat(object):
 
         nbands=self.nbands
         
-        names=data0.dtype.names
-        dt=data0.dtype.descr
+        names=list( data0.dtype.names )
+        dt=[tdt for tdt in data0.dtype.descr]
 
         flux_ind = names.index('psf_flux_err')
         dt.insert(flux_ind+1, ('psf_flux_s2n','f8',nbands) )
@@ -420,10 +422,10 @@ class Concat(object):
             m=meds.MEDS(fname)
             self.meds_list.append(m)
 
-        self.nrows=self.meds_list[0]['object_data'].get_nrows()
+        self.nrows=self.meds_list[0]['id'].size
 
     def make_collated_dir(self):
-        collated_dir = self.files_obj.get_collated_dir()
+        collated_dir = self._files.get_collated_dir()
         files.try_makedir(collated_dir)
 
     def set_collated_file(self):
@@ -435,7 +437,7 @@ class Concat(object):
         else:
             extra=None
             
-        self.collated_file = self.files_obj.get_collated_file(extra=extra)
+        self.collated_file = self._files.get_collated_file(extra=extra)
         self.tmpdir=files.get_temp_dir()
 
 
@@ -443,8 +445,10 @@ class Concat(object):
         """
         read data and epoch data from a given split
         """
-        chunk_file=self.files_obj.get_output_dir(sub_dir=self.sub_dir)
+        chunk_file=self._files.get_output_file(split,sub_dir=self.sub_dir)
 
+        # continuing line from above
+        print(chunk_file)
         data, epoch_data, meta=self.read_data(chunk_file, split)
         return data, epoch_data, meta
 

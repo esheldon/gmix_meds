@@ -31,12 +31,13 @@ parser.add_option('--verify',action='store_true',
 
 def main():
     options, args = parser.parse_args(sys.argv[1:])
-    if len(args) < 2:
+    if len(args) < 3:
         parser.print_help()
         sys.exit(45)
 
     run=args[0]
     config_file=args[1]
+    meds_files=args[2:]
 
     if options.noblind:
         blind=False
@@ -46,10 +47,13 @@ def main():
     bands=options.bands
     if bands is not None:
         bands=bands.split(',')
+    nper=int(options.nper)
 
     tc=gmix_meds.collate.Concat(run,
-                                nper=options.nper,
+                                config_file,
+                                meds_files,
                                 bands=bands,
+                                nper=nper,
                                 sub_dir=options.sub_dir,
                                 blind=blind,
                                 clobber=options.clobber)

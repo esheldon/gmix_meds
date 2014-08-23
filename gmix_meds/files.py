@@ -396,7 +396,7 @@ command: |
             --bands   "$bands"     \\
             "$run"                 \\
             "$config_file"         \\
-            "$meds_files"
+            $meds_files
 
 mode: bynode
 job_name: "%(job_name)s"\n""".format(noblind_line=noblind_line,
