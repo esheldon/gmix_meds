@@ -309,7 +309,7 @@ class MedsFit(dict):
         """
         number of cutouts for the specified object.
         """
-        ncutout=numpy.zeros(self['nband'])
+        ncutout=numpy.zeros(self['nband'],dtype='i4')
         for i,meds in enumerate(self.meds_list):
             ncutout[i] = meds['ncutout'][mindex]
         return ncutout
@@ -353,7 +353,7 @@ class MedsFit(dict):
         mb_obs_list=MultiBandObsList()
 
         # number used in each band
-        n_im = numpy.zeros(self['nband'])
+        n_im = numpy.zeros(self['nband'],dtype='i4')
 
         self.coadd_npix=0
         self.coadd_wsum=0.0
