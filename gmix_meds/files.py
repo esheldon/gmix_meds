@@ -173,7 +173,7 @@ class Files(dict):
         """
         return self.get_file_dir('collated')
 
-    def get_collated_file(self, extra=None):
+    def get_collated_file(self, sub_dir=None, extra=None):
         """
         output directory file name
 
@@ -181,12 +181,13 @@ class Files(dict):
         ----------
         sub_dir: string, optional
             An optional sub-directory name to use, e.g.
-            a tile name for DES data
+            a tile name for DES data.  this does *not* become
+            part of the directory, only the name
         extra: string
             Extra string, e.g. 'blind'
         """
 
-        path=self.get_file_name('collated', extra=extra, ext='fits')
+        path=self.get_file_name('collated', sub_dir=sub_dir, extra=extra, ext='fits')
         return path
 
     def get_wq_dir(self, sub_dir=None):

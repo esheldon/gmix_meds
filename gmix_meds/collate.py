@@ -437,7 +437,8 @@ class Concat(object):
         else:
             extra=None
             
-        self.collated_file = self._files.get_collated_file(extra=extra)
+        self.collated_file = self._files.get_collated_file(sub_dir=self.sub_dir,
+                                                           extra=extra)
         self.tmpdir=files.get_temp_dir()
 
 
