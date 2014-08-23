@@ -110,9 +110,9 @@ class Concat(object):
                 elist.append(epoch_data)
 
         # note using meta from last file
-        self._write_data(dlist, elist, meta, do_epochs)
+        self._write_data(dlist, elist, meta)
 
-    def _write_data(self, dlist, elist, meta, do_epochs):
+    def _write_data(self, dlist, elist, meta):
         """
         write the data, first to a local file then staging out
         the the final location

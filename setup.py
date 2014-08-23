@@ -7,8 +7,6 @@ scripts=['gmix-fit-meds',
          'gmix-meds-collate-all',
          'gmix-fit-double-psf',
          'gmix-fit-meds-stars',
-         'gmix-meds-make-wq',
-         'gmix-meds-make-condor',
          'gmix-meds-make-oracle']
 
 
