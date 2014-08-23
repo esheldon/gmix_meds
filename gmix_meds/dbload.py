@@ -72,6 +72,11 @@ class OracleInputMaker(object):
     """
     def __init__(self, run, tilename, table_name, ftype='mcmc',
                  blind=True, create=False):
+
+        raise RuntimeError("convert names here: "
+                           "id->coadd_objects_id number->coadd_object_number "
+                           "g->e etc")
+
         self.run=run
         self.tilename=tilename
         self.ftype=ftype
@@ -83,6 +88,28 @@ class OracleInputMaker(object):
 
         self.set_info()
 
+    '''
+        use rename_columns
+        name_map={'number':'coadd_object_number', # to match the database
+                  'psf_fit_g':'psf_fit_e'}
+
+        name_map={'number':     'coadd_object_number',
+
+                  'coadd_exp_g':      'coadd_exp_e',
+                  'coadd_exp_g_cov':  'coadd_exp_e_cov',
+                  'coadd_exp_g_sens': 'coadd_exp_e_sens',
+                  'coadd_dev_g':      'coadd_dev_e',
+                  'coadd_dev_g_cov':  'coadd_dev_e_cov',
+                  'coadd_dev_g_sens': 'coadd_dev_e_sens',
+
+                  'exp_g':      'exp_e',
+                  'exp_g_cov':  'exp_e_cov',
+                  'exp_g_sens': 'exp_e_sens',
+                  'dev_g':      'dev_e',
+                  'dev_g_cov':  'dev_e_cov',
+                  'dev_g_sens': 'dev_e_sens'}
+
+    '''
 
     def make_tile_input(self):
         """
@@ -136,7 +163,8 @@ class OracleInputMaker(object):
         throw out columns that match certain patterns
         """
 
-        drop_patterns=['coadd_gauss','logpars','tau','pars','pars_cov']
+        drop_patterns=['coadd_gauss','logpars','tau','pars','pars_cov',
+                       'psf1','processed','aic','bic']
 
         names2keep=[]
         for name in data.dtype.names:
@@ -410,8 +438,11 @@ def get_tilenames(run):
     return tiles
 
 
-def get_temp_dir():
-    if '_CONDOR_SCRATCH_DIR' in os.environ:
-        return os.environ['_CONDOR_SCRATCH_DIR']
-    else:
-        return os.environ['TMPDIR']
+def rename_columns(arr, name_map):
+    names=list( arr.dtype.names )
+    for i,n in enumerate(names):
+        if n in name_map:
+            names[i] = name_map[n]
+
+    arr.dtype.names=tuple(names)
+

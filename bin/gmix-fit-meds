@@ -12,7 +12,7 @@ import yaml
 import fitsio
 import meds
 import gmix_meds
-from gmix_meds.files import makedir_fromfile
+from gmix_meds import files
 import pprint
 
 #import esutil as eu
@@ -37,10 +37,6 @@ parser.add_option("--profile", action='store_true',
 parser.add_option("--make-plots", action='store_true',
                   help=("make some plots"))
 
-def load_config(fname):
-    with open(fname) as fobj:
-        data=yaml.load(fobj)
-    return data
 
 def make_ngmix_meta(conf, meds_meta_list, meds_files):
 
@@ -521,7 +517,7 @@ def go(config_file, meds_files, out_file, options):
 
     checkpoint_file, checkpoint_data=get_checkpoint_data(out_file)
 
-    conf=load_config(config_file)
+    conf=files.read_config(config_file)
 
     if options.work_dir is not None:
         conf['work_dir']=options.work_dir

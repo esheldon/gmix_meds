@@ -5,6 +5,15 @@ import numpy
 
 DEFAULT_NPER=10
 
+def read_config(config_path):
+    """
+    read from the file assuming it is yaml
+    """
+    import yaml
+    with open(config_path) as fobj:
+        conf=yaml.load(fobj)
+    return conf
+
 class Files(dict):
     """
     files for gmix meds fitting
@@ -477,13 +486,15 @@ class StagedOutFile(object):
 
 def makedir_fromfile(fname):
     dname=os.path.dirname(fname)
-    if not os.path.exists(dname):
+    try_makedir(dname)
+
+def try_makedir(dir):
+    if not os.path.exists(dir):
         try:
-            os.makedirs(dname)
+            os.makedirs(dir)
         except:
             # probably a race condition
             pass
-
 
 class MakerBase(dict):
     def __init__(self, run_name, config_file, meds_files,
@@ -534,10 +545,7 @@ class MakerBase(dict):
         os.system(cmd)
 
     def _load_config(self):
-        import yaml
-        with open(self['config_file']) as fobj:
-            conf=yaml.load(fobj)
-
+        conf=read_config(self['config_file'])
         self.update(conf)
 
     def _count_objects(self):
@@ -608,8 +616,8 @@ class WQMaker(MakerBase):
         job_name=[]
         if self['sub_dir'] is not None:
             job_name.append(self['sub_dir'])
-        job_name.append('%s' % split[0])
-        job_name.append('%s' % split[1])
+        job_name.append('%06d' % split[0])
+        job_name.append('%06d' % split[1])
 
         self['job_name'] = '-'.join(job_name)
 
@@ -648,7 +656,8 @@ class CondorMaker(MakerBase):
         else:
             extra=None
 
-        condor_file=self._files.get_condor_file(sub_dir=self['sub_dir'],extra=extra)
+        condor_file=self._files.get_condor_file(sub_dir=self['sub_dir'],
+                                                extra=extra)
         print(condor_file)
 
         head=get_condor_head_template()
@@ -663,15 +672,15 @@ class CondorMaker(MakerBase):
         nchunk=len(chunklist)
 
         ltemplate=get_condor_job_template()
+        nwrite=0
         with open(condor_file,'w') as fobj:
             fobj.write(head)
-
-            # $master_script $config_file $beg $end $out_file $log_file "$meds_files"
 
             for split in chunklist:
                 self['beg']=split[0]
                 self['end']=split[1]
-                self['out_file']=self._files.get_output_file(split, sub_dir=self['sub_dir'])
+                self['out_file']=self._files.get_output_file(split,
+                                                             sub_dir=self['sub_dir'])
                 self['log_file']=self['out_file'].replace('.fits','.log')
 
                 if self['missing'] and os.path.exists(self['out_file']):
@@ -680,14 +689,21 @@ class CondorMaker(MakerBase):
                 job_name=[]
                 if self['sub_dir'] is not None:
                     job_name.append(self['sub_dir'])
-                job_name.append('%s' % split[0])
-                job_name.append('%s' % split[1])
+                job_name.append('%06d' % split[0])
+                job_name.append('%06d' % split[1])
 
                 self['job_name'] = '-'.join(job_name)
 
                 job=ltemplate % self
 
                 fobj.write(job)
+                nwrite += 1
+
+        if self['missing'] and nwrite==0:
+            print("none were written, removing condor file")
+            os.remove(condor_file)
+        else:
+            print("wrote",nwrite,"jobs")
 
     def _make_dirs(self):
         """
@@ -698,5 +714,11 @@ class CondorMaker(MakerBase):
         if not os.path.exists(dir):
             print("making condor dir:",dir)
             os.makedirs(dir)
+
+def get_temp_dir():
+    if '_CONDOR_SCRATCH_DIR' in os.environ:
+        return os.environ['_CONDOR_SCRATCH_DIR']
+    else:
+        return os.environ['TMPDIR']
 
 

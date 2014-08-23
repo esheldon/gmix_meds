@@ -1551,7 +1551,7 @@ class MedsFit(dict):
 
             if self.epoch_data.dtype.names is not None:
                 # start where we left off
-                w,=numpy.where( self.epoch_data['number'] == -1)
+                w,=numpy.where( self.epoch_data['number'] < 0)
                 self.epoch_index = w.min()
 
     def _try_checkpoint(self, tm):
@@ -1648,7 +1648,7 @@ class MedsFit(dict):
         dt=[('id','i8'),     # could be coadd_objects_id
             ('number','i4'), # 1-n as in sextractor
             ('band_num','i2'),
-            ('cutout_index','i4'), # this is the index into e.g. m['orig_row'][3,index]
+            ('cutout_index','i4'), # this is the index in meds
             ('orig_row','f8'),
             ('orig_col','f8'),
             ('file_id','i4'),   # id in meds file
@@ -1669,6 +1669,8 @@ class MedsFit(dict):
             epoch_data['number'] = DEFVAL
             epoch_data['band_num'] = DEFVAL
             epoch_data['cutout_index'] = DEFVAL
+            epoch_data['orig_row'] = DEFVAL
+            epoch_data['orig_col'] = DEFVAL
             epoch_data['file_id'] = DEFVAL
             epoch_data['image_id'] = DEFVAL
             epoch_data['psf_counts'] = DEFVAL
