@@ -309,9 +309,9 @@ class MedsFit(dict):
         """
         number of cutouts for the specified object.
         """
-        ncutout=0
-        for meds in self.meds_list:
-            ncutout += meds['ncutout'][mindex]
+        ncutout=numpy.zeros(self['nband'])
+        for i,meds in enumerate(self.meds_list):
+            ncutout[i] = meds['ncutout'][mindex]
         return ncutout
 
     def _obj_check(self, mindex):

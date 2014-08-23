@@ -131,7 +131,7 @@ class Concat(object):
             with fitsio.FITS(sf.path,'rw',clobber=True) as fits:
                 fits.write(data,extname="model_fits")
 
-                if do_epochs > 0:
+                if do_epochs:
                     fits.write(epoch_data,extname='epoch_data')
 
                 fits.write(meta,extname="meta_data")
