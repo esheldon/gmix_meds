@@ -56,7 +56,9 @@ class Files(dict):
 
         parameters
         ----------
-        path_element1, path_element2, ...: each a string
+        *path_elements:
+            directory path elements, e.g.
+            path_element1, path_element2, ...: each a string
 
         returns
         -------
@@ -67,14 +69,33 @@ class Files(dict):
 
     def get_file_name(self, *path_elements, **kw):
         """
-        get generic name, with sub_dir and split possibility
+        get file name, with sub_dir and split possibility
 
-        ftype is generally optional
+        parameters
+        ----------
+        *path_elements:
+            directory path elements, e.g.
+            path_element1, path_element2, ...: each a string
+
+        split: 2-element sequence or None 
+            The split numbers
+        extra: string
+            extra string for file name
+        ext: string
+            file extension, default 'fits'
+
+        see get_file_dir for how the directory will be created
+
+        the name is
+        {run}-{path_element1}-{path_element2}-....{ext}
+        {run}-{path_element1}-{path_element2}-...-{extra}.{ext}
+        {run}-{path_element1}-{path_element2}-...-{split[0]}-{split[1]}.{ext}
+        {run}-{path_element1}-{path_element2}-...-{split[0]}-{split[1]}_{extra}.{ext}
         """
 
         split=kw.get('split',None)
         extra=kw.get('extra',None)
-        ext=kw.get('ext',None)
+        ext=kw.get('ext','fits')
 
         dir=self.get_file_dir(*path_elements)
 
@@ -324,7 +345,7 @@ def get_wq_template():
     text="""
 command: |
     source ~/.bashrc
-    module unload gmix_meds && module load gmix_meds/work
+    source ~/shell_scripts/nsim-prepare.sh
 
     config_file="%(config_file)s"
     meds_files="%(meds_files_spaced)s"
@@ -337,7 +358,49 @@ command: |
 
     $master_script $config_file $beg $end $out_file $log_file "$meds_files"
 
-job_name: %(job_name)s\n"""
+job_name: "%(job_name)s"\n"""
+
+    return text
+
+def get_concat_wq_template(noblind=False, verify=False):
+
+    if noblind:
+        noblind_line="            --noblind              \\"
+    else:
+        noblind_line="                                   \\"
+    if verify:
+        verify_line ="            --verify               \\"
+    else:
+        verify_line ="                                   \\"
+
+
+
+    text="""
+command: |
+    source ~/.bashrc
+    source ~/shell_scripts/nsim-prepare.sh
+
+    run="%(run_name)s"
+    config_file="%(config_file)s"
+    meds_files="%(meds_files_spaced)s"
+
+    bands="%(bands_csv)s"
+    nper="%(nper)s"
+    sub_dir="%(sub_dir)s"
+
+    python -u $GMIX_MEDS_DIR/bin/gmix-meds-collate     \\
+{noblind_line}
+{verify_line}
+            --nper    "$nper"      \\
+            --sub-dir "$sub_dir"   \\
+            --bands   "$bands"     \\
+            "$run"                 \\
+            "$config_file"         \\
+            "$meds_files"
+
+mode: bynode
+job_name: "%(job_name)s"\n""".format(noblind_line=noblind_line,
+                                     verify_line=verify_line)
 
     return text
 
@@ -491,6 +554,7 @@ def makedir_fromfile(fname):
 def try_makedir(dir):
     if not os.path.exists(dir):
         try:
+            print("making directory:",dir)
             os.makedirs(dir)
         except:
             # probably a race condition
@@ -499,6 +563,8 @@ def try_makedir(dir):
 class MakerBase(dict):
     def __init__(self, run_name, config_file, meds_files,
                  root_dir=None, sub_dir=None, missing=False,
+                 bands=None,
+                 noblind=False,
                  nper=DEFAULT_NPER):
         self['run_name']=run_name
         self['config_file']=config_file
@@ -510,6 +576,18 @@ class MakerBase(dict):
         self['sub_dir']=sub_dir
         self['missing']=missing
         self['nper']=nper
+
+        self['nbands'] = len(meds_files)
+
+        self['noblind']=noblind
+
+        if bands is None:
+            bands = [str(i) for i in xrange(self['nbands'])]
+        else:
+            assert len(bands)==self['nbands'],"wrong number of bands: %d" % len(bands)
+        self['bands']=bands
+        self['bands_csv'] = ','.join(bands)
+
 
         self._files=Files(self['run_name'],
                           root_dir=self['root_dir'])
@@ -528,6 +606,8 @@ class MakerBase(dict):
         """
         self._make_dirs()
         self._write_master_script()
+        self._write_collate_wq()
+        self._write_collate_wq(verify=True)
 
     def _write_master_script(self):
         """
@@ -544,6 +624,36 @@ class MakerBase(dict):
         print(cmd)
         os.system(cmd)
 
+    def _write_collate_wq(self, verify=False):
+        """
+        write a script to do the collation
+        """
+
+
+        job_name=[self['run_name']]
+        if verify:
+            extra=['verify']
+        else:
+            extra=['collate']
+
+        if self['sub_dir'] is not None:
+            extra += [self['sub_dir']]
+            job_name += [self['sub_dir']]
+
+        extra='-'.join(extra)
+        job_name = '-'.join(job_name)
+
+        self['job_name']=job_name
+
+        text=get_concat_wq_template(noblind=self['noblind'], verify=verify)
+        text = text % self
+
+        wq_file=self._files.get_file_name('wq', extra=extra, ext='yaml')
+        print("writing:",wq_file)
+        with open(wq_file,'w') as fobj:
+            fobj.write(text)
+
+
     def _load_config(self):
         conf=read_config(self['config_file'])
         self.update(conf)
@@ -556,7 +666,6 @@ class MakerBase(dict):
 
         self['nobj']=nobj
 
-
     def _make_dirs(self):
         """
         make all the output directories
@@ -565,15 +674,13 @@ class MakerBase(dict):
         super and then working with your directories
 
         """
-        dir=self._files.get_output_dir(sub_dir=self['sub_dir'])
-        if not os.path.exists(dir):
-            print("making output dir:",dir)
-            os.makedirs(dir)
+        # no sub dir here on wq dir because this is for the collate scripts
+        dirs=[self._files.get_wq_dir(),
+              self._files.get_output_dir(sub_dir=self['sub_dir']),
+              self._files.get_script_dir()]
 
-        dir=self._files.get_script_dir()
-        if not os.path.exists(dir):
-            print("making script dir:",dir)
-            os.makedirs(dir)
+        for dir in dirs:
+            try_makedir(dir)
 
 class WQMaker(MakerBase):
     def write(self):
@@ -626,16 +733,6 @@ class WQMaker(MakerBase):
             text=get_wq_template()
             text = text % self
             fobj.write(text)
-
-    def _make_dirs(self):
-        """
-        make all the output directories
-        """
-        super(WQMaker,self)._make_dirs()
-        dir=self._files.get_wq_dir(sub_dir=self['sub_dir'])
-        if not os.path.exists(dir):
-            print("making wq dir:",dir)
-            os.makedirs(dir)
 
 class CondorMaker(MakerBase):
     def write(self):

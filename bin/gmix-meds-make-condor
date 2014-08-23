@@ -33,7 +33,9 @@ def main():
     config_file=args[1]
     meds_files=args[2:]
 
-    maker=CondorMaker(run_name, config_file, meds_files,
+    maker=CondorMaker(run_name,
+                      config_file,
+                      meds_files,
                       nper=int(options.nper),
                       root_dir=options.root_dir,
                       missing=options.missing,

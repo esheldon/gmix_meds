@@ -72,8 +72,6 @@ counts_prior_repeat: True
 
 guess_type: 'coadd_mcmc'
 
-nper: 10
-
 # checkpoint times in minutes, needed for condor in case we pass a batch system
 # limit such as in the condor scavenge.
 # 0 means after the first object

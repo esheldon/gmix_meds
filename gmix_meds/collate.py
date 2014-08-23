@@ -5,6 +5,7 @@ import fitsio
 import json
 
 from . import files
+from .files import DEFAULT_NPER
 
 class ConcatError(Exception):
     """
@@ -31,6 +32,7 @@ class Concat(object):
                  meds_files,
                  bands=None, # band names for each meds file
                  root_dir=None,
+                 nper=DEFAULT_NPER,
                  sub_dir=None,
                  blind=True,
                  clobber=False):
@@ -48,6 +50,7 @@ class Concat(object):
         self.bands=bands
 
         self.sub_dir=sub_dir
+        self.nper=nper
         self.blind=blind
         self.clobber=clobber
 
@@ -403,7 +406,7 @@ class Concat(object):
         """
         set the chunks in which the meds file was processed
         """
-        self.chunk_list=files.get_chunks(self.nrows, self.config['nper'])
+        self.chunk_list=files.get_chunks(self.nrows, self.nper)
 
     def load_meds(self):
         """
