@@ -187,7 +187,14 @@ class Files(dict):
             Extra string, e.g. 'blind'
         """
 
-        path=self.get_file_name('collated', sub_dir=sub_dir, extra=extra, ext='fits')
+        if sub_dir is not None:
+            if extra is None:
+                extra=[sub_dir]
+            else:
+                extra = [sub_dir, extra]
+            extra = '-'.join(extra)
+
+        path=self.get_file_name('collated', extra=extra, ext='fits')
         return path
 
     def get_wq_dir(self, sub_dir=None):

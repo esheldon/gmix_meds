@@ -84,7 +84,7 @@ class MedsFit(dict):
         """
 
         self.update(conf)
-
+        
         self.meds_files=_get_as_list(meds_files)
 
         self['nband']=len(self.meds_files)
@@ -119,6 +119,11 @@ class MedsFit(dict):
         self['make_plots']=self.get('make_plots',False)
 
         self['work_dir'] = self.get('work_dir',os.environ.get('TMPDIR','/tmp'))
+
+        if self['par_scaling'] == "log":
+            self["use_logpars"]=True
+        else:
+            self["use_logpars"]=False
 
     def _unpack_priors(self, priors_in):
         """
@@ -1083,11 +1088,8 @@ class MedsFit(dict):
         # also adds .weights attribute
         self._calc_mcmc_stats(fitter, model)
 
-        log_res=fitter.get_result()
-        lin_res=fitter.get_lin_result()
-
         if self['do_shear']:
-            self._add_shear_info(log_res, fitter, model)
+            self._add_shear_info(fitter, model)
 
         return fitter
 
@@ -1105,8 +1107,8 @@ class MedsFit(dict):
             guesser=self._get_guesser_from_coadd_mcmc()
         elif guess_type=='coadd_mcmc_best':
             guesser=self._get_guesser_from_coadd_mcmc_best() 
-        elif guess_type=='coadd_lm':
-            guesser=self._get_guesser_from_coadd_lm()
+        #elif guess_type=='coadd_lm':
+        #    guesser=self._get_guesser_from_coadd_lm()
         else:
             raise ValueError("bad guess type: '%s'" % guess_type)
 
@@ -1153,7 +1155,7 @@ class MedsFit(dict):
         # arbitrary
         T = 2*(0.9/2.35)**2
 
-        guesser=FromPSFGuesser(T, psf_flux)
+        guesser=FromPSFGuesser(T, psf_flux, scaling=self['par_scaling'])
         return guesser
 
     def _get_guesser_from_coadd_mcmc(self):
@@ -1164,12 +1166,15 @@ class MedsFit(dict):
         print('        getting guess from coadd mcmc')
 
         fitter=self.coadd_fitter
-        log_trials = fitter.get_trials()
 
+        # trials in default scaling
+        trials = fitter.get_trials()
+
+        # result with default scaling
         res=fitter.get_result()
         sigmas=res['pars_err']
 
-        guesser=FromMCMCGuesser(log_trials, sigmas)
+        guesser=FromMCMCGuesser(trials, sigmas)
         return guesser
 
     def _get_guesser_from_coadd_mcmc_best(self):
@@ -1182,10 +1187,11 @@ class MedsFit(dict):
         fitter=self.coadd_fitter
         best_pars=fitter.best_pars
 
+        # result with default scaling
         res=fitter.get_result()
         sigmas=res['pars_err']
 
-        guesser=FromParsGuesser(best_pars, sigmas)
+        guesser=FromParsGuesser(best_pars, sigmas, scaling=self['par_scaling'])
         return guesser
 
 
@@ -1197,12 +1203,15 @@ class MedsFit(dict):
         print('        getting guess from coadd gauss')
 
         fitter=self.coadd_gauss_fitter
-        log_trials = fitter.get_trials()
 
+        # trials in default scaling
+        trials = fitter.get_trials()
+
+        # result with default scaling
         res=fitter.get_result()
         sigmas=res['pars_err']
 
-        guesser=FromMCMCGuesser(log_trials, sigmas)
+        guesser=FromMCMCGuesser(trials, sigmas)
         return guesser
 
     def _get_guesser_from_coadd_gauss_best(self):
@@ -1215,13 +1224,15 @@ class MedsFit(dict):
         fitter=self.coadd_gauss_fitter
         best_pars=fitter.best_pars
 
+        # result with default scaling
         res=fitter.get_result()
         sigmas=res['pars_err']
 
-        guesser=FromParsGuesser(best_pars, sigmas)
+        guesser=FromParsGuesser(best_pars, sigmas, scaling=self['par_scaling'])
         return guesser
 
 
+    '''
     def _get_guesser_from_coadd_lm(self):
         """
         get a random set of points from the coadd chain
@@ -1231,7 +1242,7 @@ class MedsFit(dict):
 
         fitter=self.coadd_fitter_lm
 
-        # in log space
+        # currently lm only works in in log space
         res=fitter.get_result()
 
         if res['flags'] != 0:
@@ -1244,6 +1255,7 @@ class MedsFit(dict):
 
             guesser=FromParsGuesser(res['pars'], res['pars_err'])
         return guesser
+    '''
 
     def _fit_simple_emcee(self, mb_obs_list, model):
         """
@@ -1262,6 +1274,7 @@ class MedsFit(dict):
         fitter=MCMCSimple(mb_obs_list,
                           model,
                           prior=prior,
+                          use_logpars=self["use_logpars"],
                           nwalkers=self['emcee_nwalkers'],
                           mca_a=self['emcee_a'],
                           random_state=self.random_state)
@@ -1278,20 +1291,24 @@ class MedsFit(dict):
 
         Also add a weights attribute to the fitter
         """
-        log_trials=fitter.get_trials()
+        # trials in default scaling, should not matter
+        trials=fitter.get_trials()
 
         g_prior=self.priors[model].g_prior
-        weights = g_prior.get_prob_array2d(log_trials[:,2], log_trials[:,3])
+        weights = g_prior.get_prob_array2d(trials[:,2], trials[:,3])
         fitter.calc_result(weights=weights)
-        fitter.calc_lin_result(weights=weights)
 
         fitter.weights=weights
 
-    def _add_shear_info(self, res, fitter, model):
+    def _add_shear_info(self, fitter, model):
         """
         Add pqr or lensfit info
         """
 
+        # result in default scaling
+        res=fitter.get_result()
+
+        # trials in default scaling, should not matter
         trials=fitter.get_trials()
         g=trials[:,2:2+2]
 
@@ -1312,55 +1329,52 @@ class MedsFit(dict):
     def _copy_simple_pars(self, fitter, coadd=False):
         """
         Copy from the result dict to the output array
+
+        always copy linear result
         """
 
         dindex=self.dindex
-        log_res=fitter.get_result()
-        lin_res=fitter.get_lin_result()
+        res=fitter.get_lin_result()
 
-        model=log_res['model']
+        model=res['model']
         if coadd:
             model = 'coadd_%s' % model
 
         n=get_model_names(model)
 
-        self.data[n['flags']][dindex] = log_res['flags']
+        self.data[n['flags']][dindex] = res['flags']
 
-        if log_res['flags'] == 0:
-            log_pars=log_res['pars']
-            log_pars_cov=log_res['pars_cov']
-            lin_pars=lin_res['pars']
-            lin_pars_cov=lin_res['pars_cov']
+        if res['flags'] == 0:
+            pars=res['pars']
+            pars_cov=res['pars_cov']
 
-            flux=lin_pars[5:]
-            flux_cov=lin_pars_cov[5:, 5:]
+            flux=pars[5:]
+            flux_cov=pars_cov[5:, 5:]
 
-            self.data[n['pars']][dindex,:] = lin_pars
-            self.data[n['pars_cov']][dindex,:,:] = lin_pars_cov
-            self.data[n['logpars']][dindex,:] = log_pars
-            self.data[n['logpars_cov']][dindex,:,:] = log_pars_cov
+            self.data[n['pars']][dindex,:] = pars
+            self.data[n['pars_cov']][dindex,:,:] = pars_cov
 
 
             self.data[n['flux']][dindex] = flux
             self.data[n['flux_cov']][dindex] = flux_cov
 
-            self.data[n['g']][dindex,:] = log_res['g']
-            self.data[n['g_cov']][dindex,:,:] = log_res['g_cov']
+            self.data[n['g']][dindex,:] = res['g']
+            self.data[n['g_cov']][dindex,:,:] = res['g_cov']
 
             for sn in _stat_names:
-                self.data[n[sn]][dindex] = log_res[sn]
+                self.data[n[sn]][dindex] = res[sn]
 
             # this stuff won't be in the result for LM fitting
-            if 'arate' in log_res:
-                self.data[n['arate']][dindex] = log_res['arate']
-                if log_res['tau'] is not None:
-                    self.data[n['tau']][dindex] = log_res['tau']
+            if 'arate' in res:
+                self.data[n['arate']][dindex] = res['arate']
+                if res['tau'] is not None:
+                    self.data[n['tau']][dindex] = res['tau']
 
                 if self['do_shear']:
-                    self.data[n['g_sens']][dindex,:] = log_res['g_sens']
-                    self.data[n['P']][dindex] = log_res['P']
-                    self.data[n['Q']][dindex,:] = log_res['Q']
-                    self.data[n['R']][dindex,:,:] = log_res['R']
+                    self.data[n['g_sens']][dindex,:] = res['g_sens']
+                    self.data[n['P']][dindex] = res['P']
+                    self.data[n['Q']][dindex,:] = res['Q']
+                    self.data[n['R']][dindex,:,:] = res['R']
      
 
                
@@ -1497,23 +1511,18 @@ class MedsFit(dict):
 
 
     def _print_res(self, fitter, coadd=False):
-        lin_res=fitter.get_lin_result()
-        if lin_res['flags']==0:
-            log_res=fitter.get_result()
+        res=fitter.get_lin_result()
+        if res['flags']==0:
             if coadd:
                 type='coadd'
             else:
                 type='mb'
 
-            print("        %s logpars:" % type)
-            print_pars(log_res['pars'],    front='        ')
-            print_pars(log_res['pars_err'],front='        ')
-
             print("        %s linear pars:" % type)
-            print_pars(lin_res['pars'],    front='        ')
-            print_pars(lin_res['pars_err'],front='        ')
-            if 'arate' in lin_res:
-                print('        arate:',lin_res['arate'])
+            print_pars(res['pars'],    front='        ')
+            print_pars(res['pars_err'],front='        ')
+            if 'arate' in res:
+                print('        arate:',res['arate'])
 
     def _setup_checkpoints(self):
         """
@@ -2186,7 +2195,7 @@ class MHMedsFitLM(MedsFit):
 
                 print('    coadd lm')
                 self._run_model_fit(model, coadd=True, fitter_type='lm')
-                res=self.coadd_fitter_lm.get_result()
+                res=self.coadd_fitter_lm.get_lin_result()
                 if res['flags']==0:
                     print('    coadd mcmc')
                     self._run_model_fit(model, coadd=True, fitter_type='mh')
@@ -2195,7 +2204,7 @@ class MHMedsFitLM(MedsFit):
                         print('    multi-epoch lm')
                         self._run_model_fit(model, coadd=False, fitter_type='lm')
 
-                        res=self.fitter_lm.get_result()
+                        res=self.fitter_lm.get_lin_result()
                         if res['flags']==0:
                             print('    multi-epoch mcmc')
                             self._run_model_fit(model, coadd=False, fitter_type='mh')
@@ -2278,12 +2287,9 @@ class MHMedsFitLM(MedsFit):
         # also adds .weights attribute
         if fitter_type=='mh':
             self._calc_mcmc_stats(fitter, model)
-            lin_res=fitter.get_lin_result()
-
-            log_res=fitter.get_result()
 
             if self['do_shear']:
-                self._add_shear_info(log_res, fitter, model)
+                self._add_shear_info(fitter, model)
 
         return fitter
 
@@ -2461,10 +2467,8 @@ class MHMedsFitHybrid(MedsFit):
         self._calc_mcmc_stats(fitter, model)
         lin_res=fitter.get_lin_result()
 
-        log_res=fitter.get_result()
-
         if self['do_shear']:
-            self._add_shear_info(log_res, fitter, model)
+            self._add_shear_info(fitter, model)
 
         return fitter
 
@@ -2497,6 +2501,7 @@ class MHMedsFitHybrid(MedsFit):
                         model,
                         step_sizes,
                         prior=prior,
+                        use_logpars=self["use_logpars"],
                         random_state=self.random_state)
 
         pos=fitter.run_mcmc(guess,self['mh_burnin'])
@@ -2557,9 +2562,10 @@ class FromPSFGuesser(GuesserBase):
 
     should make this take log values...
     """
-    def __init__(self, T, fluxes):
+    def __init__(self, T, fluxes, scaling='linear'):
         self.T=T
         self.fluxes=fluxes
+        self.scaling=scaling
 
         self.log_T = numpy.log10(T)
         self.log_fluxes = numpy.log10(fluxes)
@@ -2578,11 +2584,18 @@ class FromPSFGuesser(GuesserBase):
         guess[:,2] = 0.1*srandu(n)
         guess[:,3] = 0.1*srandu(n)
         #guess[:,4] = numpy.log10( self.T*(1.0 + 0.2*srandu(n)) )
-        guess[:,4] = self.log_T + 0.1*srandu(n)
 
-        for band in xrange(nband):
-            #guess[:,5+band] = numpy.log10( fluxes[band]*(1.0 + 0.1*srandu(n)) )
-            guess[:,5+band] = self.log_fluxes[band] + 0.1*srandu(n)
+        if self.scaling=='linear':
+            guess[:,4] = self.T*(1.0 + 0.1*srandu(n))
+
+            for band in xrange(nband):
+                guess[:,5+band] = self.fluxes[band]*(1.0 + 0.1*srandu(n))
+
+        else:
+            guess[:,4] = self.log_T + 0.1*srandu(n)
+
+            for band in xrange(nband):
+                guess[:,5+band] = self.log_fluxes[band] + 0.1*srandu(n)
 
         if prior is not None:
             self._fix_guess(guess, prior)
@@ -2596,9 +2609,10 @@ class FromParsGuesser(GuesserBase):
     get full guesses from just T,fluxes associated with
     psf
     """
-    def __init__(self, pars, pars_err):
+    def __init__(self, pars, pars_err, scaling='linear'):
         self.pars=pars
         self.pars_err=pars_err
+        self.scaling=scaling
 
     def __call__(self, n=None, get_sigmas=False, prior=None):
         """
@@ -2625,9 +2639,12 @@ class FromParsGuesser(GuesserBase):
         guess[:,2]=guess_shape[:,0]
         guess[:,3]=guess_shape[:,1]
 
-        # we add to log pars!
         for i in xrange(4,npars):
-            guess[:,i] = pars[i] + width[i]*srandu(n)
+            if self.scaling=='linear':
+                guess[:,i] = pars[i]*(1.0 + width[i]*srandu(n))
+            else:
+                # we add to log pars!
+                guess[:,i] = pars[i] + width[i]*srandu(n)
 
         if prior is not None:
             self._fix_guess(guess, prior)
