@@ -1273,6 +1273,7 @@ class MedsFit(dict):
 
         fitter=MCMCSimple(mb_obs_list,
                           model,
+                          nu=self['nu'],
                           prior=prior,
                           use_logpars=self["use_logpars"],
                           nwalkers=self['emcee_nwalkers'],
@@ -2321,6 +2322,7 @@ class MHMedsFitLM(MedsFit):
         fitter=MHSimple(mb_obs_list,
                         model,
                         step_sizes,
+                        nu=self['nu'],
                         prior=prior,
                         random_state=self.random_state)
 
@@ -2501,6 +2503,7 @@ class MHMedsFitHybrid(MedsFit):
                         model,
                         step_sizes,
                         prior=prior,
+                        nu=self['nu'],
                         use_logpars=self["use_logpars"],
                         random_state=self.random_state)
 
@@ -2586,10 +2589,17 @@ class FromPSFGuesser(GuesserBase):
         #guess[:,4] = numpy.log10( self.T*(1.0 + 0.2*srandu(n)) )
 
         if self.scaling=='linear':
-            guess[:,4] = self.T*(1.0 + 0.1*srandu(n))
+            if self.T <= 0.0:
+                guess[:,4] = (0.1 + 0.1*srandu(n))
+            else:
+                guess[:,4] = self.T*(1.0 + 0.1*srandu(n))
 
+            fluxes=self.fluxes
             for band in xrange(nband):
-                guess[:,5+band] = self.fluxes[band]*(1.0 + 0.1*srandu(n))
+                if fluxes[band] <= 0.0:
+                    guess[:,5+band] = (1.0 + 0.1*srandu(n))
+                else:
+                    guess[:,5+band] = fluxes[band]*(1.0 + 0.1*srandu(n))
 
         else:
             guess[:,4] = self.log_T + 0.1*srandu(n)
@@ -2641,7 +2651,10 @@ class FromParsGuesser(GuesserBase):
 
         for i in xrange(4,npars):
             if self.scaling=='linear':
-                guess[:,i] = pars[i]*(1.0 + width[i]*srandu(n))
+                if pars[i] <= 0.0:
+                    guess[:,i] = (1.0 + width[i]*srandu(n))
+                else:
+                    guess[:,i] = pars[i]*(1.0 + width[i]*srandu(n))
             else:
                 # we add to log pars!
                 guess[:,i] = pars[i] + width[i]*srandu(n)

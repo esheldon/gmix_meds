@@ -271,6 +271,11 @@ def get_T_priors_ngmix(conf):
         if typ == 'flat':
             pars=conf['T_prior_pars'][i]
             T_prior=ngmix.priors.FlatPrior(pars[0], pars[1])
+
+        elif typ=='TwoSidedErf':
+            pars=conf['T_prior_pars'][i]
+            T_prior=ngmix.priors.TwoSidedErf(*pars)
+
         elif typ =='lognormal':
             pars=conf['T_prior_pars'][i]
             T_prior=ngmix.priors.LogNormal(pars[0], pars[1])
@@ -295,6 +300,12 @@ def get_counts_priors_ngmix(conf):
         if typ == 'flat':
             pars=conf['counts_prior_pars'][i]
             counts_prior=ngmix.priors.FlatPrior(pars[0], pars[1])
+
+        elif typ=='TwoSidedErf':
+            pars=conf['counts_prior_pars'][i]
+            counts_prior=ngmix.priors.TwoSidedErf(*pars)
+
+
         else:
             raise ValueError("bad counts prior type: %s" % counts_prior_type)
 
