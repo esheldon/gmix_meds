@@ -2395,8 +2395,8 @@ class MHMedsFitHybrid(MedsFit):
                 print('    fitting:',model)
 
                 print('    coadd')
-                #self._run_model_fit(model, coadd=True, fitter_type='mh')
-                self._run_model_fit(model, coadd=True, fitter_type='emcee')
+                self._run_model_fit(model, coadd=True, fitter_type='mh')
+                #self._run_model_fit(model, coadd=True, fitter_type='emcee')
 
                 if self['fit_me_galaxy'] and n_se_images > 0:
                     print('    multi-epoch')
@@ -2491,8 +2491,7 @@ class MHMedsFitHybrid(MedsFit):
         guess,sigmas=self.guesser(get_sigmas=True, prior=prior)
 
         step_sizes = 0.5*sigmas
-
-        max_step = 0.4*self.priors[model].get_widths()
+        max_step = 0.5*self.priors[model].get_widths()
         print_pars(max_step, front="        max_step:")
 
         for i in xrange(guess.size):
@@ -2510,8 +2509,23 @@ class MHMedsFitHybrid(MedsFit):
         print_pars(guess,front="        mh guess:             ")
         pos=fitter.run_mcmc(guess,self['mh_burnin'])
 
+        n=int(self['mh_burnin']*0.1)
+
+        acc=fitter.sampler.get_accepted()
+        arate = acc[-n:].sum()/(1.0*n)
+        print("        arate of last",n,"is",arate)
+
+        if arate < 0.4:
+            if arate < 0.35:
+                fac=0.5
+            elif arate < 0.4:
+                fac=0.75
+
+            step_sizes *= fac
+            fitter.set_step_sizes(step_sizes)
+            print_pars(step_sizes, front="        new step sizes:")
+
         #trials=fitter.get_trials()
-        #n=int(self['mh_burnin']*0.1)
         #step_sizes = 0.5*trials[-n:, :].std(axis=0)
         #fitter.set_step_sizes(step_sizes)
 
