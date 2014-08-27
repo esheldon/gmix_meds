@@ -1077,7 +1077,6 @@ class MedsFit(dict):
         Fit all the simple models
         """
 
-
         fitter=self._fit_simple_emcee(mb_obs_list, model)
 
         # also adds .weights attribute
@@ -1174,19 +1173,20 @@ class MedsFit(dict):
 
     def _get_guesser_from_coadd_mcmc_best(self):
         """
-        get a random set of points from the coadd chain
+        guess based on best result from mcmc run
         """
 
         print('        getting guess from coadd mcmc best')
 
         fitter=self.coadd_fitter
-        best_pars=fitter.best_pars
+        best_pars=fitter.get_best_pars()
 
         # result with default scaling
         res=fitter.get_result()
         sigmas=res['pars_err']
 
-        guesser=FromParsGuesser(best_pars, sigmas)
+        #guesser=FromParsGuesser(best_pars, sigmas)
+        guesser=FixedParsGuesser(best_pars, sigmas)
         return guesser
 
 
@@ -1217,13 +1217,14 @@ class MedsFit(dict):
         print('        getting guess from coadd gauss best')
 
         fitter=self.coadd_gauss_fitter
-        best_pars=fitter.best_pars
+        best_pars=fitter.get_best_pars()
 
         # result with default scaling
         res=fitter.get_result()
         sigmas=res['pars_err']
 
-        guesser=FromParsGuesser(best_pars, sigmas)
+        #guesser=FromParsGuesser(best_pars, sigmas)
+        guesser=FixedParsGuesser(best_pars, sigmas)
         return guesser
 
 
@@ -1329,7 +1330,7 @@ class MedsFit(dict):
         """
 
         dindex=self.dindex
-        res=fitter.get_lin_result()
+        res=fitter.get_result()
 
         model=res['model']
         if coadd:
@@ -1506,7 +1507,7 @@ class MedsFit(dict):
 
 
     def _print_res(self, fitter, coadd=False):
-        res=fitter.get_lin_result()
+        res=fitter.get_result()
         if res['flags']==0:
             if coadd:
                 type='coadd'
@@ -2144,7 +2145,7 @@ class MedsFit(dict):
         return fitter
     '''
 
-
+'''
 class MHMedsFitLM(MedsFit):
     """
     This version uses MH for fitting, with guesses from a maxlike fit
@@ -2190,7 +2191,7 @@ class MHMedsFitLM(MedsFit):
 
                 print('    coadd lm')
                 self._run_model_fit(model, coadd=True, fitter_type='lm')
-                res=self.coadd_fitter_lm.get_lin_result()
+                res=self.coadd_fitter_lm.get_result()
                 if res['flags']==0:
                     print('    coadd mcmc')
                     self._run_model_fit(model, coadd=True, fitter_type='mh')
@@ -2199,7 +2200,7 @@ class MHMedsFitLM(MedsFit):
                         print('    multi-epoch lm')
                         self._run_model_fit(model, coadd=False, fitter_type='lm')
 
-                        res=self.fitter_lm.get_lin_result()
+                        res=self.fitter_lm.get_result()
                         if res['flags']==0:
                             print('    multi-epoch mcmc')
                             self._run_model_fit(model, coadd=False, fitter_type='mh')
@@ -2320,7 +2321,9 @@ class MHMedsFitLM(MedsFit):
                         prior=prior,
                         random_state=self.random_state)
 
+        print_pars(guess,front="    mh guess:")
         pos=fitter.run_mcmc(guess,self['mh_burnin'])
+        print_pars(guess,front="    mh start after burnin:")
         pos=fitter.run_mcmc(pos,self['mh_nstep'])
 
         return fitter
@@ -2358,6 +2361,7 @@ class MHMedsFitLM(MedsFit):
 
         res['ntry']=i+1
         return fitter
+'''
 
 class MHMedsFitHybrid(MedsFit):
     """
@@ -2391,7 +2395,8 @@ class MHMedsFitHybrid(MedsFit):
                 print('    fitting:',model)
 
                 print('    coadd')
-                self._run_model_fit(model, coadd=True, fitter_type='mh')
+                #self._run_model_fit(model, coadd=True, fitter_type='mh')
+                self._run_model_fit(model, coadd=True, fitter_type='emcee')
 
                 if self['fit_me_galaxy'] and n_se_images > 0:
                     print('    multi-epoch')
@@ -2419,6 +2424,9 @@ class MHMedsFitHybrid(MedsFit):
             if fitter_type=='emcee' and model=='gauss':
                 # we need to bootstrap
                 self.guesser=self._get_guesser('coadd_psf')
+            elif fitter_type=='emcee':
+                # take the steps from the emcee gauss fit
+                self.guesser=self._get_guesser("coadd_gauss")
             else:
                 # get guess and step sizes from coadd gauss fit from
                 # emcee
@@ -2461,7 +2469,6 @@ class MHMedsFitHybrid(MedsFit):
             raise ValueError("bad fitter type: '%s'" % fitter_type)
 
         self._calc_mcmc_stats(fitter, model)
-        lin_res=fitter.get_lin_result()
 
         if self['do_shear']:
             self._add_shear_info(fitter, model)
@@ -2485,7 +2492,7 @@ class MHMedsFitHybrid(MedsFit):
 
         step_sizes = 0.5*sigmas
 
-        max_step = 0.5*self.priors[model].get_widths()
+        max_step = 0.4*self.priors[model].get_widths()
         print_pars(max_step, front="        max_step:")
 
         for i in xrange(guess.size):
@@ -2500,8 +2507,23 @@ class MHMedsFitHybrid(MedsFit):
                         nu=self['nu'],
                         random_state=self.random_state)
 
+        print_pars(guess,front="        mh guess:             ")
         pos=fitter.run_mcmc(guess,self['mh_burnin'])
+
+        #trials=fitter.get_trials()
+        #n=int(self['mh_burnin']*0.1)
+        #step_sizes = 0.5*trials[-n:, :].std(axis=0)
+        #fitter.set_step_sizes(step_sizes)
+
+        pos=fitter.get_best_pars()
+        print_pars(pos,        front="        mh start after burnin:")
+        #print_pars(step_sizes, front="        new step sizes:")
         pos=fitter.run_mcmc(pos,self['mh_nstep'])
+
+
+        #best_pars=fitter.get_best_pars()
+        #print_pars(best_pars,front="        mh start after burnin:")
+        #pos=fitter.run_mcmc(best_pars,self['mh_nstep'])
 
         return fitter
 
@@ -2606,6 +2628,27 @@ class FromPSFGuesser(GuesserBase):
         if n==1:
             guess=guess[0,:]
         return guess
+
+class FixedParsGuesser(GuesserBase):
+    """
+    just return a copy of the input pars
+    """
+    def __init__(self, pars, pars_err, scaling='linear'):
+        self.pars=pars
+        self.pars_err=pars_err
+        self.scaling=scaling
+
+    def __call__(self, get_sigmas=False, prior=None):
+        """
+        center, shape are just distributed around zero
+        """
+
+        guess=self.pars.copy()
+        if get_sigmas:
+            return guess, self.pars_err
+        else:
+            return guess
+
 
 class FromParsGuesser(GuesserBase):
     """
