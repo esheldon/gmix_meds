@@ -62,25 +62,30 @@ cen_width: 0.27
 # from fitting to all cosmos galaxies in galsim data
 g_prior_types: ["cosmos-sersic","cosmos-sersic"]
 
-par_scaling: "linear"
+#par_scaling: "linear"
 
 # note sigma for dev goes larger
-#T_prior_types: ["flat","flat"]
+T_prior_types: ["flat","flat"]
+counts_prior_types: ["flat","flat"]
 
 # allow T to go negative about as large as we think the psf might be
 # positive
 #T_prior_pars: [ [-2.0, 3500.],[-2.0, 35000.] ]
-#T_prior_pars: [ [-0.1, 3500.],[-0.1, 35000.] ]
+# log(1-0.97)=-1.5
+# log(3500.)=3.54
+# log(35000.)=4.54
+T_prior_pars: [ [-0.97, 3500.],[-0.97, 35000.] ]
+counts_prior_pars: [ [-0.97, 1.0e+09],[-0.97, 1.0e+09] ]
 
 #counts_prior_types: ["flat","flat"]
 #counts_prior_pars: [ [-100.0, 1.0e+09],[-100.0, 1.0e+09] ]
 #counts_prior_pars: [ [0.0001, 1.0e+09],[0.0001, 1.0e+09] ]
 
-T_prior_types: ["TwoSidedErf","TwoSidedErf"]
-T_prior_pars: [ [-0.07, 0.03, 3700., 100.0], [-0.05, 0.05, 37000., 1000.0] ]
+#T_prior_types: ["TwoSidedErf","TwoSidedErf"]
+#T_prior_pars: [ [-0.07, 0.03, 3700., 100.0], [-0.05, 0.05, 37000., 1000.0] ]
 
-counts_prior_types: ["TwoSidedErf","TwoSidedErf"]
-counts_prior_pars: [ [-1.0, 0.1, 1.0e+09, 0.25e+08],[-1.0, 0.1, 1.0e+09, 0.25e+08] ]
+#counts_prior_types: ["TwoSidedErf","TwoSidedErf"]
+#counts_prior_pars: [ [-1.0, 0.1, 1.0e+09, 0.25e+08],[-1.0, 0.1, 1.0e+09, 0.25e+08] ]
 
 
 # this means repeat the above for each band

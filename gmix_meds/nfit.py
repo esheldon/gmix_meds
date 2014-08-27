@@ -120,11 +120,6 @@ class MedsFit(dict):
 
         self['work_dir'] = self.get('work_dir',os.environ.get('TMPDIR','/tmp'))
 
-        if self['par_scaling'] == "log":
-            self["use_logpars"]=True
-        else:
-            self["use_logpars"]=False
-
     def _unpack_priors(self, priors_in):
         """
         Currently only separable priors
@@ -1155,7 +1150,7 @@ class MedsFit(dict):
         # arbitrary
         T = 2*(0.9/2.35)**2
 
-        guesser=FromPSFGuesser(T, psf_flux, scaling=self['par_scaling'])
+        guesser=FromPSFGuesser(T, psf_flux)
         return guesser
 
     def _get_guesser_from_coadd_mcmc(self):
@@ -1191,7 +1186,7 @@ class MedsFit(dict):
         res=fitter.get_result()
         sigmas=res['pars_err']
 
-        guesser=FromParsGuesser(best_pars, sigmas, scaling=self['par_scaling'])
+        guesser=FromParsGuesser(best_pars, sigmas)
         return guesser
 
 
@@ -1228,7 +1223,7 @@ class MedsFit(dict):
         res=fitter.get_result()
         sigmas=res['pars_err']
 
-        guesser=FromParsGuesser(best_pars, sigmas, scaling=self['par_scaling'])
+        guesser=FromParsGuesser(best_pars, sigmas)
         return guesser
 
 
@@ -1275,7 +1270,6 @@ class MedsFit(dict):
                           model,
                           nu=self['nu'],
                           prior=prior,
-                          use_logpars=self["use_logpars"],
                           nwalkers=self['emcee_nwalkers'],
                           mca_a=self['emcee_a'],
                           random_state=self.random_state)
@@ -2504,7 +2498,6 @@ class MHMedsFitHybrid(MedsFit):
                         step_sizes,
                         prior=prior,
                         nu=self['nu'],
-                        use_logpars=self["use_logpars"],
                         random_state=self.random_state)
 
         pos=fitter.run_mcmc(guess,self['mh_burnin'])
@@ -2590,7 +2583,7 @@ class FromPSFGuesser(GuesserBase):
 
         if self.scaling=='linear':
             if self.T <= 0.0:
-                guess[:,4] = (0.1 + 0.1*srandu(n))
+                guess[:,4] = 0.1*srandu(n)
             else:
                 guess[:,4] = self.T*(1.0 + 0.1*srandu(n))
 
@@ -2638,7 +2631,7 @@ class FromParsGuesser(GuesserBase):
         pars=self.pars
         npars=pars.size
 
-        width = pars*0 + 0.01
+        width = pars*0 + 0.1
 
         guess=numpy.zeros( (n, npars) )
 
@@ -2652,7 +2645,7 @@ class FromParsGuesser(GuesserBase):
         for i in xrange(4,npars):
             if self.scaling=='linear':
                 if pars[i] <= 0.0:
-                    guess[:,i] = (1.0 + width[i]*srandu(n))
+                    guess[:,i] = width[i]*srandu(n)
                 else:
                     guess[:,i] = pars[i]*(1.0 + width[i]*srandu(n))
             else:
