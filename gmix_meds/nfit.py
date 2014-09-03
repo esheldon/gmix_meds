@@ -586,6 +586,9 @@ class MedsFit(dict):
         psf_fwhm=2.35*numpy.sqrt(psf_gmix.get_T()/2.0)
         #print("        psf fwhm:",psf_fwhm)
 
+        if self['make_plots']:
+            self._do_make_psf_plots(band, psf_gmix, psf_obs, mindex, icut)
+
         return obs
 
     def _fit_psf(self, obs):
@@ -779,7 +782,7 @@ class MedsFit(dict):
 
         n_se_images=len(self.sdata['mb_obs_list'])
          
-        if max_s2n >= self['min_psf_s2n']:
+        if max_s2n >= self['min_psf_s2n'] and len(self['fit_models'])==0:
             # we use this as a guess for the real galaxy models
             print("    fitting coadd gauss")
             self._run_model_fit('gauss', coadd=True)
@@ -1404,8 +1407,8 @@ class MedsFit(dict):
                                     weights=fitter.weights)
 
 
-            trials_png='%s-trials-%06d-%s.png' % (type,mindex,model)
-            wtrials_png='%s-wtrials-%06d-%s.png' % (type,mindex,model)
+            trials_png='%06d-%s-trials-%s.png' % (mindex,type,model)
+            wtrials_png='%06d-%s-wtrials-%s.png' % (mindex,type,model)
 
             print("            ",trials_png)
             pdict['trials'].write_img(1200,1200,trials_png)
@@ -1417,9 +1420,49 @@ class MedsFit(dict):
         if res_plots is not None:
             for band, band_plots in enumerate(res_plots):
                 for icut, plt in enumerate(band_plots):
-                    fname='%s-resid-%06d-%s-band%d-im%d.png' % (type,mindex,model,band,icut+1)
+                    fname='%06d-%s-resid-%s-band%d-im%d.png' % (mindex,type,model,band,icut+1)
                     print("            ",fname)
                     plt.write_img(1920,1200,fname)
+
+    def _do_make_psf_plots(self, band, gmix, obs, mindex, icut):
+        """
+        make residual plots for psf
+        """
+        import images
+
+        if icut==0:
+            type='coadd-psf'
+        else:
+            type='psf'
+
+        title='%06d band: %s' % (mindex, band)
+        if icut==0:
+            title='%s coadd' % title
+        else:
+            title='%s %d' % (title,icut)
+
+        im=obs.image
+
+        model_im=gmix.make_image(im.shape, jacobian=obs.jacobian)
+        modflux=model_im.sum()
+        if modflux <= 0:
+            print("psf model flux too low:",modflux)
+            return
+
+        model_im *= ( im.sum()/modflux )
+
+        plt=images.compare_images(im, model_im,
+                                  label1='psf', label2='model',
+                                  show=False)
+        plt.title=title
+
+        if icut==0:
+            fname='%06d-psf-resid-band%d-coadd.png' % (mindex,band)
+        else:
+            fname='%06d-psf-resid-band%d-icut%d.png' % (mindex,band,icut+1)
+
+        print("            ",fname)
+        plt.write_img(1920,1200,fname)
 
 
     def _load_meds_files(self):
@@ -2384,7 +2427,7 @@ class MHMedsFitHybrid(MedsFit):
 
         n_se_images=len(self.sdata['mb_obs_list'])
          
-        if max_s2n >= self['min_psf_s2n']:
+        if max_s2n >= self['min_psf_s2n'] and len(self['fit_models']) > 0:
 
             # we use this as a guess for the real galaxy models, and for
             # step sizes

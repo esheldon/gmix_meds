@@ -8,6 +8,9 @@ todo
 """
 from __future__ import print_function
 import os
+import numpy
+
+from . import files
 
 def make_all_oracle_input(run, table_name, blind=True):
     """
@@ -18,6 +21,7 @@ def make_all_oracle_input(run, table_name, blind=True):
     ntiles=len(tilenames)
     print('found',ntiles,'tiles')
     for i,tilename in enumerate(tilenames):
+        print("-"*70)
         print('%03d/%03d %s' % (i+1,ntiles,tilename))
 
         create=(i==0)
@@ -73,9 +77,7 @@ class OracleInputMaker(object):
     def __init__(self, run, tilename, table_name, ftype='mcmc',
                  blind=True, create=False):
 
-        raise RuntimeError("convert names here: "
-                           "id->coadd_objects_id number->coadd_object_number "
-                           "g->e etc")
+        self._files=files.Files(run)
 
         self.run=run
         self.tilename=tilename
@@ -88,28 +90,26 @@ class OracleInputMaker(object):
 
         self.set_info()
 
-    '''
-        use rename_columns
-        name_map={'number':'coadd_object_number', # to match the database
-                  'psf_fit_g':'psf_fit_e'}
+        self.epoch_name_map={'id':'coadd_objects_id',
+                             'number':'coadd_object_number', # to match the database
+                             'psf_fit_g':'psf_fit_e'}
 
-        name_map={'number':     'coadd_object_number',
+        self.name_map={'id':     'coadd_objects_id',
+                       'number': 'coadd_object_number',
 
-                  'coadd_exp_g':      'coadd_exp_e',
-                  'coadd_exp_g_cov':  'coadd_exp_e_cov',
-                  'coadd_exp_g_sens': 'coadd_exp_e_sens',
-                  'coadd_dev_g':      'coadd_dev_e',
-                  'coadd_dev_g_cov':  'coadd_dev_e_cov',
-                  'coadd_dev_g_sens': 'coadd_dev_e_sens',
+                       'coadd_exp_g':      'coadd_exp_e',
+                       'coadd_exp_g_cov':  'coadd_exp_e_cov',
+                       'coadd_exp_g_sens': 'coadd_exp_e_sens',
+                       'coadd_dev_g':      'coadd_dev_e',
+                       'coadd_dev_g_cov':  'coadd_dev_e_cov',
+                       'coadd_dev_g_sens': 'coadd_dev_e_sens',
 
-                  'exp_g':      'exp_e',
-                  'exp_g_cov':  'exp_e_cov',
-                  'exp_g_sens': 'exp_e_sens',
-                  'dev_g':      'dev_e',
-                  'dev_g_cov':  'dev_e_cov',
-                  'dev_g_sens': 'dev_e_sens'}
-
-    '''
+                       'exp_g':      'exp_e',
+                       'exp_g_cov':  'exp_e_cov',
+                       'exp_g_sens': 'exp_e_sens',
+                       'dev_g':      'dev_e',
+                       'dev_g_cov':  'dev_e_cov',
+                       'dev_g_sens': 'dev_e_sens'}
 
     def make_tile_input(self):
         """
@@ -128,6 +128,11 @@ class OracleInputMaker(object):
             model_fits=fobj['model_fits'].read(columns=cols2keep)
             print("    reading epoch data")
             epoch_data=fobj['epoch_data'][:]
+
+        model_fits=self.add_tilename(model_fits)
+
+        rename_columns(model_fits, self.name_map)
+        rename_columns(epoch_data, self.epoch_name_map)
 
         if not os.path.exists(self.outdir):
             os.makedirs(self.outdir)
@@ -150,13 +155,24 @@ class OracleInputMaker(object):
                           self.epochs_control_file,
                           create=self.create)
 
-        '''
-        time.sleep(1)
-        print("moving:",self.temp_pattern,"to",self.outdir)
-        res=os.system('mv -fv %s %s/' % (self.temp_pattern, self.outdir))
-        if res != 0:
-            raise RuntimeError("error moving files")
-        '''
+    def add_tilename(self, data):
+        import esutil as eu
+
+        print("adding tilename")
+
+        names=list( data.dtype.names )
+        index=names.index('number')
+
+        dt=data.dtype.descr
+        dt.insert(index+1, ('tilename','S12'))
+
+        newdata=numpy.zeros(data.size, dtype=dt)
+
+        eu.numpy_util.copy_fields(data, newdata)
+        
+        newdata['tilename'] = self.tilename
+
+        return newdata
 
     def extract_keep_cols(self, data):
         """
@@ -193,14 +209,24 @@ class OracleInputMaker(object):
         else:
             out_ftype='wlpipe_me_collated'
 
-        self.rc=deswl.files.Runconfig(self.run)
+        self.rc=deswl.files.read_runconfig(self.run)
 
+
+        if self.blind:
+            extra='blind'
+        else:
+            extra=None
+
+        self.fname = self._files.get_collated_file(sub_dir=self.tilename, extra=extra)
+
+        '''
         self.df=desdb.files.DESFiles()
         self.fname = self.df.url(out_ftype,
                                  run=self.run,
                                  tilename=self.tilename,
                                  filetype=self.ftype,
                                  ext='fits')
+        '''
 
         dirname=os.path.dirname(self.fname)
         bname=os.path.basename(self.fname)
@@ -221,7 +247,7 @@ class OracleInputMaker(object):
 
         #print(self.temp_pattern)
 
-        self.bands=self.rc['band']
+        self.bands=self.rc['bands']
         self.band_cols=get_band_cols()
 
         self.primary_key='coadd_objects_id'
@@ -242,7 +268,7 @@ def add_indexes(table_name):
 
     conn=desdb.Connection()
     curs = conn.cursor()
-    """
+
     for col in index_cols:
         index_name='{table_name}{col}idx'.format(table_name=table_name,
                                                    col=col)
@@ -268,7 +294,7 @@ def add_indexes(table_name):
         print(query)
 
         curs.execute(query)
-
+    """
     curs.close()
     conn.close()
 
@@ -347,56 +373,56 @@ def get_index_cols():
             'psf_flags_z',
             #'psf_mag_g',
             #'psf_mag_r',
-            'psf_mag_i',
+            #'psf_mag_i',
             #'psf_mag_z',
 
             'coadd_exp_flags',
-            'coadd_exp_chi2per',
+            #'coadd_exp_chi2per',
             #'coadd_exp_mag_g',
             #'coadd_exp_mag_r',
-            'coadd_exp_mag_i',
+            #'coadd_exp_mag_i',
             #'coadd_exp_mag_z',
-            'coadd_exp_s2n_w',
-            'coadd_exp_T_s2n',
-            'coadd_exp_e_1',
-            'coadd_exp_e_2',
-            'coadd_exp_arate',
+            #'coadd_exp_s2n_w',
+            #'coadd_exp_T_s2n',
+            #'coadd_exp_e_1',
+            #'coadd_exp_e_2',
+            #'coadd_exp_arate',
 
             'coadd_dev_flags',
-            'coadd_dev_chi2per',
+            #'coadd_dev_chi2per',
             #'coadd_dev_mag_g',
             #'coadd_dev_mag_r',
-            'coadd_dev_mag_i',
+            #'coadd_dev_mag_i',
             #'coadd_dev_mag_z',
-            'coadd_dev_s2n_w',
-            'coadd_dev_T_s2n',
-            'coadd_dev_e_1',
-            'coadd_dev_e_2',
-            'coadd_dev_arate',
+            #'coadd_dev_s2n_w',
+            #'coadd_dev_T_s2n',
+            #'coadd_dev_e_1',
+            #'coadd_dev_e_2',
+            #'coadd_dev_arate',
 
             'exp_flags',
-            'exp_chi2per',
+            #'exp_chi2per',
             #'exp_mag_g',
             #'exp_mag_r',
-            'exp_mag_i',
+            #'exp_mag_i',
             #'exp_mag_z',
-            'exp_s2n_w',
-            'exp_T_s2n',
-            'exp_e_1',
-            'exp_e_2',
-            'exp_arate',
+            #'exp_s2n_w',
+            #'exp_T_s2n',
+            #'exp_e_1',
+            #'exp_e_2',
+            #'exp_arate',
 
             'dev_flags',
-            'dev_chi2per',
+            #'dev_chi2per',
             #'dev_mag_g',
             #'dev_mag_r',
-            'dev_mag_i',
+            #'dev_mag_i',
             #'dev_mag_z',
-            'dev_s2n_w',
-            'dev_T_s2n',
-            'dev_e_1',
-            'dev_e_2',
-            'dev_arate',
+            #'dev_s2n_w',
+            #'dev_T_s2n',
+            #'dev_e_1',
+            #'dev_e_2',
+            #'dev_arate',
             ]
 
 def get_epoch_index_cols():
@@ -415,16 +441,14 @@ def get_tilenames(run):
     import desdb
     import deswl
 
-    rc=deswl.files.Runconfig(run)
+    rc=deswl.files.read_runconfig(run)
     releases=rc['dataset']
-    bands=rc['band']
 
-    runs=desdb.files.get_release_runs(releases, withbands=bands)
-    #info_list=desdb.files.get_coadd_info_by_release(releases,'g',
-    #                                                withbands=bands)
-
-    #tiles = [info['tilename'] for info in info_list]
-    #tiles=[tile for tile in tiles if tile not in _TILE_BLACKLIST]
+    if releases=="testbed":
+        runs=desdb.files.get_testbed_runs(rc)
+    else:
+        bands=rc['bands']
+        runs=desdb.files.get_release_runs(releases, withbands=bands)
 
     tiles=[]
     for run in runs:
@@ -432,7 +456,6 @@ def get_tilenames(run):
         tilename=rs[1]
         if tilename not in _TILE_BLACKLIST:
             tiles.append(tilename)
-        #tiles.append(tilename)
 
     tiles.sort()
     return tiles
