@@ -1,0 +1,80 @@
+# same as nmeds007 but with no max box size limit and much larger allowed T
+# value, corresponding to sigma=2600.0 pixels
+
+fitter: "ngmix"
+
+# emcee, mh
+fitter_class: "mh"
+
+#nu: 5.0
+nu: 0.0
+
+mh_burnin: 5000
+mh_nstep: 5000
+
+emcee_a: 2.0
+emcee_nwalkers: 20
+emcee_burnin: 400
+emcee_nstep: 800
+
+psf_em_pars:
+    ngauss: 3
+    ntry: 20
+    maxiter: 5000
+    tol: 5.0e-6
+
+gal_lm_ntry: 10
+
+gal_lm_pars:
+    maxfev: 300
+    ftol:   1.0e-6
+    xtol:   1.0e-6
+    epsfcn: 1.0e-6
+
+
+# at least one band must have s/n > this or
+# we won't fit the slow mcmc 
+min_psf_s2n: 4
+
+#region: "seg_and_sky"
+region: "cweight-nearest"
+
+# in arcsec
+psf_offset_max: 0.25
+
+# in addition to gauss fit on coadd and a psf flux
+fit_models: ['exp','dev']
+
+# we still do psf
+fit_me_galaxy: True
+
+do_shear: True
+
+reject_outliers: True
+
+use_cen_prior: True
+cen_width: 0.27
+
+# from fitting to all cosmos galaxies in galsim data
+g_prior_types: ["cosmos-sersic","cosmos-sersic"]
+
+# 1.0e+06 is about 700 arcsec, 2600 pixels
+T_prior_types: ["TwoSidedErf","TwoSidedErf"]
+T_prior_pars: [ [-0.07, 0.03, 1.0e+06, 1.0e+05],
+                [-0.07, 0.03, 1.0e+06, 1.0e+05] ]
+
+counts_prior_types: ["TwoSidedErf","TwoSidedErf"]
+counts_prior_pars: [ [-1.0, 0.1, 1.0e+09, 0.25e+08],
+                     [-1.0, 0.1, 1.0e+09, 0.25e+08] ]
+
+
+# this means repeat the above for each band
+counts_prior_repeat: True
+
+guess_type: 'coadd_mcmc'
+
+# checkpoint times in minutes, needed for condor in case we pass a batch system
+# limit such as in the condor scavenge.
+# 0 means after the first object
+
+checkpoints: [0,30,60,110]
