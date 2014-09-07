@@ -2,14 +2,8 @@
 """
     %prog [options] run
     
-If image ids etc. are not in the meds files, first run with
-    --cache
-to generate the cache for all tiles.  This is good becuase we can't
-have too many concurrent connections
-
 e.g.
-    gfme004grizt
-    gfme004grizt
+    ngmix004
 
 """
 
@@ -32,8 +26,6 @@ parser.add_option('--noblind',action='store_true',
                   help="don't blind the catalog")
 parser.add_option('--clobber',action='store_true',
                   help="clobber existing catalog, else skip over")
-parser.add_option('--cache',action='store_true',
-                  help="just generate the cache")
 
 def main():
     options, args = parser.parse_args(sys.argv[1:])
@@ -62,10 +54,7 @@ def main():
             tc=gmix_meds.collate.TileConcat(run, tilename,
                                             blind=blind,
                                             clobber=options.clobber)
-            if options.cache:
-                tc.cache_allband_se_image_ids()
-                tc.cache_coadd_objects_info()
-            elif options.verify:
+            if options.verify:
                 tc.verify()
             else:
                 tc.concat()
