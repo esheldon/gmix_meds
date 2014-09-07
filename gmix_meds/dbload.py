@@ -97,12 +97,16 @@ class OracleInputMaker(object):
         self.name_map={'id':     'coadd_objects_id',
                        'number': 'coadd_object_number',
 
+                       'coadd_psfrec_g':'coadd_psfrec_e',
+
                        'coadd_exp_g':      'coadd_exp_e',
                        'coadd_exp_g_cov':  'coadd_exp_e_cov',
                        'coadd_exp_g_sens': 'coadd_exp_e_sens',
                        'coadd_dev_g':      'coadd_dev_e',
                        'coadd_dev_g_cov':  'coadd_dev_e_cov',
                        'coadd_dev_g_sens': 'coadd_dev_e_sens',
+
+                       'psfrec_g':   'psfrec_e',
 
                        'exp_g':      'exp_e',
                        'exp_g_cov':  'exp_e_cov',
@@ -281,7 +285,7 @@ def add_indexes(table_name):
         print(query)
 
         curs.execute(query)
-    """
+
     for col in epoch_index_cols:
         index_name='{table_name}{col}idx'.format(table_name=epochs_table_name_short,
                                                  col=col)
@@ -294,7 +298,7 @@ def add_indexes(table_name):
         print(query)
 
         curs.execute(query)
-    """
+
     curs.close()
     conn.close()
 
