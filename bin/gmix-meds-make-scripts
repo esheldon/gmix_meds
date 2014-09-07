@@ -1,0 +1,167 @@
+#!/usr/bin/env python
+"""
+    %prog [options] run [coadd_run1 coadd_run2 ...]
+
+Generate the 
+    - condor submit files
+    - wq collate and verify scripts
+    - and wq oracle making scripts
+
+This is a convenience script, des specific because tiles are referenced.  Also
+the config files are assumed to live in the gmix_meds repository
+
+Optionally send specific coadd runs
+"""
+from __future__ import print_function
+import os,sys
+import gmix_meds
+from gmix_meds.files import CondorMaker
+from gmix_meds import files
+import desdb
+import yaml
+
+
+from optparse import OptionParser
+parser = OptionParser(__doc__)
+
+parser.add_option("--missing",action='store_true',
+                  help="only write for missing")
+
+parser.add_option("--ignore-stats",action='store_true',
+                  help="for older meds file creation")
+
+parser.add_option("--noblind",action='store_true',
+                  help="don't blind the shears")
+
+
+def read_gmix_meds_config(config):
+    """
+    we currently use ones checked into gmix_meds
+    """
+    path=get_gmix_meds_config_file(config)
+    with open(path) as fobj:
+        data=yaml.load(fobj)
+    return data
+
+
+def get_gmix_meds_config_file(config):
+    """
+    we currently use ones checked into gmix_meds
+    """
+    dir=os.environ['GMIX_MEDS_DIR']
+    dir=os.path.join(dir, 'share','config')
+
+    name='%s.yaml' % config
+
+    return os.path.join(dir, name)
+
+def get_coadd_runs(rc):
+    dataset=rc['dataset']
+
+    if dataset == "testbed":
+        runs=desdb.files.get_testbed_runs(rc)
+    else:
+        runs=desdb.files.get_release_runs(dataset, withbands=rc['withbands'])
+        print("found",len(runs),"runs")
+
+
+    return runs
+
+def get_meds_files(df, coadd_run, tilename, medsconf, bands):
+    slist=[]
+    flist=[]
+
+    for band in bands:
+        path=df.url('meds',
+                    coadd_run=coadd_run,
+                    tilename=tilename,
+                    band=band,
+                    medsconf=medsconf)
+
+        flist.append(path)
+
+        spath=df.url('meds_stats',
+                     coadd_run=coadd_run,
+                     tilename=tilename,
+                     band=band,
+                     medsconf=medsconf)
+        slist.append(spath)
+
+    return flist, slist
+
+def check_meds(meds_files, stats_files, ignore_stats=False):
+    import yaml
+
+    for f,sf in zip(meds_files,stats_files):
+
+        # this is a failure somewhere and we die
+        if not ignore_stats:
+            if not os.path.exists(sf):
+                raise IOError("stats file is missing: %s" % sf)
+
+            # check that we had some source files
+            with open(sf) as fobj:
+                stats=yaml.load(fobj)
+
+            # note we return right out
+            if stats['nsource'] == 0:
+                print("no sources were found for meds: %s" % sf)
+                return False
+
+        # if we get here, the meds file should exist. So die
+        if not os.path.exists(f):
+            raise  IOError("error: missing meds file: %s" % f)
+
+    return True
+
+def main():
+
+    options, args = parser.parse_args(sys.argv[1:])
+    if len(args) < 1:
+        parser.print_help()
+        sys.exit(45)
+
+    run=args[0]
+    missing=options.missing
+
+    # assuming these are in the gmix_meds installation dir
+    runconfig=files.read_default_runconfig(run)
+    gmconfig_file=files.get_default_config_file(runconfig['config'])
+
+    if len(args) > 1:
+        coadd_runs=args[1:]
+    else:
+        coadd_runs=get_coadd_runs(runconfig)
+
+    df=desdb.files.DESFiles()
+
+    nrun=len(coadd_runs)
+    for i,coadd_run in enumerate(coadd_runs):
+        print("-"*70)
+        print("%d/%d" % (i+1, nrun),coadd_run)
+
+        tilename=coadd_run.split('_')[1]
+        meds_files, stats_files=get_meds_files(df,
+                                               coadd_run,
+                                               tilename,
+                                               runconfig['medsconf'],
+                                               runconfig['bands'])
+
+        # there are valid reasons to skip certain tiles
+        if not check_meds(meds_files, stats_files,
+                          ignore_stats=options.ignore_stats):
+            continue
+
+        maker=CondorMaker(run,
+                          gmconfig_file,
+                          meds_files,
+                          bands=runconfig['bands'],
+                          nper=runconfig['nper'],
+                          missing=options.missing,
+                          noblind=options.noblind,
+                          sub_dir=tilename)
+
+
+        maker.write()
+main()
+
