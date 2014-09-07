@@ -416,6 +416,9 @@ def get_master_script_text():
     text="""#!/bin/bash
 function go {
     hostname
+    nproc=$(cat /proc/cpuinfo  | grep processor | wc -l )
+    ut=$(uptime)
+    echo "nproc: $nproc uptime: $ut"
 
     python -u $GMIX_MEDS_DIR/bin/gmix-fit-meds     \\
             --obj-range $beg,$end                  \\
