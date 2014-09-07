@@ -41,6 +41,8 @@ LOW_PSF_FLUX=2**7
 
 UTTER_FAILURE=2**8
 
+IMAGE_FLAGS=2**9
+
 NO_ATTEMPT=2**30
 
 #PSF_S2N=1.e6
@@ -317,28 +319,47 @@ class MedsFit(dict):
     def _obj_check(self, mindex):
         """
         Check box sizes, number of cutouts
+
+        Require good in all bads
         """
         for band in self.iband:
-            meds=self.meds_list[band]
-            flags=self._obj_check_one(meds, mindex)
+            flags=self._obj_check_one(band, mindex)
             if flags != 0:
                 break
         return flags
 
-    def _obj_check_one(self, meds, mindex):
+    def _obj_check_one(self, band, mindex):
         """
         Check box sizes, number of cutouts
         """
         flags=0
+
+        meds=self.meds_list[band]
 
         box_size=meds['box_size'][mindex]
         if box_size > self['max_box_size']:
             print('Box size too big:',box_size)
             flags |= BOX_SIZE_TOO_BIG
 
-        if meds['ncutout'][mindex] < 1:
+        # need coadd and at lease one SE image
+        ncutout=meds['ncutout'][mindex]
+        if ncutout < 2:
             print('No cutouts')
             flags |= NO_CUTOUTS
+
+        # check image flags
+
+        # note coadd is never flagged
+        image_flags=self._get_image_flags(meds, mindex)
+        w,=numpy.where(image_flags==0)
+        # need coadd and at lease one SE image
+        if w.size < 2:
+            print('< 2 with no image flags')
+            flags |= IMAGE_FLAGS
+
+        if w.size != image_flags.size:
+            print("    for band %d removed %d/%d images due to "
+                  "flags" % (band, ncutout-w.size, ncutout))
         return flags
 
 
@@ -436,9 +457,9 @@ class MedsFit(dict):
         self.data['coadd_wsum'][dindex]=self.coadd_wsum
         self.data['coadd_wmax'][dindex]=self.coadd_wmax
         self.data['coadd_mask_frac'][dindex]=mask_frac
-        self.data['coadd_psfrec_T_mean'][dindex]=T
-        self.data['coadd_psfrec_g1_mean'][dindex]=g1
-        self.data['coadd_psfrec_g2_mean'][dindex]=g2
+        self.data['coadd_psfrec_T'][dindex]=T
+        self.data['coadd_psfrec_g'][dindex,0]=g1
+        self.data['coadd_psfrec_g'][dindex,1]=g2
 
         wsum=self.wsum
         if wsum > 0:
@@ -456,9 +477,9 @@ class MedsFit(dict):
         self.data['wsum'][dindex]=self.wsum
         self.data['wmax'][dindex]=self.wmax
         self.data['mask_frac'][dindex]=mask_frac
-        self.data['psfrec_T_mean'][dindex]=T
-        self.data['psfrec_g1_mean'][dindex]=g1
-        self.data['psfrec_g2_mean'][dindex]=g2
+        self.data['psfrec_T'][dindex]=T
+        self.data['psfrec_g'][dindex,0]=g1
+        self.data['psfrec_g'][dindex,1]=g2
 
 
     def _reject_outliers(self, obs_list):
@@ -474,41 +495,90 @@ class MedsFit(dict):
             print('        rejected:',nreject)
 
 
+    def _get_image_flags(self, meds, mindex):
+        """
+        find images associated with the object and get the image flags
+        """
+        ncutout=meds['ncutout'][mindex]
+
+        file_ids = meds['file_id'][mindex, 0:ncutout]
+        image_info=meds.get_image_info()
+        image_flags = image_info['image_flags'][file_ids]
+
+        return image_flags
+
     def _get_band_observations(self, band, mindex):
         """
         Get an ObsList for the coadd observations in each band
 
         If psf fitting fails, the ObsList will be zero length
+
+        note we have already checked that we have a coadd and a single epoch
+        without flags
         """
 
         meds=self.meds_list[band]
         ncutout=meds['ncutout'][mindex]
 
-        coadd_obs_list=ObsList()
-        obs_list = ObsList()
+        image_flags=self._get_image_flags(meds, mindex)
 
-        icut=0
-        try:
-            coadd_obs = self._get_band_observation(band, mindex, icut)
-            coadd_obs_list.append( coadd_obs )
-            flags=0
-        except GMixMaxIterEM:
-            flags=PSF_FIT_FAILURE
-        self._set_psf_meta(meds, mindex, band, icut, flags)
-        self.epoch_index += 1
+        coadd_obs_list = ObsList()
+        obs_list       = ObsList()
 
-        for icut in xrange(1,ncutout):
-            try:
-                obs = self._get_band_observation(band, mindex, icut)
-                obs_list.append(obs)
-                flags=0
-            except GMixMaxIterEM:
-                flags=PSF_FIT_FAILURE
+        for icut in xrange(0,ncutout):
+            iflags = image_flags[icut]
+            if iflags != 0:
+                flags = IMAGE_FLAGS
+            else:
+                try:
+                    obs = self._get_band_observation(band, mindex, icut)
+
+                    if icut==0:
+                        coadd_obs_list.append( obs )
+                    else:
+                        obs_list.append(obs)
+                    flags=0
+                except GMixMaxIterEM:
+                    flags=PSF_FIT_FAILURE
 
             # we set the metadata even if the fit fails
             self._set_psf_meta(meds, mindex, band, icut, flags)
             self.epoch_index += 1
-        
+
+
+        '''
+        icut=0
+        iflags=image_flags[icut]
+        if iflags != 0:
+            flags = IMAGE_FLAGS
+        else:
+            try:
+                coadd_obs = self._get_band_observation(band, mindex, icut)
+                coadd_obs_list.append( coadd_obs )
+                flags=0
+            except GMixMaxIterEM:
+                flags |= PSF_FIT_FAILURE
+
+        self._set_psf_meta(meds, mindex, band, icut, flags)
+        self.epoch_index += 1
+
+        for icut in xrange(1,ncutout):
+            iflags = image_flags[icut]
+            if iflags != 0:
+                flags = IMAGE_FLAGS
+            else:
+                try:
+                    obs = self._get_band_observation(band, mindex, icut)
+                    obs_list.append(obs)
+                    flags=0
+                except GMixMaxIterEM:
+                    flags=PSF_FIT_FAILURE
+
+            # we set the metadata even if the fit fails
+            self._set_psf_meta(meds, mindex, band, icut, flags)
+            self.epoch_index += 1
+        '''
+
         return coadd_obs_list, obs_list
 
     def _get_band_observation(self, band, mindex, icut):
@@ -1755,18 +1825,16 @@ class MedsFit(dict):
             ('coadd_wmax','f8'),
             ('coadd_mask_frac','f8'),
             ('coadd_psfrec_counts_mean','f8',bshape),
-            ('coadd_psfrec_T_mean','f8'),
-            ('coadd_psfrec_g1_mean','f8'),
-            ('coadd_psfrec_g2_mean','f8'),
+            ('coadd_psfrec_T','f8'),
+            ('coadd_psfrec_g','f8', 2),
 
             ('npix','i4'),
             ('wsum','f8'),
             ('wmax','f8'),
             ('mask_frac','f8'),
             ('psfrec_counts_mean','f8',bshape),
-            ('psfrec_T_mean','f8'),
-            ('psfrec_g1_mean','f8'),
-            ('psfrec_g2_mean','f8')]
+            ('psfrec_T','f8'),
+            ('psfrec_g','f8', 2)]
 
         # coadd fit with em 1 gauss
         # the psf flux fits are done for each band separately
@@ -1827,15 +1895,13 @@ class MedsFit(dict):
 
         data['coadd_mask_frac'] = PDEFVAL
         data['coadd_psfrec_counts_mean'] = DEFVAL
-        data['coadd_psfrec_T_mean'] = DEFVAL
-        data['coadd_psfrec_g1_mean'] = DEFVAL
-        data['coadd_psfrec_g2_mean'] = DEFVAL
+        data['coadd_psfrec_T'] = DEFVAL
+        data['coadd_psfrec_g'] = DEFVAL
 
         data['mask_frac'] = PDEFVAL
         data['psfrec_counts_mean'] = DEFVAL
-        data['psfrec_T_mean'] = DEFVAL
-        data['psfrec_g1_mean'] = DEFVAL
-        data['psfrec_g2_mean'] = DEFVAL
+        data['psfrec_T'] = DEFVAL
+        data['psfrec_g'] = DEFVAL
 
 
         for name in ['coadd_psf','psf']:
