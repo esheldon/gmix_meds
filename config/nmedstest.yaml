@@ -6,6 +6,8 @@ reject_outliers: False
 fitter_class: "emcee"
 coadd_fitter_class: "emcee"
 
+use_psf_rerun: True
+
 fit_me_galaxy: True
 
 # for guessing size from flux radius
