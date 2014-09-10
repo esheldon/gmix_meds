@@ -144,7 +144,7 @@ class Concat(object):
 
         This also includes the Q values from B&A
         """
-        models=self.config['fit_models']
+        models=self.get_models(data)
 
         names=data.dtype.names
         for model in models:
@@ -192,6 +192,20 @@ class Concat(object):
 
         return epoch_data
 
+    def get_models(self, data):
+        models=[]
+
+        model_names = self.config['fit_models']
+        model_names = ['coadd_%s' % mod for mod in models] + model_names
+        
+        names=list( data.dtype.names )
+        for model in model_names:
+            flux_name = '%s_flux' % model
+            if flux_name in names:
+                models.append(model)
+
+        return models
+
     def pick_fields(self, data0, meta):
         """
         pick out some fields, add some fields, rename some fields
@@ -200,6 +214,8 @@ class Concat(object):
 
         nbands=self.nbands
         
+        models=self.get_models(data0)
+
         names=list( data0.dtype.names )
         dt=[tdt for tdt in data0.dtype.descr]
 
@@ -210,8 +226,6 @@ class Concat(object):
         dt.insert(flux_ind+2, ('psf_mag','f8',nbands) )
         names.insert(flux_ind+2,'psf_mag')
 
-        models=self.config['fit_models']
-        models = ['coadd_%s' % mod for mod in models] + models
 
         do_T=False
         for ft in models:
