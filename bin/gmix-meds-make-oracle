@@ -36,7 +36,7 @@ def main():
     else:
         blind=True
 
-    gmix_meds.dbload.make_oracle_input(run, table_name, tilename, blind=blind,
+    gmix_meds.dbload.make_oracle_input(run, tilename, table_name, blind=blind,
                                        create=options.create)
 
 
