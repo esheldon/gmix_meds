@@ -86,6 +86,7 @@ class MedsFit(dict):
         """
 
         self.update(conf)
+        self._set_some_defaults()
         
         self.meds_files=_get_as_list(meds_files)
 
@@ -100,9 +101,9 @@ class MedsFit(dict):
         self.obj_range=obj_range
         self._set_index_list()
 
+
         self.psfex_lol = self._get_psfex_lol()
 
-        self._set_some_defaults()
 
         self.checkpoint_file=checkpoint_file
         self.checkpoint_data=checkpoint_data
@@ -124,6 +125,8 @@ class MedsFit(dict):
         self['make_plots']=self.get('make_plots',False)
 
         self['work_dir'] = self.get('work_dir',os.environ.get('TMPDIR','/tmp'))
+
+        self['use_psf_rerun']=self.get('use_psf_rerun',False)
 
     def _unpack_priors(self, priors_in):
         """
@@ -1663,8 +1666,7 @@ class MedsFit(dict):
         if desdata not in psfpath:
             psfpath=psfpath.replace(meds_desdata,desdata)
 
-        psfextra=self.get('psfextra',False)
-        if psfextra:
+        if self['use_psf_rerun'] and 'coadd' not in psfpath:
             psfparts=psfpath.split('/')
             psfparts[-6] = 'EXTRA' # replace 'OPS'
             psfparts[-3] = 'psfex-rerun' # replace 'red'
