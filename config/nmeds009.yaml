@@ -1,0 +1,70 @@
+# all emcee, no multi-epoch
+# trying a pure emcee fit again
+fitter: "ngmix"
+
+# emcee, mh
+reject_outliers: False
+fitter_class: "emcee"
+coadd_fitter_class: "emcee"
+
+fit_me_galaxy: False
+
+# for guessing size from flux radius
+T_guess_band: 2
+
+nu: 5.0
+#nu: 0.0
+
+mh_burnin: 5000
+mh_nstep: 5000
+
+emcee_a: 2.0
+emcee_nwalkers: 80
+emcee_burnin: 400
+emcee_nstep: 200
+
+psf_em_pars:
+    ngauss: 3
+    ntry: 20
+    maxiter: 5000
+    tol: 5.0e-6
+
+# at least one band must have s/n > this or
+# we won't fit the slow mcmc 
+min_psf_s2n: 4
+
+#region: "seg_and_sky"
+region: "cweight-nearest"
+
+# in arcsec
+psf_offset_max: 0.25
+
+# in addition to gauss fit on coadd and a psf flux
+fit_models: ['exp']
+
+
+do_shear: True
+
+use_cen_prior: True
+cen_width: 0.27
+
+# from fitting to all cosmos galaxies in galsim data
+g_prior_types: ["cosmos-sersic"]
+
+# 1.0e+06 is about 700 arcsec, 2600 pixels
+T_prior_types: ["TwoSidedErf"]
+T_prior_pars: [ [-0.07, 0.03, 1.0e+06, 1.0e+05] ]
+
+counts_prior_types: ["TwoSidedErf"]
+counts_prior_pars: [ [-1.0, 0.1, 1.0e+09, 0.25e+08] ]
+
+
+# this means repeat the above for each band
+counts_prior_repeat: True
+
+
+# checkpoint times in minutes, needed for condor in case we pass a batch system
+# limit such as in the condor scavenge.
+# 0 means after the first object
+
+checkpoints: [0,30,60,110]
