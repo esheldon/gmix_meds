@@ -95,6 +95,7 @@ class MedsFit(dict):
         self._unpack_priors(priors)
 
         self._load_meds_files()
+        self._load_coadd_cat_files()
 
         self.obj_range=obj_range
         self._set_index_list()
@@ -118,6 +119,8 @@ class MedsFit(dict):
         self['region']=self.get('region','cweight-nearest')
         self['max_box_size']=self.get('max_box_size',2048)
         self['reject_outliers']=self.get('reject_outliers',True) # from cutouts
+        if self['reject_outliers']:
+            print("will reject outliers")
         self['make_plots']=self.get('make_plots',False)
 
         self['work_dir'] = self.get('work_dir',os.environ.get('TMPDIR','/tmp'))
@@ -852,7 +855,7 @@ class MedsFit(dict):
 
         n_se_images=len(self.sdata['mb_obs_list'])
          
-        if max_s2n >= self['min_psf_s2n'] and len(self['fit_models'])==0:
+        if max_s2n >= self['min_psf_s2n'] and len(self['fit_models']) > 0:
             # we use this as a guess for the real galaxy models
             print("    fitting coadd gauss")
             self._run_model_fit('gauss', coadd=True)
@@ -1120,12 +1123,13 @@ class MedsFit(dict):
         """
         if coadd:
             if model=='gauss':
-                self.guesser=self._get_guesser('coadd_psf')
+                self.guesser=self._get_guesser('coadd_cat')
             else:
                 self.guesser=self._get_guesser('coadd_gauss')
             mb_obs_list=self.sdata['coadd_mb_obs_list']
         else:
-            self.guesser=self._get_guesser(self['guess_type'])
+            #self.guesser=self._get_guesser(self['guess_type'])
+            self.guesser=self._get_guesser('coadd_mcmc')
             mb_obs_list=self.sdata['mb_obs_list']
 
         fitter=self._fit_model(mb_obs_list, model)
@@ -1163,6 +1167,8 @@ class MedsFit(dict):
     def _get_guesser(self, guess_type):
         if guess_type=='coadd_psf':
             guesser=self._get_guesser_from_coadd_psf()
+        elif guess_type=='coadd_cat':
+            guesser=self._get_guesser_from_coadd_cat()
 
         elif guess_type=='coadd_gauss':
             guesser=self._get_guesser_from_coadd_gauss()
@@ -1221,9 +1227,48 @@ class MedsFit(dict):
 
         # arbitrary
         T = 2*(0.9/2.35)**2
+        #T=100.0
 
         guesser=FromPSFGuesser(T, psf_flux)
         return guesser
+
+    def _get_coadd_cat_best(self):
+        """
+        get T guess based on flux radius in the guess band
+        """
+        from .constants import PIXSCALE, PIXSCALE2
+        dindex=self.dindex
+        mindex = self.index_list[dindex]
+
+        c=self._cat_list[self['T_guess_band']]
+        flux_radius = c['flux_radius'][mindex]
+
+        # in arcsec
+        sigma = 2.0*flux_radius/2.35*PIXSCALE
+
+        T = 2*sigma**2
+
+        # fluxes also need to be converted
+        fluxes = [c['flux_model'][mindex] for c in self._cat_list]
+        fluxes = PIXSCALE2*numpy.array(fluxes, dtype='f8')
+        return T, fluxes
+
+
+    def _get_guesser_from_coadd_cat(self):
+        """
+        Take flux guesses from coadd catalogs and size from the guess_band flux_radius
+        """
+        print('        getting guess from coadd catalog')
+
+        dindex=self.dindex
+        mindex = self.index_list[dindex]
+
+        T, fluxes = self._get_coadd_cat_best()
+        print("        coadd T:",T,"coadd fluxes:",fluxes)
+
+        guesser=FromPSFGuesser(T, fluxes)
+        return guesser
+
 
     def _get_guesser_from_coadd_mcmc(self):
         """
@@ -1236,6 +1281,7 @@ class MedsFit(dict):
 
         # trials in default scaling
         trials = fitter.get_trials()
+        #lnprobs = fitter.get_lnprobs()
 
         # result with default scaling
         res=fitter.get_result()
@@ -1243,6 +1289,27 @@ class MedsFit(dict):
 
         guesser=FromMCMCGuesser(trials, sigmas)
         return guesser
+
+    def _get_guesser_from_coadd_gauss(self):
+        """
+        get a random set of points from the coadd chain
+        """
+
+        print('        getting guess from coadd gauss')
+
+        fitter=self.coadd_gauss_fitter
+
+        # trials in default scaling
+        trials = fitter.get_trials()
+        #lnprobs = fitter.get_lnprobs()
+
+        # result with default scaling
+        res=fitter.get_result()
+        sigmas=res['pars_err']
+
+        guesser=FromMCMCGuesser(trials, sigmas)
+        return guesser
+
 
     def _get_guesser_from_coadd_mcmc_best(self):
         """
@@ -1262,25 +1329,6 @@ class MedsFit(dict):
         guesser=FixedParsGuesser(best_pars, sigmas)
         return guesser
 
-
-    def _get_guesser_from_coadd_gauss(self):
-        """
-        get a random set of points from the coadd chain
-        """
-
-        print('        getting guess from coadd gauss')
-
-        fitter=self.coadd_gauss_fitter
-
-        # trials in default scaling
-        trials = fitter.get_trials()
-
-        # result with default scaling
-        res=fitter.get_result()
-        sigmas=res['pars_err']
-
-        guesser=FromMCMCGuesser(trials, sigmas)
-        return guesser
 
     def _get_guesser_from_coadd_gauss_best(self):
         """
@@ -1470,29 +1518,36 @@ class MedsFit(dict):
         mindex = self.index_list[dindex]
 
         title='%s %s' % (type,model)
-        res_plots=fitter.plot_residuals(title=title)
+        try:
+            res_plots=fitter.plot_residuals(title=title)
+            if res_plots is not None:
+                for band, band_plots in enumerate(res_plots):
+                    for icut, plt in enumerate(band_plots):
+                        fname='%06d-%s-resid-%s-band%d-im%d.png' % (mindex,type,model,band,icut+1)
+                        print("            ",fname)
+                        plt.write_img(1920,1200,fname)
+
+        except GMixRangeError as err:
+            print("caught error plotting resid: %s" % str(err))
 
         if do_trials:
-            pdict=fitter.make_plots(title=title,
-                                    weights=fitter.weights)
+            try:
+                pdict=fitter.make_plots(title=title,
+                                        weights=fitter.weights)
 
 
-            trials_png='%06d-%s-trials-%s.png' % (mindex,type,model)
-            wtrials_png='%06d-%s-wtrials-%s.png' % (mindex,type,model)
+                trials_png='%06d-%s-trials-%s.png' % (mindex,type,model)
+                wtrials_png='%06d-%s-wtrials-%s.png' % (mindex,type,model)
 
-            print("            ",trials_png)
-            pdict['trials'].write_img(1200,1200,trials_png)
+                print("            ",trials_png)
+                pdict['trials'].write_img(1200,1200,trials_png)
 
-            print("            ",wtrials_png)
-            pdict['wtrials'].write_img(1200,1200,wtrials_png)
+                print("            ",wtrials_png)
+                pdict['wtrials'].write_img(1200,1200,wtrials_png)
+            except:
+                print("caught error plotting trials")
 
 
-        if res_plots is not None:
-            for band, band_plots in enumerate(res_plots):
-                for icut, plt in enumerate(band_plots):
-                    fname='%06d-%s-resid-%s-band%d-im%d.png' % (mindex,type,model,band,icut+1)
-                    print("            ",fname)
-                    plt.write_img(1920,1200,fname)
 
     def _do_make_psf_plots(self, band, gmix, obs, mindex, icut):
         """
@@ -1559,6 +1614,24 @@ class MedsFit(dict):
 
         self.nobj_tot = self.meds_list[0].size
 
+    def _load_coadd_cat_files(self):
+        """
+        load the catalogs for fit guesses
+        """
+        import fitsio
+        cat_list=[]
+        for m in self.meds_list:
+            image_info=m.get_image_info()
+            image_path=image_info['image_path'][0].strip()
+            cat_path=get_coadd_cat_path(image_path)
+
+            print("loading catalog:",cat_path)
+            cat=fitsio.read(cat_path, lower=True)
+
+            cat_list.append(cat)
+
+        self._cat_list=cat_list
+
     def _get_psfex_lol(self):
         """
         Load psfex objects for each of the SE images
@@ -1578,13 +1651,33 @@ class MedsFit(dict):
 
         return psfex_lol
 
+    def _psfex_path_from_image_path(self, meds, image_path):
+        """
+        infer the psfex path from the image path
+        """
+        desdata=os.environ['DESDATA']
+        meds_desdata=meds._meta['DESDATA'][0]
+
+        psfpath=image_path.replace('.fits.fz','_psfcat.psf')
+
+        if desdata not in psfpath:
+            psfpath=psfpath.replace(meds_desdata,desdata)
+
+        psfextra=self.get('psfextra',False)
+        if psfextra:
+            psfparts=psfpath.split('/')
+            psfparts[-6] = 'EXTRA' # replace 'OPS'
+            psfparts[-3] = 'psfex-rerun' # replace 'red'
+
+            psfpath='/'.join(psfparts)
+
+        return psfpath
+
     def _get_psfex_objects(self, meds):
         """
         Load psfex objects for each of the SE images
         include the coadd so we get  the index right
         """
-        desdata=os.environ['DESDATA']
-        meds_desdata=meds._meta['DESDATA'][0]
 
         psfex_list=[]
         info=meds.get_image_info()
@@ -1592,15 +1685,14 @@ class MedsFit(dict):
 
         for i in xrange(nimage):
             impath=info['image_path'][i].strip()
-            psfpath=impath.replace('.fits.fz','_psfcat.psf')
 
-            if desdata not in psfpath:
-                psfpath=psfpath.replace(meds_desdata,desdata)
+            psfpath=self._psfex_path_from_image_path(meds, impath)
 
             if not os.path.exists(psfpath):
                 raise IOError("missing psfex: %s" % psfpath)
             else:
                 pex=psfex.PSFEx(psfpath)
+
             psfex_list.append(pex)
 
         return psfex_list
@@ -1941,319 +2033,6 @@ class MedsFit(dict):
         self.data=data
 
 
-    #
-    #
-    # methods below here not used
-    #
-    #
-
-    '''
-    def _extract_sub_lists(self,
-                           keep_lol0,
-                           im_lol0,
-                           wt_lol0,
-                           jacob_lol0):
-        """
-        extract those that passed some previous cuts
-        """
-        im_lol=[]
-        wt_lol=[]
-        jacob_lol=[]
-        len_list=[]
-        for band in self.iband:
-            keep_list = keep_lol0[band]
-
-            imlist0 = im_lol0[band]
-            wtlist0 = wt_lol0[band]
-            jacob_list0 = jacob_lol0[band]
-
-            imlist = [imlist0[i] for i in keep_list]
-            wtlist = [wtlist0[i] for i in keep_list]
-            jacob_list = [jacob_list0[i] for i in keep_list]
-
-            im_lol.append( imlist )
-            wt_lol.append( wtlist )
-            jacob_lol.append( jacob_list )
-
-            len_list.append( len(imlist) )
-
-        return im_lol, wt_lol, jacob_lol, len_list
-
-
-    def _get_imlol_wtlol(self, dindex, mindex):
-        """
-        Get a list of the jacobians for this object
-        skipping the coadd
-        """
-
-        im_lol=[]
-        wt_lol=[]
-        coadd_lol=[]
-        coadd_wt_lol=[]
-
-        for band in self.iband:
-            meds=self.meds_list[band]
-
-            # inherited functions
-            imlist,coadd_imlist=self._get_imlist(meds,mindex)
-            wtlist,coadd_wtlist=self._get_wtlist(meds,mindex)
-
-            if self['reject_outliers']:
-                nreject=reject_outliers(imlist,wtlist)
-                if nreject > 0:
-                    print('        rejected:',nreject)
-
-            self.data['nimage_tot'][dindex,band] = len(imlist)
-
-            im_lol.append(imlist)
-            wt_lol.append(wtlist)
-            coadd_lol.append(coadd_imlist)
-            coadd_wt_lol.append(coadd_wtlist)
-
-        
-        return im_lol,wt_lol,coadd_lol,coadd_wt_lol
-
-    def _get_imlist(self, meds, mindex, type='image'):
-        """
-        get the image list, skipping the coadd
-        """
-        imlist_all = meds.get_cutout_list(mindex,type=type)
-
-        coadd_imlist = [ imlist_all[0].astype('f8') ]
-        se_imlist  = imlist_all[self['imstart']:]
-
-        se_imlist = [im.astype('f8') for im in se_imlist]
-        return se_imlist, coadd_imlist
-
-
-    def _get_wtlist(self, meds, mindex):
-        """
-        get the weight list.
-
-        If using the seg map, mark pixels outside the coadd object region as
-        zero weight
-        """
-        if self['region']=='seg_and_sky':
-            wtlist_all=meds.get_cweight_cutout_list(mindex)
-
-            coadd_wtlist  = [ wtlist_all[0].astype('f8') ]
-            se_wtlist     = wtlist_all[self['imstart']:]
-
-            se_wtlist=[wt.astype('f8') for wt in se_wtlist]
-        else:
-            raise ValueError("support other region types")
-        return se_wtlist, coadd_wtlist
-
-    def _get_jacobian_lol(self, mindex):
-        """
-        Get a list of the jacobians for this object
-        skipping the coadd
-        """
-
-        jacob_lol=[]
-        jacob_coadd_lol=[]
-        for band in self.iband:
-            meds=self.meds_list[band]
-
-            jacob_list,coadd_jacob_list = self._get_jacobian_list(meds,mindex)
-            jacob_lol.append(jacob_list)
-            jacob_coadd_lol.append(coadd_jacob_list)
-
-        return jacob_lol, jacob_coadd_lol
-
-    def _get_jacobian_list(self, meds, mindex):
-        """
-        Get a list of the jacobians for this object
-        skipping the coadd
-        """
-        jlist0=meds.get_jacobian_list(mindex)
-
-        jlist_all=[]
-        for jdict in jlist0:
-            #print jdict
-            j=ngmix.Jacobian(jdict['row0'],
-                             jdict['col0'],
-                             jdict['dudrow'],
-                             jdict['dudcol'],
-                             jdict['dvdrow'],
-                             jdict['dvdcol'])
-            jlist_all.append(j)
-
-        jcoadd_jlist   = [jlist_all[0]]
-        se_jlist       =  jlist_all[self['imstart']:]
-        return se_jlist, jcoadd_jlist
-
-    def _fit_psfs(self, dindex, jacob_lol, do_coadd=False):
-        """
-        fit psfs for all bands
-        """
-        keep_lol=[]
-        gmix_lol=[]
-        flag_list=[]
-
-        #self.numiter_sum=0.0
-        #self.num=0
-        for band in self.iband:
-            meds=self.meds_list[band]
-            jacob_list=jacob_lol[band]
-            psfex_list=self.psfex_lol[band]
-
-            keep_list, gmix_list, flags = self._fit_psfs_oneband(meds,
-                                                                 dindex,
-                                                                 band,
-                                                                 jacob_list,
-                                                                 psfex_list,
-                                                                 do_coadd=do_coadd)
-
-
-            keep_lol.append( keep_list )
-            gmix_lol.append( gmix_list )
-
-            # only propagate flags if we have no psfs left
-            if len(keep_list) == 0:
-                flag_list.append( flags )
-            else:
-                flag_list.append( 0 )
-
-       
-        return keep_lol, gmix_lol, flag_list
-
-
-    def _fit_psfs_oneband(self,meds,dindex,band,jacob_list,psfex_list, do_coadd=False):
-        """
-        Generate psfex images for all SE images and fit
-        them to gaussian mixture models
-
-        We write the psf results into the psf structure *if*
-        do_coadd==False
-        """
-        ptuple = self._get_psfex_reclist(meds, psfex_list, dindex,do_coadd=do_coadd)
-        imlist,cenlist,siglist,flist,rng=ptuple
-
-        keep_list=[]
-        gmix_list=[]
-
-        flags=0
-
-        gmix_psf=None
-        mindex = self.index_list[dindex]
-
-        for i in xrange(len(imlist)):
-
-            im=imlist[i]
-            jacob0=jacob_list[i]
-            sigma=siglist[i]
-            icut=rng[i]
-
-            cen0=cenlist[i]
-            # the dimensions of the psfs are different, need
-            # new center
-            jacob=jacob0.copy()
-            jacob._data['row0'] = cen0[0]
-            jacob._data['col0'] = cen0[1]
-
-            tflags=0
-            try:
-                fitter=self._do_fit_psf(im,jacob,sigma,first_guess=gmix_psf)
-
-                gmix_psf=fitter.get_gmix()
-                if not do_coadd:
-                    self._set_psf_result(gmix_psf)
-
-                keep,offset_arcsec=self._should_keep_psf(gmix_psf)
-                if keep:
-                    gmix_list.append( gmix_psf )
-                    keep_list.append(i)
-                else:
-                    print( ('large psf offset: %s '
-                                    'in %s' % (offset_arcsec,flist[i])) )
-                    tflags |= PSF_LARGE_OFFSETS 
-
-                
-            except GMixMaxIterEM:
-                print('psf fail',flist[i])
-
-                tflags = PSF_FIT_FAILURE
-
-            flags |= tflags
-
-            if not do_coadd:
-                self._set_psf_data(meds, mindex, band, icut, tflags)
-                self.epoch_index += 1
-
-        return keep_list, gmix_list, flags
-
-
-    def _get_psfex_reclist(self, meds, psfex_list, dindex, do_coadd=False):
-        """
-        Generate psfex reconstructions for the SE images
-        associated with the cutouts
-        """
-
-        mindex = self.index_list[dindex]
-        ncut=meds['ncutout'][mindex]
-        imlist=[]
-        cenlist=[]
-        siglist=[]
-        flist=[]
-
-        if do_coadd:
-            rng=[0]
-        else:
-            rng=range(1,ncut)
-
-        for icut in rng:
-            file_id=meds['file_id'][mindex,icut]
-            pex=psfex_list[file_id]
-            fname=pex['filename']
-
-            row=meds['orig_row'][mindex,icut]
-            col=meds['orig_col'][mindex,icut]
-
-            im=pex.get_rec(row,col)
-            cen=pex.get_center(row,col)
-
-            imlist.append( im )
-            cenlist.append(cen)
-            siglist.append( pex.get_sigma() )
-            flist.append( fname)
-
-        return imlist, cenlist, siglist, flist, rng
-
-    def _do_fit_psf(self, im, jacob, sigma_guess, first_guess=None):
-        """
-        old
-
-        Fit a single psf
-        """
-        s2=sigma_guess**2
-        im_with_sky, sky = ngmix.em.prep_image(im)
-
-        fitter=ngmix.em.GMixEM(im_with_sky, jacobian=jacob)
-
-        for i in xrange(self.psf_ntry):
-
-            if i == 0 and first_guess is not None:
-                gm_guess=first_guess.copy()
-            else:
-                s2guess=s2*jacob._data['det'][0]
-                gm_guess=self._get_em_guess(s2guess)
-            try:
-                fitter.go(gm_guess, sky,
-                          maxiter=self.psf_maxiter,
-                          tol=self.psf_tol)
-                break
-            except GMixMaxIterEM:
-                res=fitter.get_result()
-                print('last fit:')
-                print( fitter.get_gmix() )
-                print( 'try:',i+1,'fdiff:',res['fdiff'],'numiter:',res['numiter'] )
-                if i == (self.psf_ntry-1):
-                    raise
-
-        return fitter
-    '''
-
 '''
 class MHMedsFitLM(MedsFit):
     """
@@ -2475,7 +2254,7 @@ class MHMedsFitLM(MedsFit):
 class MHMedsFitHybrid(MedsFit):
     """
     This version uses MH for fitting, with guess/steps from
-    a single-gauss emcee run
+    a coadd emcee run
     """
 
     def _fit_all_models(self):
@@ -2504,8 +2283,8 @@ class MHMedsFitHybrid(MedsFit):
                 print('    fitting:',model)
 
                 print('    coadd')
-                self._run_model_fit(model, coadd=True, fitter_type='mh')
-                #self._run_model_fit(model, coadd=True, fitter_type='emcee')
+                #self._run_model_fit(model, coadd=True, fitter_type='mh')
+                self._run_model_fit(model, coadd=True, fitter_type=self['coadd_fitter_class'])
 
                 if self['fit_me_galaxy'] and n_se_images > 0:
                     print('    multi-epoch')
@@ -2532,7 +2311,8 @@ class MHMedsFitHybrid(MedsFit):
         if coadd:
             if fitter_type=='emcee' and model=='gauss':
                 # we need to bootstrap
-                self.guesser=self._get_guesser('coadd_psf')
+                #self.guesser=self._get_guesser('coadd_psf')
+                self.guesser=self._get_guesser('coadd_cat')
             elif fitter_type=='emcee':
                 # take the steps from the emcee gauss fit
                 self.guesser=self._get_guesser("coadd_gauss")
@@ -2543,7 +2323,8 @@ class MHMedsFitHybrid(MedsFit):
             mb_obs_list=self.sdata['coadd_mb_obs_list']
         else:
             # take our guess from the coadd mh fit
-            self.guesser=self._get_guesser('coadd_mcmc_best')
+            #self.guesser=self._get_guesser('coadd_mcmc_best')
+            self.guesser=self._get_guesser('coadd_mcmc')
             mb_obs_list=self.sdata['mb_obs_list']
 
         fitter=self._fit_model(mb_obs_list,
@@ -2590,6 +2371,9 @@ class MHMedsFitHybrid(MedsFit):
         Fit one of the "simple" models, e.g. exp or dev
 
         use flat g prior
+
+        first burnin is to fix the step size.  then burn in again
+        and run the steps
         """
 
         from ngmix.fitting import MHSimple
@@ -2604,7 +2388,7 @@ class MHMedsFitHybrid(MedsFit):
         print_pars(max_step, front="        max_step:")
 
         for i in xrange(guess.size):
-            step_sizes[i] = step_sizes[i].clip(max=max_step[i])
+            step_sizes[i] = step_sizes[i].clip(min=0.001, max=max_step[i])
 
         print_pars(step_sizes, front="        step sizes:")
 
@@ -2624,35 +2408,31 @@ class MHMedsFitHybrid(MedsFit):
         arate = acc[-n:].sum()/(1.0*n)
         print("        arate of last",n,"is",arate)
 
-        if arate < 0.4:
-            if arate < 0.35:
-                fac=0.5
-            elif arate < 0.4:
-                fac=0.75
+        if arate < 0.01:
+            fac=0.01/0.5
+        else:
+            fac = arate/0.5
 
-            step_sizes *= fac
-            fitter.set_step_sizes(step_sizes)
-            print_pars(step_sizes, front="        new step sizes:")
-
-        #trials=fitter.get_trials()
-        #step_sizes = 0.5*trials[-n:, :].std(axis=0)
-        #fitter.set_step_sizes(step_sizes)
+        step_sizes *= fac
+        fitter.set_step_sizes(step_sizes)
+        print_pars(step_sizes, front="            new step sizes:")
 
         pos=fitter.get_best_pars()
-        print_pars(pos,        front="        mh start after burnin:")
-        #print_pars(step_sizes, front="        new step sizes:")
+        print_pars(pos,        front="            mh start after 1st burnin:")
+        pos=fitter.run_mcmc(pos,self['mh_burnin'])
+
+        # in case we ended on a bad point
+        pos=fitter.get_best_pars()
+        print_pars(pos,        front="            mh start after 2nd burnin:")
         pos=fitter.run_mcmc(pos,self['mh_nstep'])
-
-
-        #best_pars=fitter.get_best_pars()
-        #print_pars(best_pars,front="        mh start after burnin:")
-        #pos=fitter.run_mcmc(best_pars,self['mh_nstep'])
 
         return fitter
 
 
 class GuesserBase(object):
     def _fix_guess(self, guess, prior, ntry=4):
+        from ngmix.priors import LOWVAL
+
         #guess[:,2]=-9999
         n=guess.shape[0]
         for j in xrange(n):
@@ -2660,12 +2440,21 @@ class GuesserBase(object):
 
                 try:
                     lnp=prior.get_lnprob_scalar(guess[j,:])
+                    dosample=False
                 except GMixRangeError as err:
+                    dosample=True
+
+                if lnp <= LOWVAL:
+                    dosample=True
+
+                if dosample:
                     print_pars(guess[j,:], front="bad guess:")
                     if itry < ntry:
                         guess[j,:] = prior.sample()
                     else:
                         raise UtterFailure("could not find a good guess")
+                else:
+                    break
 
 
 class FromMCMCGuesser(GuesserBase):
@@ -2675,12 +2464,26 @@ class FromMCMCGuesser(GuesserBase):
     def __init__(self, trials, sigmas):
         self.trials=trials
         self.sigmas=sigmas
+        self.npars=trials.shape[1]
 
-    def __call__(self, n=1, get_sigmas=False, prior=None):
+        #self.lnprobs=lnprobs
+        #self.lnp_sort=lnprobs.argsort()
+
+    def __call__(self, n=None, get_sigmas=False, prior=None):
         """
-        get a random set of points from the trials
+        get a random sample from the best points
         """
         import random
+
+        if n is None:
+            is_scalar=True
+            n=1
+        else:
+            is_scalar=False
+
+        # choose randomly from best
+        #indices = self.lnp_sort[-n:]
+        #guess = self.trials[indices, :]
 
         trials=self.trials
         np = trials.shape[0]
@@ -2690,6 +2493,22 @@ class FromMCMCGuesser(GuesserBase):
 
         if prior is not None:
             self._fix_guess(guess, prior)
+
+        w,=numpy.where(guess[:,4] <= 0.0)
+        if w.size > 0:
+            guess[w,4] = 0.05*srandu(w.size)
+
+        for i in xrange(5, self.npars):
+            w,=numpy.where(guess[:,i] <= 0.0)
+            if w.size > 0:
+                guess[w,i] = (1.0 + 0.1*srandu(w.size))
+
+        #print("guess from mcmc:")
+        #for i in xrange(n):
+        #    print_pars(guess[i,:], front="%d: " % i)
+
+        if is_scalar:
+            guess=guess[0,:]
 
         if get_sigmas:
             return guess, self.sigmas
@@ -2728,7 +2547,7 @@ class FromPSFGuesser(GuesserBase):
 
         if self.scaling=='linear':
             if self.T <= 0.0:
-                guess[:,4] = 0.1*srandu(n)
+                guess[:,4] = 0.05*srandu(n)
             else:
                 guess[:,4] = self.T*(1.0 + 0.1*srandu(n))
 
@@ -2959,3 +2778,9 @@ def get_shape_guess(g1, g2, n, width):
     return guess
 
 
+def get_coadd_cat_path(image_path):
+    cat_path=image_path.replace('.fits.fz','').replace('.fits','')
+
+    cat_path='%s_cat.fits' % cat_path
+
+    return cat_path

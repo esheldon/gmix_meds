@@ -528,7 +528,7 @@ def go(config_file, meds_files, out_file, options):
 
     checkpoint_file, checkpoint_data=get_checkpoint_data(out_file)
 
-    conf=files.read_config(config_file)
+    conf=files.read_yaml(config_file)
 
     if options.work_dir is not None:
         conf['work_dir']=options.work_dir

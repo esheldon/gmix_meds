@@ -1,4 +1,6 @@
 """
+DES specific stuff here.
+
 todo
 
     - pick columns to keep
@@ -12,52 +14,6 @@ import numpy
 
 from . import files
 
-def make_all_oracle_input(run, table_name, blind=True):
-    """
-    Make inputs for all tiles used in the specified run
-    """
-
-    tilenames = get_tilenames(run)
-    ntiles=len(tilenames)
-    print('found',ntiles,'tiles')
-    for i,tilename in enumerate(tilenames):
-        print("-"*70)
-        print('%03d/%03d %s' % (i+1,ntiles,tilename))
-
-        create=(i==0)
-        make_oracle_input(run, tilename, table_name,
-                          blind=blind, create=create)
-
-def make_oracle_input_split(run, table_name, nsplit, split, blind=True):
-    """
-    Make inputs for all tiles used in the specified run
-    """
-
-    if split >= nsplit:
-        raise ValueError("split should be < nsplit")
-
-    tilenames = get_tilenames(run)
-    ntiles_total=len(tilenames)
-    print('found',ntiles_total,'tiles')
-
-    ntiles_per=ntiles_total/nsplit
-    nleft = ntiles_total % nsplit
-
-    beg=split*ntiles_per
-    if split < (nsplit-1):
-        end=(split+1)*ntiles_per
-    else:
-        end=(split+1)*ntiles_per + nleft
-
-    for i in xrange(beg,end):
-        if tilename in _TILE_BLACKLIST:
-            continue
-        tilename=tilenames[i]
-        print('%03d:%03d %s' % (i,end-1,tilename))
-
-        create=(i==0)
-        make_oracle_input(run, tilename, table_name,
-                          blind=blind, create=create)
 
 def make_oracle_input(run, tilename, table_name,
                       blind=True, create=False):
@@ -204,7 +160,6 @@ class OracleInputMaker(object):
         Set some info needed to do our work
         """
         import desdb
-        import deswl
 
         self.epochs_table_name = get_epochs_table_name(self.table_name)
 
@@ -213,7 +168,7 @@ class OracleInputMaker(object):
         else:
             out_ftype='wlpipe_me_collated'
 
-        self.rc=deswl.files.read_runconfig(self.run)
+        self.rc=files.read_default_runconfig(self.run)
 
 
         if self.blind:
@@ -443,9 +398,8 @@ def get_tilenames(run):
     Get all associated tilenames
     """
     import desdb
-    import deswl
 
-    rc=deswl.files.read_runconfig(run)
+    rc=files.read_default_runconfig(run)
     releases=rc['dataset']
 
     if releases=="testbed":
@@ -473,3 +427,21 @@ def rename_columns(arr, name_map):
 
     arr.dtype.names=tuple(names)
 
+'''
+def make_all_oracle_input(run, table_name, blind=True):
+    """
+    Make inputs for all tiles used in the specified run
+    """
+
+    tilenames = get_tilenames(run)
+    ntiles=len(tilenames)
+    print('found',ntiles,'tiles')
+    for i,tilename in enumerate(tilenames):
+        print("-"*70)
+        print('%03d/%03d %s' % (i+1,ntiles,tilename))
+
+        create=(i==0)
+        make_oracle_input(run, tilename, table_name,
+                          blind=blind, create=create)
+
+'''

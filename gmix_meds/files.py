@@ -5,15 +5,6 @@ import numpy
 
 DEFAULT_NPER=10
 
-def read_config(config_path):
-    """
-    read from the file assuming it is yaml
-    """
-    import yaml
-    with open(config_path) as fobj:
-        conf=yaml.load(fobj)
-    return conf
-
 class Files(dict):
     """
     files for gmix meds fitting
@@ -412,6 +403,40 @@ job_name: "%(job_name)s"\n""".format(noblind_line=noblind_line,
 
     return text
 
+def get_oracle_wq_template(noblind=False):
+    """
+    des specific
+
+    sub_dir is assumed to correspond to tilename
+    """
+
+    if noblind:
+        noblind_line="            --noblind              \\"
+    else:
+        noblind_line="                                   \\"
+
+    text="""
+command: |
+    source ~/.bashrc
+    source ~/shell_scripts/nsim-prepare.sh
+
+    run="%(run_name)s"
+    table_name="%(run_name)s"
+    tilename="%(sub_dir)s"
+
+    python -u $GMIX_MEDS_DIR/bin/gmix-meds-make-oracle \\
+{noblind_line}
+            "$run"                \\
+            "$table_name"         \\
+            "$tilename"
+
+mode: bynode
+job_name: "%(job_name)s"\n""".format(noblind_line=noblind_line)
+
+    return text
+
+
+
 def get_master_script_text():
     text="""#!/bin/bash
 function go {
@@ -619,6 +644,7 @@ class MakerBase(dict):
         self._write_master_script()
         self._write_collate_wq()
         self._write_collate_wq(verify=True)
+        self._write_oracle_wq()
 
     def _write_master_script(self):
         """
@@ -664,9 +690,35 @@ class MakerBase(dict):
         with open(wq_file,'w') as fobj:
             fobj.write(text)
 
+    def _write_oracle_wq(self, verify=False):
+        """
+        write a script to make the oracle input files
+        """
+
+
+        job_name=[self['run_name']]
+        extra=['oracle']
+
+        if self['sub_dir'] is not None:
+            extra += [self['sub_dir']]
+            job_name += [self['sub_dir']]
+
+        extra='-'.join(extra)
+        job_name = '-'.join(job_name)
+
+        self['job_name']=job_name
+
+        text=get_oracle_wq_template(noblind=self['noblind'])
+        text = text % self
+
+        wq_file=self._files.get_file_name('wq', extra=extra, ext='yaml')
+        print("writing:",wq_file)
+        with open(wq_file,'w') as fobj:
+            fobj.write(text)
+
 
     def _load_config(self):
-        conf=read_config(self['config_file'])
+        conf=read_yaml(self['config_file'])
         self.update(conf)
 
     def _count_objects(self):
@@ -693,57 +745,6 @@ class MakerBase(dict):
         for dir in dirs:
             try_makedir(dir)
 
-class WQMaker(MakerBase):
-    def write(self):
-        """
-        write master script
-        """
-        super(WQMaker,self).write()
-        self._write_wq_scripts()
-
-    def _write_wq_scripts(self):
-        """
-        write the wq scripts
-        """
-
-        nper=self['nper']
-        nobj=self['nobj']
-
-        chunklist = get_chunks(self['nobj'], self['nper'])
-
-        nchunk=len(chunklist)
-
-        for split in chunklist:
-            self._write_wq_file(split)
-
-    def _write_wq_file(self, split):
-
-        self['beg']=split[0]
-        self['end']=split[1]
-        self['out_file']=self._files.get_output_file(split, sub_dir=self['sub_dir'])
-        self['log_file']=self['out_file'].replace('.fits','.log')
-
-        if self['missing']:
-            if os.path.exists(self['out_file']):
-                return
-
-            extra='missing'
-        else:
-            extra=None
-
-        job_name=[]
-        if self['sub_dir'] is not None:
-            job_name.append(self['sub_dir'])
-        job_name.append('%06d' % split[0])
-        job_name.append('%06d' % split[1])
-
-        self['job_name'] = '-'.join(job_name)
-
-        print(wq_file)
-        with open(wq_file,'w') as fobj:
-            text=get_wq_template()
-            text = text % self
-            fobj.write(text)
 
 class CondorMaker(MakerBase):
     def write(self):
@@ -823,10 +824,114 @@ class CondorMaker(MakerBase):
             print("making condor dir:",dir)
             os.makedirs(dir)
 
+
+class WQMaker(MakerBase):
+    def write(self):
+        """
+        write master script
+        """
+        super(WQMaker,self).write()
+        self._write_wq_scripts()
+
+    def _write_wq_scripts(self):
+        """
+        write the wq scripts
+        """
+
+        nper=self['nper']
+        nobj=self['nobj']
+
+        chunklist = get_chunks(self['nobj'], self['nper'])
+
+        nchunk=len(chunklist)
+
+        for split in chunklist:
+            self._write_wq_file(split)
+
+    def _write_wq_file(self, split):
+
+        self['beg']=split[0]
+        self['end']=split[1]
+        self['out_file']=self._files.get_output_file(split, sub_dir=self['sub_dir'])
+        self['log_file']=self['out_file'].replace('.fits','.log')
+
+        if self['missing']:
+            if os.path.exists(self['out_file']):
+                return
+
+            extra='missing'
+        else:
+            extra=None
+
+        job_name=[]
+        if self['sub_dir'] is not None:
+            job_name.append(self['sub_dir'])
+        job_name.append('%06d' % split[0])
+        job_name.append('%06d' % split[1])
+
+        self['job_name'] = '-'.join(job_name)
+
+        print(wq_file)
+        with open(wq_file,'w') as fobj:
+            text=get_wq_template()
+            text = text % self
+            fobj.write(text)
+
 def get_temp_dir():
     if '_CONDOR_SCRATCH_DIR' in os.environ:
         return os.environ['_CONDOR_SCRATCH_DIR']
     else:
         return os.environ['TMPDIR']
+
+
+def read_yaml(config_path):
+    """
+    read from the file assuming it is yaml
+    """
+    import yaml
+    with open(config_path) as fobj:
+        conf=yaml.load(fobj)
+    return conf
+
+def get_default_config_file(name):
+    """
+    assume the config is located at $GMIX_MEDS_DIR/config/{name}.yaml
+
+    for most tasks, it is not necessary to store the config files at that location
+    """
+    base=os.environ['GMIX_MEDS_DIR']
+    path=os.path.join(base, 'share', 'gmix-meds-config', '%s.yaml' % name)
+    return path
+
+
+def read_default_config(name):
+    """
+    assume the config is located at $GMIX_MEDS_DIR/config/{name}.yaml
+
+    for most tasks, it is not necessary to store the config files at that location
+    """
+    path=get_default_config_file(name)
+    return read_yaml(path)
+
+def get_default_runconfig_file(name):
+    """
+    assume the config is located at $GMIX_MEDS_DIR/runconfig/{name}.yaml
+
+    for most tasks, it is not necessary to store the config files at that location
+    """
+    base=os.environ['GMIX_MEDS_DIR']
+    path=os.path.join(base, 'share', 'gmix-meds-runconfig', '%s.yaml' % name)
+    return path
+
+
+def read_default_runconfig(name):
+    """
+    assume the config is located at $GMIX_MEDS_DIR/runconfig/{name}.yaml
+
+    for most tasks, it is not necessary to store the config files at that location
+    """
+    path=get_default_runconfig_file(name)
+    return read_yaml(path)
+
 
 

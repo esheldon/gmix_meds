@@ -56,7 +56,7 @@ class Concat(object):
         self.blind=blind
         self.clobber=clobber
 
-        self.config = files.read_config(config_file)
+        self.config = files.read_yaml(config_file)
 
         self._files=files.Files(run, root_dir=root_dir)
 
