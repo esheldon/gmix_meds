@@ -1,8 +1,12 @@
 # config 010 is all emcee, exp only, multi-epoch so very slow
+#
+# but keeping nper at 10 so we don't kill the file system reading from the
+# single meds file
+#
 # using psf rerun
 
 # t for testbed
-# linear pars, allowing T < 0
+
 run: "ngmix007t"
 run_type: "mcmc"
 
@@ -20,7 +24,7 @@ bands:     ["g","r","i","z"]
 # in here
 medsconf: "013"
 
-nper: 4
+nper: 10
 
 # this is the gmix_meds config file
 config: "nmeds010"
