@@ -51,6 +51,9 @@ PSF_TOL=1.0e-5
 EM_MAX_TRY=3
 EM_MAX_ITER=100
 
+# shift psf flags past astrometry flags, which end at 9
+PSFEX_FLAGS_SHIFT = 9
+
 _CHECKPOINTS_DEFAULT_MINUTES=[30,60,110]
 
 class UtterFailure(Exception):
@@ -275,6 +278,8 @@ class MedsFit(dict):
         # need to do this because we work on subset files
         self.data['id'][dindex] = self.meds_list[0]['id'][mindex]
         self.data['number'][dindex] = self.meds_list[0]['number'][mindex]
+        self.data['box_size'][dindex] = \
+                self.meds_list[0]['box_size'][mindex]
 
         flags = self._obj_check(mindex)
         if flags != 0:
@@ -1708,6 +1713,8 @@ class MedsFit(dict):
 
             blacklist=self._get_psfex_blacklist()
             flags=blacklist.get(key, 0)
+            flags = flags << PSFEX_FLAGS_SHIFT 
+
             if flags != 0:
                 print(psfpath,flags)
 
@@ -1960,6 +1967,8 @@ class MedsFit(dict):
             ('nimage_tot','i4',bshape),
             ('nimage_use','i4',bshape),
             ('time','f8'),
+
+            ('box_size','i2'),
 
             ('coadd_npix','i4'),
             ('coadd_wsum','f8'),
@@ -2489,11 +2498,12 @@ class GuesserBase(object):
 
                 try:
                     lnp=prior.get_lnprob_scalar(guess[j,:])
-                    dosample=False
-                except GMixRangeError as err:
-                    dosample=True
 
-                if lnp <= LOWVAL:
+                    if lnp <= LOWVAL:
+                        dosample=True
+                    else:
+                        dosample=False
+                except GMixRangeError as err:
                     dosample=True
 
                 if dosample:
