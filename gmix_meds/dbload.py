@@ -309,8 +309,11 @@ def get_band_cols():
 
     return colnames
 
-def get_index_cols():
-    return [
+def get_index_cols(has_me=True):
+    """
+    keywords refer to galaxy models
+    """
+    cols = [
             'tilename',
             'coadd_object_number',
             'flags',
@@ -358,7 +361,10 @@ def get_index_cols():
             #'coadd_dev_e_1',
             #'coadd_dev_e_2',
             #'coadd_dev_arate',
+        ]
 
+    if has_me:
+        cols += [
             'exp_flags',
             #'exp_chi2per',
             #'exp_mag_g',
@@ -382,7 +388,8 @@ def get_index_cols():
             #'dev_e_1',
             #'dev_e_2',
             #'dev_arate',
-            ]
+        ]
+    return cols
 
 def get_epoch_index_cols():
     return ['coadd_objects_id',

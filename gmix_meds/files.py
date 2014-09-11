@@ -403,7 +403,7 @@ job_name: "%(job_name)s"\n""".format(noblind_line=noblind_line,
 
     return text
 
-def get_oracle_wq_template(noblind=False):
+def get_oracle_wq_template(create=False, noblind=False):
     """
     des specific
 
@@ -414,6 +414,11 @@ def get_oracle_wq_template(noblind=False):
         noblind_line="            --noblind              \\"
     else:
         noblind_line="                                   \\"
+    if create:
+        create_line="            --create              \\"
+    else:
+        create_line="                                   \\"
+
 
     text="""
 command: |
@@ -426,12 +431,14 @@ command: |
 
     python -u $GMIX_MEDS_DIR/bin/gmix-meds-make-oracle \\
 {noblind_line}
+{create_line}
             "$run"                \\
             "$table_name"         \\
             "$tilename"
 
 mode: bynode
-job_name: "%(job_name)s"\n""".format(noblind_line=noblind_line)
+job_name: "%(job_name)s"\n""".format(noblind_line=noblind_line,
+                                     create_line=create_line)
 
     return text
 
@@ -601,6 +608,7 @@ class MakerBase(dict):
                  root_dir=None, sub_dir=None, missing=False,
                  bands=None,
                  noblind=False,
+                 create=False,
                  nper=DEFAULT_NPER):
         self['run_name']=run_name
         self['config_file']=config_file
@@ -616,6 +624,7 @@ class MakerBase(dict):
         self['nbands'] = len(meds_files)
 
         self['noblind']=noblind
+        self['create']=create
 
         if bands is None:
             bands = [str(i) for i in xrange(self['nbands'])]
@@ -708,7 +717,8 @@ class MakerBase(dict):
 
         self['job_name']=job_name
 
-        text=get_oracle_wq_template(noblind=self['noblind'])
+        text=get_oracle_wq_template(noblind=self['noblind'],
+                                    create=self['create'])
         text = text % self
 
         wq_file=self._files.get_file_name('wq', extra=extra, ext='yaml')

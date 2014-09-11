@@ -101,9 +101,7 @@ class MedsFit(dict):
         self.obj_range=obj_range
         self._set_index_list()
 
-
-        self.psfex_lol = self._get_psfex_lol()
-
+        self.psfex_lol, self.psfex_flags_lol = self._get_psfex_lol()
 
         self.checkpoint_file=checkpoint_file
         self.checkpoint_data=checkpoint_data
@@ -326,7 +324,7 @@ class MedsFit(dict):
         """
         Check box sizes, number of cutouts
 
-        Require good in all bads
+        Require good in all bands
         """
         for band in self.iband:
             flags=self._obj_check_one(band, mindex)
@@ -336,7 +334,7 @@ class MedsFit(dict):
 
     def _obj_check_one(self, band, mindex):
         """
-        Check box sizes, number of cutouts
+        Check box sizes, number of cutouts, flags on images
         """
         flags=0
 
@@ -356,16 +354,19 @@ class MedsFit(dict):
         # check image flags
 
         # note coadd is never flagged
-        image_flags=self._get_image_flags(meds, mindex)
+        image_flags=self._get_image_flags(meds, band, mindex)
         w,=numpy.where(image_flags==0)
+
         # need coadd and at lease one SE image
         if w.size < 2:
             print('< 2 with no image flags')
             flags |= IMAGE_FLAGS
 
+        # informative only
         if w.size != image_flags.size:
             print("    for band %d removed %d/%d images due to "
                   "flags" % (band, ncutout-w.size, ncutout))
+
         return flags
 
 
@@ -501,15 +502,21 @@ class MedsFit(dict):
             print('        rejected:',nreject)
 
 
-    def _get_image_flags(self, meds, mindex):
+    def _get_image_flags(self, meds, band, mindex):
         """
         find images associated with the object and get the image flags
+
+        Also add in the psfex flags, eventually incorporated into meds
         """
         ncutout=meds['ncutout'][mindex]
 
         file_ids = meds['file_id'][mindex, 0:ncutout]
         image_info=meds.get_image_info()
         image_flags = image_info['image_flags'][file_ids]
+
+        for i,file_id in enumerate(file_ids):
+            psfex_flags = self.psfex_flags_lol[band][file_id]
+            image_flags[i] |= psfex_flags
 
         return image_flags
 
@@ -526,7 +533,7 @@ class MedsFit(dict):
         meds=self.meds_list[band]
         ncutout=meds['ncutout'][mindex]
 
-        image_flags=self._get_image_flags(meds, mindex)
+        image_flags=self._get_image_flags(meds, band, mindex)
 
         coadd_obs_list = ObsList()
         obs_list       = ObsList()
@@ -1645,14 +1652,35 @@ class MedsFit(dict):
         meds_desdata=self.meds_list[0]._meta['DESDATA'][0]
 
         psfex_lol=[]
+        flags_lol=[]
 
         for band in self.iband:
             meds=self.meds_list[band]
 
-            psfex_list = self._get_psfex_objects(meds)
+            psfex_list, flags_list = self._get_psfex_objects(meds)
             psfex_lol.append( psfex_list )
+            flags_lol.append( flags_list )
 
-        return psfex_lol
+        return psfex_lol, flags_lol
+
+    def _get_psfex_blacklist(self):
+        """
+        get the blacklist, loading if necessary
+        """
+        if not hasattr(self, '_psfex_blacklist'):
+            fname=self['psfex_blacklist']
+            blacklist_raw=read_psfex_blacklist(fname)
+
+            blacklist={}
+
+            for i in xrange(blacklist_raw.size):
+                key='%s-%02d' % (blacklist_raw['expname'][i], blacklist_raw['ccd'][i])
+                blacklist[key] = blacklist_raw['flags'][i]
+
+            self._psfex_blacklist_raw=blacklist_raw
+            self._psfex_blacklist=blacklist
+
+        return self._psfex_blacklist
 
     def _psfex_path_from_image_path(self, meds, image_path):
         """
@@ -1673,7 +1701,20 @@ class MedsFit(dict):
 
             psfpath='/'.join(psfparts)
 
-        return psfpath
+            expname=psfparts[-2]
+            ccd=psfparts[-1].split('_')[2]
+
+            key='%s-%s' % (expname, ccd)
+
+            blacklist=self._get_psfex_blacklist()
+            flags=blacklist.get(key, 0)
+            if flags != 0:
+                print(psfpath,flags)
+
+        else:
+            flags=0
+
+        return psfpath, flags
 
     def _get_psfex_objects(self, meds):
         """
@@ -1682,22 +1723,28 @@ class MedsFit(dict):
         """
 
         psfex_list=[]
+        flags_list=[]
+
         info=meds.get_image_info()
         nimage=info.size
 
         for i in xrange(nimage):
             impath=info['image_path'][i].strip()
 
-            psfpath=self._psfex_path_from_image_path(meds, impath)
+            psfpath, flags = self._psfex_path_from_image_path(meds, impath)
 
-            if not os.path.exists(psfpath):
-                raise IOError("missing psfex: %s" % psfpath)
+            if flags != 0:
+                pex=None
             else:
-                pex=psfex.PSFEx(psfpath)
+                if not os.path.exists(psfpath):
+                    raise IOError("missing psfex: %s" % psfpath)
+                else:
+                    pex=psfex.PSFEx(psfpath)
 
             psfex_list.append(pex)
+            flags_list.append(flags)
 
-        return psfex_list
+        return psfex_list, flags_list
 
     def _set_index_list(self):
         """
@@ -2786,3 +2833,18 @@ def get_coadd_cat_path(image_path):
     cat_path='%s_cat.fits' % cat_path
 
     return cat_path
+
+def read_psfex_blacklist(fname):
+    from esutil import recfile
+
+    print("reading psfex blacklist from:", fname)
+
+    dt=[('run','S23'),
+        ('expname','S14'),
+        ('ccd','i2'),
+        ('flags','i4')]
+    
+    with recfile.Recfile(fname, 'r', delim=' ', dtype=dt) as robj:
+        data=robj.read()
+
+    return data

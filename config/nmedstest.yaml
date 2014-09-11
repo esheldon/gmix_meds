@@ -1,4 +1,4 @@
-# trying a pure emcee fit again
+# all emcee, exp only, psf rerun, guesses from coadd
 fitter: "ngmix"
 
 # emcee, mh
@@ -7,6 +7,7 @@ fitter_class: "emcee"
 coadd_fitter_class: "emcee"
 
 use_psf_rerun: True
+psfex_blacklist: "/gpfs01/astro/workarea/mjarvis/psfex_blacklist"
 
 fit_me_galaxy: True
 
@@ -14,10 +15,6 @@ fit_me_galaxy: True
 T_guess_band: 2
 
 nu: 5.0
-#nu: 0.0
-
-mh_burnin: 5000
-mh_nstep: 5000
 
 emcee_a: 2.0
 emcee_nwalkers: 80
@@ -43,7 +40,6 @@ psf_offset_max: 0.25
 # in addition to gauss fit on coadd and a psf flux
 fit_models: ['exp']
 
-
 do_shear: True
 
 use_cen_prior: True
@@ -62,7 +58,6 @@ counts_prior_pars: [ [-1.0, 0.1, 1.0e+09, 0.25e+08] ]
 
 # this means repeat the above for each band
 counts_prior_repeat: True
-
 
 # checkpoint times in minutes, needed for condor in case we pass a batch system
 # limit such as in the condor scavenge.
