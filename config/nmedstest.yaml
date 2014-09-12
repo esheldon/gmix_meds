@@ -2,24 +2,41 @@
 fitter: "ngmix"
 
 # emcee, mh
-reject_outliers: False
-fitter_class: "emcee"
-coadd_fitter_class: "emcee"
+reject_outliers: True
+
+coadd_gauss_fitter_class: "emcee"
+coadd_fitter_class: "mh"
+fitter_class: "mh"
 
 use_psf_rerun: True
 psfex_blacklist: "/gpfs01/astro/workarea/mjarvis/psfex_blacklist"
 
 fit_me_galaxy: True
 
+# might be coadd_psf, coadd_cat, ...
+coadd_gauss_guess: "coadd_cat"
+
+# if using emcee, might be coadd_gauss
+# if using mh, might be coadd_gauss_best
+coadd_model_guess: "coadd_gauss_best"
+
+# for mh might be coadd_mcmc_best
+# for emcee might be coadd_mcmc
+me_model_guess: "coadd_mcmc_best"
+
 # for guessing size from flux radius
 T_guess_band: 2
 
-nu: 5.0
+nu: 0.0
 
 emcee_a: 2.0
 emcee_nwalkers: 80
 emcee_burnin: 400
 emcee_nstep: 200
+
+mh_burnin: 5000
+mh_nstep: 5000
+min_step_sizes: [0.0001,0.0001,0.001,0.001,0.0001,0.001]
 
 psf_em_pars:
     ngauss: 3
@@ -63,4 +80,4 @@ counts_prior_repeat: True
 # limit such as in the condor scavenge.
 # 0 means after the first object
 
-checkpoints: [0,30,60,110]
+checkpoints: [30,60,110]

@@ -1,20 +1,23 @@
-# all emcee, exp only, psf rerun, guesses from coadd
 fitter: "ngmix"
 
-# emcee, mh
-reject_outliers: False
 fitter_class: "emcee"
 coadd_fitter_class: "emcee"
 
+reject_outliers: True
 use_psf_rerun: True
 psfex_blacklist: "/gpfs01/astro/workarea/mjarvis/psfex_blacklist"
 
 fit_me_galaxy: True
 
+# this might also be coadd_psf
+coadd_gauss_guess: "coadd_cat"
+coadd_model_guess: "coadd_gauss"
+me_model_guess: "coadd_mcmc"
+
 # for guessing size from flux radius
 T_guess_band: 2
 
-nu: 5.0
+nu: 0.0
 
 emcee_a: 2.0
 emcee_nwalkers: 80

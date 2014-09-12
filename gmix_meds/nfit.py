@@ -1138,13 +1138,13 @@ class MedsFit(dict):
         """
         if coadd:
             if model=='gauss':
-                self.guesser=self._get_guesser('coadd_cat')
+                self.guesser=self._get_guesser(self['coadd_gauss_guess'])
             else:
-                self.guesser=self._get_guesser('coadd_gauss')
+                self.guesser=self._get_guesser(self['coadd_model_guess'])
             mb_obs_list=self.sdata['coadd_mb_obs_list']
         else:
             #self.guesser=self._get_guesser(self['guess_type'])
-            self.guesser=self._get_guesser('coadd_mcmc')
+            self.guesser=self._get_guesser(self['me_model_guess'])
             mb_obs_list=self.sdata['mb_obs_list']
 
         fitter=self._fit_model(mb_obs_list, model)
@@ -2335,18 +2335,22 @@ class MHMedsFitHybrid(MedsFit):
             # we use this as a guess for the real galaxy models, and for
             # step sizes
             print("    fitting coadd gauss")
-            self._run_model_fit('gauss', coadd=True, fitter_type='emcee')
+            self._run_model_fit('gauss', coadd=True,
+                                fitter_type=self['coadd_gauss_fitter_class'])
 
             for model in self['fit_models']:
                 print('    fitting:',model)
 
                 print('    coadd')
                 #self._run_model_fit(model, coadd=True, fitter_type='mh')
-                self._run_model_fit(model, coadd=True, fitter_type=self['coadd_fitter_class'])
+                self._run_model_fit(model, coadd=True, 
+                                    fitter_type=self['coadd_fitter_class'])
 
                 if self['fit_me_galaxy'] and n_se_images > 0:
                     print('    multi-epoch')
-                    self._run_model_fit(model, coadd=False, fitter_type='mh')
+                    # fitter class should be mh...
+                    self._run_model_fit(model, coadd=False,
+                                        fitter_type=self['fitter_class'])
 
         else:
             mess="    psf s/n too low: %s (%s)"
@@ -2368,21 +2372,12 @@ class MHMedsFitHybrid(MedsFit):
 
         if coadd:
             if fitter_type=='emcee' and model=='gauss':
-                # we need to bootstrap
-                #self.guesser=self._get_guesser('coadd_psf')
-                self.guesser=self._get_guesser('coadd_cat')
-            elif fitter_type=='emcee':
-                # take the steps from the emcee gauss fit
-                self.guesser=self._get_guesser("coadd_gauss")
+                self.guesser=self._get_guesser(self['coadd_gauss_guess'])
             else:
-                # get guess and step sizes from coadd gauss fit from
-                # emcee
-                self.guesser=self._get_guesser('coadd_gauss_best')
+                self.guesser=self._get_guesser(self['coadd_model_guess'])
             mb_obs_list=self.sdata['coadd_mb_obs_list']
         else:
-            # take our guess from the coadd mh fit
-            #self.guesser=self._get_guesser('coadd_mcmc_best')
-            self.guesser=self._get_guesser('coadd_mcmc')
+            self.guesser=self._get_guesser(self['me_model_guess'])
             mb_obs_list=self.sdata['mb_obs_list']
 
         fitter=self._fit_model(mb_obs_list,
@@ -2442,11 +2437,21 @@ class MHMedsFitHybrid(MedsFit):
         guess,sigmas=self.guesser(get_sigmas=True, prior=prior)
 
         step_sizes = 0.5*sigmas
-        max_step = 0.5*self.priors[model].get_widths()
-        print_pars(max_step, front="        max_step:")
+
+        # this is 5-element, use 5th for all fluxes
+        min_steps = self['min_step_sizes']
+        max_steps = 0.5*self.priors[model].get_widths()
+
+        print_pars(max_steps, front="        max_steps:")
 
         for i in xrange(guess.size):
-            step_sizes[i] = step_sizes[i].clip(min=0.001, max=max_step[i])
+            if i > 5:
+                min_step=min_steps[5]
+            else:
+                min_step=min_steps[i]
+            max_step=max_steps[i]
+
+            step_sizes[i] = step_sizes[i].clip(min=min_step, max=max_step)
 
         print_pars(step_sizes, front="        step sizes:")
 
