@@ -1,4 +1,4 @@
-# same as 011 but psf guess
+# same as 011 but psf guess, and using improved emcee parameters
 # all emcee, exp only, psf rerun, guesses from coadd
 fitter: "ngmix"
 
@@ -28,10 +28,17 @@ me_model_guess: "coadd_mcmc_best"
 
 nu: 0.0
 
+#emcee_a: 2.0
+#emcee_nwalkers: 80
+#emcee_burnin: 400
+#emcee_nstep: 200
+# using same as 008 here.  maybe more steps fewer walkers better in a way
+# since they are independent
 emcee_a: 2.0
 emcee_nwalkers: 80
-emcee_burnin: 400
-emcee_nstep: 200
+emcee_burnin: 800
+emcee_nstep: 800
+
 
 mh_burnin: 5000
 mh_nstep: 5000
