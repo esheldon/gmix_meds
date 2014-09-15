@@ -1242,7 +1242,6 @@ class MedsFit(dict):
 
         # arbitrary
         T = 2*(0.9/2.35)**2
-        #T=100.0
 
         guesser=FromPSFGuesser(T, psf_flux)
         return guesser
@@ -1690,6 +1689,14 @@ class MedsFit(dict):
     def _psfex_path_from_image_path(self, meds, image_path):
         """
         infer the psfex path from the image path
+
+        Mike's current flags
+
+        1 = No stars found
+        2 = Too few stars found (<50)
+        4 = Too many stars found (>500)
+        8 = Too high FWHM (>1.8 arcsec)
+        16 = Error encountered somewhere along the line in making the PSFEx files.
         """
         desdata=os.environ['DESDATA']
         meds_desdata=meds._meta['DESDATA'][0]
@@ -1713,7 +1720,6 @@ class MedsFit(dict):
 
             blacklist=self._get_psfex_blacklist()
             flags=blacklist.get(key, 0)
-            flags = flags << PSFEX_FLAGS_SHIFT 
 
             if flags != 0:
                 print(psfpath,flags)
@@ -1741,10 +1747,18 @@ class MedsFit(dict):
             psfpath, flags = self._psfex_path_from_image_path(meds, impath)
 
             if flags != 0:
+                # shift beyond astrometry flags
+                flags = flags << PSFEX_FLAGS_SHIFT 
                 pex=None
             else:
                 if not os.path.exists(psfpath):
-                    raise IOError("missing psfex: %s" % psfpath)
+                    # this flag is Mike's
+                    # 16 = Error encountered somewhere along the line 
+                    # in making the PSFEx files.
+                    print("warning: missing psfex: %s" % psfpath)
+                    pex   = None
+                    flags = 1<<16
+                    flags = flags << PSFEX_FLAGS_SHIFT 
                 else:
                     pex=psfex.PSFEx(psfpath)
 
@@ -2863,3 +2877,12 @@ def read_psfex_blacklist(fname):
         data=robj.read()
 
     return data
+
+class Namer(object):
+    def __init__(self, front=None):
+        self.front=front
+    def __call__(self, name):
+        if self.front is None or self.front=='':
+            return name
+        else:
+            return '%s_%s' % (self.front, name)

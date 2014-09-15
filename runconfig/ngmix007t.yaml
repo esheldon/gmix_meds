@@ -27,4 +27,4 @@ medsconf: "013"
 nper: 10
 
 # this is the gmix_meds config file
-config: "nmeds010"
+config: "nmeds011"

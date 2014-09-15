@@ -196,7 +196,7 @@ class Concat(object):
         models=[]
 
         model_names = self.config['fit_models']
-        model_names = ['coadd_%s' % mod for mod in models] + model_names
+        model_names = ['coadd_%s' % mod for mod in model_names] + model_names
         
         names=list( data.dtype.names )
         for model in model_names:
@@ -393,7 +393,6 @@ class Concat(object):
         if not os.path.exists(fname):
             raise ConcatError("file not found: %s" % fname)
 
-        print(fname)
         try:
             with fitsio.FITS(fname) as fobj:
                 data0       = fobj['model_fits'][:]

@@ -415,9 +415,9 @@ def get_oracle_wq_template(create=False, noblind=False):
     else:
         noblind_line="                                   \\"
     if create:
-        create_line="            --create              \\"
+        create_line ="            --create              \\"
     else:
-        create_line="                                   \\"
+        create_line ="                                   \\"
 
 
     text="""
@@ -604,6 +604,9 @@ def try_makedir(dir):
             pass
 
 class MakerBase(dict):
+    """
+    create=True means write the oracle create table sql file
+    """
     def __init__(self, run_name, config_file, meds_files,
                  root_dir=None, sub_dir=None, missing=False,
                  bands=None,

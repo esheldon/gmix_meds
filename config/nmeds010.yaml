@@ -1,21 +1,30 @@
+# same as 011 but psf guess
+# all emcee, exp only, psf rerun, guesses from coadd
 fitter: "ngmix"
 
-fitter_class: "emcee"
-coadd_fitter_class: "emcee"
-
+# emcee, mh
 reject_outliers: True
+
+coadd_gauss_fitter_class: "emcee"
+coadd_fitter_class: "mh"
+fitter_class: "mh"
+
 use_psf_rerun: True
-psfex_blacklist: "/gpfs01/astro/workarea/mjarvis/psfex_blacklist"
+#psfex_blacklist: "/gpfs01/astro/workarea/mjarvis/psfex_blacklist"
+psfex_blacklist: "/astro/astronfs02/esheldon/psfex-rerun/psfex_blacklist"
 
 fit_me_galaxy: True
 
-# this might also be coadd_psf
-coadd_gauss_guess: "coadd_cat"
-coadd_model_guess: "coadd_gauss"
-me_model_guess: "coadd_mcmc"
+# might be coadd_psf, coadd_cat, ...
+coadd_gauss_guess: "coadd_psf"
 
-# for guessing size from flux radius
-T_guess_band: 2
+# if using emcee, might be coadd_gauss
+# if using mh, might be coadd_gauss_best
+coadd_model_guess: "coadd_gauss_best"
+
+# for mh might be coadd_mcmc_best
+# for emcee might be coadd_mcmc
+me_model_guess: "coadd_mcmc_best"
 
 nu: 0.0
 
@@ -23,6 +32,10 @@ emcee_a: 2.0
 emcee_nwalkers: 80
 emcee_burnin: 400
 emcee_nstep: 200
+
+mh_burnin: 5000
+mh_nstep: 5000
+min_step_sizes: [0.0001,0.0001,0.001,0.001,0.0001,0.001]
 
 psf_em_pars:
     ngauss: 3

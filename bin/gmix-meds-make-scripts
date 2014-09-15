@@ -140,6 +140,11 @@ def main():
         print("-"*70)
         print("%d/%d" % (i+1, nrun),coadd_run)
 
+        if i==0:
+            create=True
+        else:
+            create=False
+
         tilename=coadd_run.split('_')[1]
         meds_files, stats_files=get_meds_files(df,
                                                coadd_run,
@@ -159,7 +164,8 @@ def main():
                           nper=runconfig['nper'],
                           missing=options.missing,
                           noblind=options.noblind,
-                          sub_dir=tilename)
+                          sub_dir=tilename,
+                          create=create)
 
 
         maker.write()
