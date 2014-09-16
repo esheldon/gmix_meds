@@ -104,7 +104,7 @@ class MedsFit(dict):
         self.obj_range=obj_range
         self._set_index_list()
 
-        self.psfex_lol, self.psfex_flags_lol = self._get_psfex_lol()
+        self.psfex_lists, self.psfex_flags_lists = self._get_psfex_lists()
 
         self.checkpoint_file=checkpoint_file
         self.checkpoint_data=checkpoint_data
@@ -316,6 +316,124 @@ class MedsFit(dict):
         self.data['flags'][dindex] = flags
         self.data['time'][dindex] = time.time()-t0
 
+    def _fit_all_models(self):
+        """
+        Fit psf flux and other models
+        """
+
+        flags=0
+        # fit both coadd and se psf flux if exists
+        self._fit_psf_flux()
+
+        dindex=self.dindex
+        s2n=self.data['coadd_psf_flux'][dindex,:]/self.data['coadd_psf_flux_err'][dindex,:]
+        max_s2n=numpy.nanmax(s2n)
+
+        n_se_images=len(self.sdata['mb_obs_list'])
+         
+        if max_s2n >= self['min_psf_s2n'] and len(self['fit_models']) > 0:
+            # we use this as a guess for the real galaxy models
+            print("    fitting coadd gauss")
+            self._run_model_fit('gauss', coadd=True)
+
+            for model in self['fit_models']:
+                print('    fitting:',model)
+
+                print('    coadd')
+                self._run_model_fit(model, coadd=True)
+
+                if self['fit_me_galaxy'] and n_se_images > 0:
+                    print('    multi-epoch')
+                    self._run_model_fit(model, coadd=False)
+        else:
+            mess="    psf s/n too low: %s (%s)"
+            mess=mess % (max_s2n,self['min_psf_s2n'])
+            print(mess)
+            
+            flags |= LOW_PSF_FLUX
+
+        return flags
+
+    def _run_model_fit(self, model, coadd=False):
+        """
+        wrapper to run fit, copy pars, maybe make plots
+
+        sets .coadd_gauss_fitter or .fitter or .coadd_fitter
+        """
+        if coadd:
+            if model=='gauss':
+                self.guesser=self._get_guesser(self['coadd_gauss_guess'])
+            else:
+                self.guesser=self._get_guesser(self['coadd_model_guess'])
+            mb_obs_list=self.sdata['coadd_mb_obs_list']
+        else:
+            #self.guesser=self._get_guesser(self['guess_type'])
+            self.guesser=self._get_guesser(self['me_model_guess'])
+            mb_obs_list=self.sdata['mb_obs_list']
+
+        fitter=self._fit_model(mb_obs_list, model)
+
+        self._copy_simple_pars(fitter, coadd=coadd)
+
+        self._print_res(fitter, coadd=coadd)
+
+        if self['make_plots']:
+            self._do_make_plots(fitter, model, coadd=coadd)
+
+        if coadd:
+            if model=='gauss':
+                self.coadd_gauss_fitter=fitter
+            else:
+                self.coadd_fitter=fitter
+        else:
+            self.fitter=fitter
+
+    def _fit_model(self, mb_obs_list, model):
+        """
+        Fit all the simple models
+        """
+
+        fitter=self._fit_simple_emcee(mb_obs_list, model)
+
+        # also adds .weights attribute
+        self._calc_mcmc_stats(fitter, model)
+
+        if self['do_shear']:
+            self._add_shear_info(fitter, model)
+
+        return fitter
+
+    def _fit_simple_emcee(self, mb_obs_list, model):
+        """
+        Fit one of the "simple" models, e.g. exp or dev
+
+        use flat g prior
+        """
+
+        from ngmix.fitting import MCMCSimple
+
+        # note flat on g!
+        prior=self.gflat_priors[model]
+
+        guess=self.guesser(n=self['emcee_nwalkers'], prior=prior)
+        #for olist in mb_obs_list:
+        #    print("    image filename:",olist[0].filename)
+        #    print("    psfex filename:",olist[0].psf.filename)
+
+        fitter=MCMCSimple(mb_obs_list,
+                          model,
+                          nu=self['nu'],
+                          prior=prior,
+                          nwalkers=self['emcee_nwalkers'],
+                          mca_a=self['emcee_a'],
+                          random_state=self.random_state)
+
+        pos=fitter.run_mcmc(guess,self['emcee_burnin'])
+        pos=fitter.run_mcmc(pos,self['emcee_nstep'])
+
+        return fitter
+
+
     def _get_object_ncutout(self, mindex):
         """
         number of cutouts for the specified object.
@@ -514,14 +632,17 @@ class MedsFit(dict):
         Also add in the psfex flags, eventually incorporated into meds
         """
         ncutout=meds['ncutout'][mindex]
+        if not self['check_image_flags']:
+            image_flags = numpy.zeros(ncutout, dtype='i4')
+        else:
 
-        file_ids = meds['file_id'][mindex, 0:ncutout]
-        image_info=meds.get_image_info()
-        image_flags = image_info['image_flags'][file_ids]
+            file_ids = meds['file_id'][mindex, 0:ncutout]
+            image_info=meds.get_image_info()
+            image_flags = image_info['image_flags'][file_ids]
 
-        for i,file_id in enumerate(file_ids):
-            psfex_flags = self.psfex_flags_lol[band][file_id]
-            image_flags[i] |= psfex_flags
+            for i,file_id in enumerate(file_ids):
+                psfex_flags = self.psfex_flags_lists[band][file_id]
+                image_flags[i] |= psfex_flags
 
         return image_flags
 
@@ -608,6 +729,7 @@ class MedsFit(dict):
         import images
         meds=self.meds_list[band]
 
+        fname = self._get_meds_orig_filename(meds, mindex, icut)
         im = self._get_meds_image(meds, mindex, icut)
         wt = self._get_meds_weight(meds, mindex, icut)
         jacob = self._get_jacobian(meds, mindex, icut)
@@ -670,8 +792,9 @@ class MedsFit(dict):
                         jacobian=jacob,
                         psf=psf_obs)
 
+        obs.filename=fname
 
-        psf_fwhm=2.35*numpy.sqrt(psf_gmix.get_T()/2.0)
+        #psf_fwhm=2.35*numpy.sqrt(psf_gmix.get_T()/2.0)
         #print("        psf fwhm:",psf_fwhm)
 
         if self['make_plots']:
@@ -702,6 +825,44 @@ class MedsFit(dict):
         return fitter
 
 
+    def _fit_with_em(self, obs, sigma_guess, ngauss, maxiter, tol, ntry):
+        """
+        Fit a gaussian mixture to the input observation using em to find a
+        """
+
+        s2guess = sigma_guess**2
+
+        im_with_sky, sky = ngmix.em.prep_image(obs.image)
+
+        tobs = Observation(im_with_sky, jacobian=obs.jacobian)
+        fitter=ngmix.em.GMixEM(tobs)
+
+        for i in xrange(ntry):
+
+            gm_guess=self._get_em_guess(s2guess, ngauss)
+
+            try:
+                fitter.go(gm_guess,
+                          sky,
+                          maxiter=maxiter,
+                          tol=tol)
+                break
+            except GMixMaxIterEM:
+                res=fitter.get_result()
+                print('last fit:')
+                print( fitter.get_gmix() )
+                print( 'try:',i+1,'fdiff:',res['fdiff'],'numiter:',res['numiter'] )
+                if i == (ntry-1):
+                    raise
+            except GMixRangeError as e:
+                print("            em: range: %s" % str(e))
+                if i == (ntry-1):
+                    raise GMixMaxIterEM("too many iter")
+
+        return fitter
+
+
+
     def _get_jacobian(self, meds, mindex, icut):
         """
         Get a Jacobian object for the requested object
@@ -715,12 +876,13 @@ class MedsFit(dict):
         Get an Observation representing the PSF and the "sigma"
         from the psfex object
         """
-        im, cen, sigma_pix = self._get_psf_image(band, mindex, icut)
+        im, cen, sigma_pix, fname = self._get_psf_image(band, mindex, icut)
 
         psf_jacobian = image_jacobian.copy()
         psf_jacobian.set_cen(cen[0], cen[1])
 
         psf_obs = Observation(im, jacobian=psf_jacobian)
+        psf_obs.filename=fname
 
         # convert to sky coords
         sigma_sky = sigma_pix*psf_jacobian.get_scale()
@@ -737,7 +899,8 @@ class MedsFit(dict):
         meds=self.meds_list[band]
         file_id=meds['file_id'][mindex,icut]
 
-        pex=self.psfex_lol[band][file_id]
+        pex=self.psfex_lists[band][file_id]
+        #print("    using psfex from:",pex['filename'])
 
         row=meds['orig_row'][mindex,icut]
         col=meds['orig_col'][mindex,icut]
@@ -746,7 +909,15 @@ class MedsFit(dict):
         cen=pex.get_center(row,col)
         sigma_pix=pex.get_sigma()
 
-        return im, cen, sigma_pix
+        return im, cen, sigma_pix, pex['filename']
+
+    def _get_meds_orig_filename(self, meds, mindex, icut):
+        """
+        Get the original filename
+        """
+        file_id=meds['file_id'][mindex, icut]
+        ii=meds.get_image_info()
+        return ii['image_path'][file_id]
 
     def _get_meds_image(self, meds, mindex, icut):
         """
@@ -855,177 +1026,6 @@ class MedsFit(dict):
         return keep, offset_arcsec
 
 
-    def _fit_all_models(self):
-        """
-        Fit psf flux and other models
-        """
-
-        flags=0
-        # fit both coadd and se psf flux if exists
-        self._fit_psf_flux()
-
-        dindex=self.dindex
-        s2n=self.data['coadd_psf_flux'][dindex,:]/self.data['coadd_psf_flux_err'][dindex,:]
-        max_s2n=numpy.nanmax(s2n)
-
-        n_se_images=len(self.sdata['mb_obs_list'])
-         
-        if max_s2n >= self['min_psf_s2n'] and len(self['fit_models']) > 0:
-            # we use this as a guess for the real galaxy models
-            print("    fitting coadd gauss")
-            self._run_model_fit('gauss', coadd=True)
-
-            for model in self['fit_models']:
-                print('    fitting:',model)
-
-                print('    coadd')
-                self._run_model_fit(model, coadd=True)
-
-                if self['fit_me_galaxy'] and n_se_images > 0:
-                    print('    multi-epoch')
-                    self._run_model_fit(model, coadd=False)
-        else:
-            mess="    psf s/n too low: %s (%s)"
-            mess=mess % (max_s2n,self['min_psf_s2n'])
-            print(mess)
-            
-            flags |= LOW_PSF_FLUX
-
-        return flags
-
-
-    '''
-    def _fit_coadd_em1(self, dindex, sdata):
-        """
-        Fit a the multi-band galaxy observations to one gaussian using EM
-
-        This should be the coadd or some other single-observation-per-band
-        data
-        """
-
-        print('    fitting: coadd em1')
-        mb_obs_list=sdata['coadd_mb_obs_list']
-
-        all_flags=0
-        for band in self.iband:
-            obs = mb_obs_list[band][0]
-            gmix,flags=self._fit_coadd_em1_oneband(dindex, band, obs)
-
-            if flags == 0:
-                obs.set_gmix(gmix)
-                flags += self._fit_coadd_template_flux_oneband(dindex,
-                                                               band,
-                                                               obs)
-            all_flags += flags
-
-        pars=self.data['coadd_em1_gmix_pars'][dindex,:]
-        print_pars(pars, front='        coadd em1:')
-        return all_flags
-
-    def _fit_coadd_em1_oneband(self, dindex, band, obs):
-        """
-        Fit a single observation to a single gaussian
-        """
-        psf_gmix = obs.psf.gmix
-
-        # this is in sky coords
-        sigma_guess = numpy.sqrt( psf_gmix.get_T()/2.0 )
-        #print('    galaxy sigma guess:',sigma_guess)
-
-        ngauss=1
-        empars=self['galaxy_em_pars']
-
-        flags=0
-        try:
-            fitter = self._fit_with_em(obs,
-                                       sigma_guess,
-                                       ngauss,
-                                       empars['maxiter'],
-                                       empars['tol'],
-                                       empars['ntry'])
-        except GMixMaxIterEM:
-            fitter=None
-            flags=EM_FIT_FAILURE
-
-        data=self.data
-        data['coadd_em1_flags'][dindex,band] = flags
-
-        if flags == 0:
-            gmix=fitter.get_gmix()
-            pars=gmix.get_full_pars()
-            #print(pars)
-            beg=band*6
-            end=(band+1)*6
-            data['coadd_em1_gmix_pars'][dindex,beg:end] = pars
-        else:
-            gmix=None
-
-        return gmix, flags
-
-
-    def _fit_coadd_template_flux_oneband(self, dindex, band, obs):
-        """
-        Use the gmix as a template and fit for the flux. You must
-        have run obs.set_gmix() and that gmix center should be the
-        best one from the em fit
-
-        We take the centers, relative to the jacobian centers which must
-        be co-located, from the gmix themselves
-        """
-        fitter = ngmix.fitting.TemplateFluxFitter(obs)
-        fitter.go()
-
-        res=fitter.get_result()
-        flags=res['flags']
-        data=self.data
-        if flags == 0:
-            data['coadd_em1_flux'][dindex,band] = res['flux']
-            data['coadd_em1_flux_err'][dindex,band] = res['flux_err']
-            data['coadd_em1_chi2per'][dindex,band] = res['chi2per']
-            data['coadd_em1_dof'][dindex,band] = res['dof']
-            print("        coadd em1 flux(%s): %g +/- %g" % (band,res['flux'],res['flux_err']))
-        else:
-            print("        could not fit template for band:",band)
-
-        return flags
-
-    '''
-
-    def _fit_with_em(self, obs, sigma_guess, ngauss, maxiter, tol, ntry):
-        """
-        Fit a gaussian mixture to the input observation using em to find a
-        """
-
-        s2guess = sigma_guess**2
-
-        im_with_sky, sky = ngmix.em.prep_image(obs.image)
-
-        tobs = Observation(im_with_sky, jacobian=obs.jacobian)
-        fitter=ngmix.em.GMixEM(tobs)
-
-        for i in xrange(ntry):
-
-            gm_guess=self._get_em_guess(s2guess, ngauss)
-
-            try:
-                fitter.go(gm_guess,
-                          sky,
-                          maxiter=maxiter,
-                          tol=tol)
-                break
-            except GMixMaxIterEM:
-                res=fitter.get_result()
-                print('last fit:')
-                print( fitter.get_gmix() )
-                print( 'try:',i+1,'fdiff:',res['fdiff'],'numiter:',res['numiter'] )
-                if i == (ntry-1):
-                    raise
-            except GMixRangeError as e:
-                print("            em: range: %s" % str(e))
-                if i == (ntry-1):
-                    raise GMixMaxIterEM("too many iter")
-
-        return fitter
 
 
 
@@ -1130,54 +1130,6 @@ class MedsFit(dict):
 
 
 
-    def _run_model_fit(self, model, coadd=False):
-        """
-        wrapper to run fit, copy pars, maybe make plots
-
-        sets .coadd_gauss_fitter or .fitter or .coadd_fitter
-        """
-        if coadd:
-            if model=='gauss':
-                self.guesser=self._get_guesser(self['coadd_gauss_guess'])
-            else:
-                self.guesser=self._get_guesser(self['coadd_model_guess'])
-            mb_obs_list=self.sdata['coadd_mb_obs_list']
-        else:
-            #self.guesser=self._get_guesser(self['guess_type'])
-            self.guesser=self._get_guesser(self['me_model_guess'])
-            mb_obs_list=self.sdata['mb_obs_list']
-
-        fitter=self._fit_model(mb_obs_list, model)
-
-        self._copy_simple_pars(fitter, coadd=coadd)
-
-        self._print_res(fitter, coadd=coadd)
-
-        if self['make_plots']:
-            self._do_make_plots(fitter, model, coadd=coadd)
-
-        if coadd:
-            if model=='gauss':
-                self.coadd_gauss_fitter=fitter
-            else:
-                self.coadd_fitter=fitter
-        else:
-            self.fitter=fitter
-
-    def _fit_model(self, mb_obs_list, model):
-        """
-        Fit all the simple models
-        """
-
-        fitter=self._fit_simple_emcee(mb_obs_list, model)
-
-        # also adds .weights attribute
-        self._calc_mcmc_stats(fitter, model)
-
-        if self['do_shear']:
-            self._add_shear_info(fitter, model)
-
-        return fitter
 
     def _get_guesser(self, guess_type):
         if guess_type=='coadd_psf':
@@ -1388,32 +1340,6 @@ class MedsFit(dict):
         return guesser
     '''
 
-    def _fit_simple_emcee(self, mb_obs_list, model):
-        """
-        Fit one of the "simple" models, e.g. exp or dev
-
-        use flat g prior
-        """
-
-        from ngmix.fitting import MCMCSimple
-
-        # note flat on g!
-        prior=self.gflat_priors[model]
-
-        guess=self.guesser(n=self['emcee_nwalkers'], prior=prior)
-
-        fitter=MCMCSimple(mb_obs_list,
-                          model,
-                          nu=self['nu'],
-                          prior=prior,
-                          nwalkers=self['emcee_nwalkers'],
-                          mca_a=self['emcee_a'],
-                          random_state=self.random_state)
-
-        pos=fitter.run_mcmc(guess,self['emcee_burnin'])
-        pos=fitter.run_mcmc(pos,self['emcee_nstep'])
-
-        return fitter
 
 
     def _calc_mcmc_stats(self, fitter, model):
@@ -1646,7 +1572,7 @@ class MedsFit(dict):
 
         self._cat_list=cat_list
 
-    def _get_psfex_lol(self):
+    def _get_psfex_lists(self):
         """
         Load psfex objects for each of the SE images
         include the coadd so we get  the index right
@@ -1655,17 +1581,17 @@ class MedsFit(dict):
         desdata=os.environ['DESDATA']
         meds_desdata=self.meds_list[0]._meta['DESDATA'][0]
 
-        psfex_lol=[]
-        flags_lol=[]
+        psfex_lists=[]
+        flags_lists=[]
 
         for band in self.iband:
             meds=self.meds_list[band]
 
             psfex_list, flags_list = self._get_psfex_objects(meds)
-            psfex_lol.append( psfex_list )
-            flags_lol.append( flags_list )
+            psfex_lists.append( psfex_list )
+            flags_lists.append( flags_list )
 
-        return psfex_lol, flags_lol
+        return psfex_lists, flags_lists
 
     def _get_psfex_blacklist(self):
         """
@@ -2450,6 +2376,10 @@ class MHMedsFitHybrid(MedsFit):
 
         guess,sigmas=self.guesser(get_sigmas=True, prior=prior)
 
+        #for olist in mb_obs_list:
+        #    print("    image filename:",olist[0].filename)
+        #    print("    psfex filename:",olist[0].psf.filename)
+
         step_sizes = 0.5*sigmas
 
         # this is 5-element, use 5th for all fluxes
@@ -2490,12 +2420,13 @@ class MHMedsFitHybrid(MedsFit):
         else:
             fac = arate/0.5
 
+        pos=fitter.get_best_pars()
+        print_pars(pos,        front="            mh start after 1st burnin:")
+
         step_sizes *= fac
         fitter.set_step_sizes(step_sizes)
         print_pars(step_sizes, front="            new step sizes:")
 
-        pos=fitter.get_best_pars()
-        print_pars(pos,        front="            mh start after 1st burnin:")
         pos=fitter.run_mcmc(pos,self['mh_burnin'])
 
         # in case we ended on a bad point
