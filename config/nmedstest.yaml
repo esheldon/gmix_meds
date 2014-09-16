@@ -1,42 +1,29 @@
-# all emcee, exp only, psf rerun, guesses from coadd
 fitter: "ngmix"
 
-# emcee, mh
-reject_outliers: True
-
 coadd_gauss_fitter_class: "emcee"
-coadd_fitter_class: "mh"
-fitter_class: "mh"
+coadd_fitter_class: "emcee"
+fitter_class: "emcee"
 
-use_psf_rerun: True
-psfex_blacklist: "/gpfs01/astro/workarea/mjarvis/psfex_blacklist"
-
-fit_me_galaxy: True
+reject_outliers: True
+check_image_flags: False
+use_psf_rerun: False
+fit_me_galaxy: False
 
 # might be coadd_psf, coadd_cat, ...
-coadd_gauss_guess: "coadd_cat"
+coadd_gauss_guess: "coadd_psf"
 
 # if using emcee, might be coadd_gauss
 # if using mh, might be coadd_gauss_best
-coadd_model_guess: "coadd_gauss_best"
-
-# for mh might be coadd_mcmc_best
-# for emcee might be coadd_mcmc
-me_model_guess: "coadd_mcmc_best"
-
-# for guessing size from flux radius
-T_guess_band: 2
+coadd_model_guess: "coadd_gauss"
 
 nu: 0.0
 
+# using same as 008 here.  maybe more steps fewer walkers better in a way
+# since they are independent
 emcee_a: 2.0
 emcee_nwalkers: 80
-emcee_burnin: 400
-emcee_nstep: 200
-
-mh_burnin: 5000
-mh_nstep: 5000
-min_step_sizes: [0.0001,0.0001,0.001,0.001,0.0001,0.001]
+emcee_burnin: 800
+emcee_nstep: 800
 
 psf_em_pars:
     ngauss: 3
@@ -55,7 +42,7 @@ region: "cweight-nearest"
 psf_offset_max: 0.25
 
 # in addition to gauss fit on coadd and a psf flux
-fit_models: ['exp']
+fit_models: ['exp','dev']
 
 do_shear: True
 
@@ -63,14 +50,18 @@ use_cen_prior: True
 cen_width: 0.27
 
 # from fitting to all cosmos galaxies in galsim data
-g_prior_types: ["cosmos-sersic"]
+g_prior_types: ["cosmos-sersic","cosmos-sersic"]
+
 
 # 1.0e+06 is about 700 arcsec, 2600 pixels
-T_prior_types: ["TwoSidedErf"]
-T_prior_pars: [ [-0.07, 0.03, 1.0e+06, 1.0e+05] ]
+T_prior_types: ["TwoSidedErf","TwoSidedErf"]
+T_prior_pars: [ [-0.07, 0.03, 1.0e+06, 1.0e+05],
+                [-0.07, 0.03, 1.0e+06, 1.0e+05] ]
 
-counts_prior_types: ["TwoSidedErf"]
-counts_prior_pars: [ [-1.0, 0.1, 1.0e+09, 0.25e+08] ]
+counts_prior_types: ["TwoSidedErf","TwoSidedErf"]
+counts_prior_pars: [ [-1.0, 0.1, 1.0e+09, 0.25e+08],
+                     [-1.0, 0.1, 1.0e+09, 0.25e+08] ]
+
 
 
 # this means repeat the above for each band
@@ -80,4 +71,4 @@ counts_prior_repeat: True
 # limit such as in the condor scavenge.
 # 0 means after the first object
 
-checkpoints: [30,60,110]
+checkpoints: [0,30,60,110]
