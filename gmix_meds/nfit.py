@@ -91,7 +91,7 @@ class MedsFit(dict):
         self.update(conf)
         self._set_some_defaults()
         
-        self.meds_files=_get_as_list(meds_files)
+        self.meds_files=get_as_list(meds_files)
 
         self['nband']=len(self.meds_files)
         self.iband = range(self['nband'])
@@ -1176,7 +1176,7 @@ class MedsFit(dict):
         data=self.data
 
         psf_flux=data['coadd_psf_flux'][dindex,:].copy()
-        psf_flux=psf_flux.clip(min=0.1, max=1.0e6)
+        psf_flux=psf_flux.clip(min=0.1, max=1.0e9)
 
         nband=self['nband']
         w,=numpy.where(data['coadd_psf_flags'][dindex,:] != 0)
@@ -2672,7 +2672,7 @@ def get_psf_ngauss(psf_model):
     return _psf_ngauss_map[psf_model]
 
 
-def _get_as_list(data_in):
+def get_as_list(data_in):
     if not isinstance(data_in, list):
         out=[data_in]
     else:

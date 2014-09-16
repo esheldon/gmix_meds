@@ -1,11 +1,10 @@
+from . import nfit
+from . import nfitcoadd
+from .nfit import MedsFit
+
 from . import lmfit
-from .lmfit import MedsFit
-
 from . import mcfit
-from .mcfit import MedsMCMC
-
 from . import lmfit_mb
-from .lmfit_mb import MedsFitMB
 
 from . import collate
 from . import qa

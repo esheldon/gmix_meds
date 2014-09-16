@@ -217,7 +217,6 @@ def run_ngmix(meds_files,
               checkpoint_file=None,
               checkpoint_data=None):
     import ngmix
-    import gmix_meds.nfit
     
     priors={}
 
@@ -243,8 +242,11 @@ def run_ngmix(meds_files,
         meds_fitter=gmix_meds.nfit.MHMedsFitHybrid
     elif conf['fitter_class']=='emcee':
         meds_fitter=gmix_meds.nfit.MedsFit
+    elif conf['fitter_class']=="coadd-only":
+        meds_fitter=gmix_meds.nfitcoadd.MedsFitCoadd
     else:
         raise ValueError("bad fitter class: '%s'" % conf['fitter_class'])
+
     gm=meds_fitter(conf,
                    priors,
                    meds_files,

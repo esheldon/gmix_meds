@@ -35,7 +35,8 @@ class Concat(object):
                  nper=DEFAULT_NPER,
                  sub_dir=None,
                  blind=True,
-                 clobber=False):
+                 clobber=False,
+                 skip_errors=False):
 
         from . import files
 
@@ -55,6 +56,7 @@ class Concat(object):
         self.nper=nper
         self.blind=blind
         self.clobber=clobber
+        self.skip_errors=skip_errors
 
         self.config = files.read_yaml(config_file)
 
@@ -100,14 +102,22 @@ class Concat(object):
         for i,split in enumerate(self.chunk_list):
 
             print('\t%d/%d ' %(i+1,nchunk), end='')
-            data, epoch_data, meta = self.read_chunk(split)
+            try:
+                data, epoch_data, meta = self.read_chunk(split)
 
-            if self.blind:
-                self.blind_data(data)
 
-            dlist.append(data)
-            if epoch_data.dtype.names is not None:
-                elist.append(epoch_data)
+                if self.blind:
+                    self.blind_data(data)
+
+                dlist.append(data)
+
+                if (epoch_data is not None 
+                        and epoch_data.dtype.names is not None):
+                    elist.append(epoch_data)
+            except ConcatError as err:
+                if not self.skip_errors:
+                    raise err
+                print("skipping problematic chunk")
 
         # note using meta from last file
         self._write_data(dlist, elist, meta)
@@ -221,12 +231,21 @@ class Concat(object):
         names=list( data0.dtype.names )
         dt=[tdt for tdt in data0.dtype.descr]
 
+        flux_ind = names.index('coadd_psf_flux_err')
+        dt.insert(flux_ind+1, ('coadd_psf_flux_s2n','f8',nbands) )
+        names.insert(flux_ind+1,'coadd_psf_flux_s2n')
+
+        dt.insert(flux_ind+2, ('coadd_psf_mag','f8',nbands) )
+        names.insert(flux_ind+2,'coadd_psf_mag')
+
+
         flux_ind = names.index('psf_flux_err')
         dt.insert(flux_ind+1, ('psf_flux_s2n','f8',nbands) )
         names.insert(flux_ind+1,'psf_flux_s2n')
 
         dt.insert(flux_ind+2, ('psf_mag','f8',nbands) )
         names.insert(flux_ind+2,'psf_mag')
+
 
 
         do_T=False
@@ -262,7 +281,7 @@ class Concat(object):
         data=numpy.zeros(data0.size, dtype=dt)
         eu.numpy_util.copy_fields(data0, data)
 
-        all_models=['psf'] + models 
+        all_models=['coadd_psf','psf'] + models 
         for ft in all_models:
             if self.nbands==1:
                 self.calc_mag_and_flux_stuff_scalar(data, meta, ft)
@@ -307,6 +326,7 @@ class Concat(object):
         """
 
         flux_name='%s_flux' % model
+        flux_err_name='%s_flux_err' % model
         cov_name='%s_flux_cov' % model
         s2n_name='%s_flux_s2n' % model
         flag_name = '%s_flags' % model
@@ -315,7 +335,7 @@ class Concat(object):
         data[mag_name][:,band] = -9999.
         data[s2n_name][:,band] = 0.0
 
-        if model=='psf':
+        if model in ['coadd_psf','psf']:
             w,=numpy.where(data[flag_name][:,band] == 0)
         else:
             w,=numpy.where(data[flag_name] == 0)
@@ -325,9 +345,9 @@ class Concat(object):
             magzero=meta['magzp_ref'][band]
             data[mag_name][w,band] = magzero - 2.5*numpy.log10( flux )
 
-            if model=='psf':
-                flux=data['psf_flux'][w,band]
-                flux_err=data['psf_flux_err'][w,band]
+            if model in ['coadd_psf','psf']:
+                flux=data[flux_name][w,band]
+                flux_err=data[flux_err_name][w,band]
                 w2,=numpy.where(flux_err > 0)
                 if w2.size > 0:
                     flux=flux[w2]
@@ -349,6 +369,7 @@ class Concat(object):
         """
 
         flux_name='%s_flux' % model
+        flux_err_name='%s_flux_err' % model
         cov_name='%s_flux_cov' % model
         s2n_name='%s_flux_s2n' % model
         flag_name = '%s_flags' % model
@@ -357,7 +378,7 @@ class Concat(object):
         data[mag_name][:] = -9999.
         data[s2n_name][:] = 0.0
 
-        if model=='psf':
+        if model in ['coadd_psf','psf']:
             w,=numpy.where(data[flag_name][:] == 0)
         else:
             w,=numpy.where(data[flag_name] == 0)
@@ -367,9 +388,9 @@ class Concat(object):
             magzero=meta['magzp_ref'][0]
             data[mag_name][w] = magzero - 2.5*numpy.log10( flux )
 
-            if model=='psf':
-                flux=data['psf_flux'][w]
-                flux_err=data['psf_flux_err'][w]
+            if model in ['coadd_psf','psf']:
+                flux=data[flux_name][w]
+                flux_err=data[flux_err_name][w]
                 w2,=numpy.where(flux_err > 0)
                 if w2.size > 0:
                     flux=flux[w2]
@@ -398,7 +419,11 @@ class Concat(object):
         try:
             with fitsio.FITS(fname) as fobj:
                 data0       = fobj['model_fits'][:]
-                epoch_data0 = fobj['epoch_data'][:]
+                if 'epoch_data' in fobj:
+                    epoch_data0 = fobj['epoch_data'][:]
+                else:
+                    print("    file has no epochs")
+                    epoch_data0 = None
                 meta        = fobj['meta_data'][:]
         except IOError as err:
             raise ConcatError(str(err))
@@ -411,8 +436,11 @@ class Concat(object):
 
         data = self.pick_fields(data0,meta)
 
-        if epoch_data0.dtype.names is not None:
-            epoch_data = self.pick_epoch_fields(epoch_data0)
+        if epoch_data0 is not None:
+            if epoch_data0.dtype.names is not None:
+                epoch_data = self.pick_epoch_fields(epoch_data0)
+            else:
+                epoch_data = epoch_data0
         else:
             epoch_data = epoch_data0
 

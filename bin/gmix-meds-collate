@@ -28,6 +28,8 @@ parser.add_option('--clobber',action='store_true',
 
 parser.add_option('--verify',action='store_true',
                   help="just verify every file")
+parser.add_option('--skip-errors',action='store_true',
+                  help="skip over errors")
 
 def main():
     options, args = parser.parse_args(sys.argv[1:])
@@ -56,7 +58,8 @@ def main():
                                 nper=nper,
                                 sub_dir=options.sub_dir,
                                 blind=blind,
-                                clobber=options.clobber)
+                                clobber=options.clobber,
+                                skip_errors=options.skip_errors)
 
     if options.verify:
         tc.verify()
