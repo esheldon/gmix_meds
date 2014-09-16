@@ -197,6 +197,8 @@ class Concat(object):
 
         model_names = self.config['fit_models']
         model_names = ['coadd_%s' % mod for mod in model_names] + model_names
+
+        model_names = ['coadd_gauss'] + model_names
         
         names=list( data.dtype.names )
         for model in model_names:
