@@ -170,6 +170,12 @@ class MedsFitCoadd(MedsFit):
 
         meds=self.meds_list[band]
 
+        # need coadd and at lease one SE image
+        ncutout=meds['ncutout'][mindex]
+        if ncutout < 1:
+            print('No cutouts')
+            flags |= NO_CUTOUTS
+ 
         box_size=meds['box_size'][mindex]
         if box_size > self['max_box_size']:
             print('Box size too big:',box_size)
