@@ -1,22 +1,18 @@
 fitter: "ngmix"
-
-coadd_gauss_fitter_class: "emcee"
-coadd_fitter_class: "emcee"
-fitter_class: "emcee"
-
-reject_outliers: True
-check_image_flags: False
-use_psf_rerun: False
-fit_me_galaxy: False
-
-# might be coadd_psf, coadd_cat, ...
-coadd_gauss_guess: "coadd_psf"
+fitter_class: "mh"
+fit_me_galaxy: True
 
 # if using emcee, might be coadd_gauss
 # if using mh, might be coadd_gauss_best
-coadd_model_guess: "coadd_gauss"
+coadd_model_guess: "coadd_psf"
+
+# for mh might be coadd_mcmc_best
+# for emcee might be coadd_mcmc
+me_model_guess: "coadd_mcmc_best"
 
 nu: 0.0
+
+max_box_size: 192
 
 # using same as 008 here.  maybe more steps fewer walkers better in a way
 # since they are independent
@@ -24,6 +20,9 @@ emcee_a: 2.0
 emcee_nwalkers: 80
 emcee_burnin: 800
 emcee_nstep: 800
+
+mh_burnin: 5000
+mh_nstep: 5000
 
 psf_em_pars:
     ngauss: 3
@@ -42,7 +41,7 @@ region: "cweight-nearest"
 psf_offset_max: 0.25
 
 # in addition to gauss fit on coadd and a psf flux
-fit_models: ['exp','dev']
+fit_models: ['exp']
 
 do_shear: True
 
@@ -50,19 +49,15 @@ use_cen_prior: True
 cen_width: 0.27
 
 # from fitting to all cosmos galaxies in galsim data
-g_prior_types: ["cosmos-sersic","cosmos-sersic"]
+g_prior_types: ["cosmos-sersic"]
 
 
 # 1.0e+06 is about 700 arcsec, 2600 pixels
-T_prior_types: ["TwoSidedErf","TwoSidedErf"]
-T_prior_pars: [ [-0.07, 0.03, 1.0e+06, 1.0e+05],
-                [-0.07, 0.03, 1.0e+06, 1.0e+05] ]
+T_prior_types: ["TwoSidedErf"]
+T_prior_pars: [ [-0.07, 0.03, 1.0e+06, 1.0e+05] ]
 
-counts_prior_types: ["TwoSidedErf","TwoSidedErf"]
-counts_prior_pars: [ [-1.0, 0.1, 1.0e+09, 0.25e+08],
-                     [-1.0, 0.1, 1.0e+09, 0.25e+08] ]
-
-
+counts_prior_types: ["TwoSidedErf"]
+counts_prior_pars: [ [-1.0, 0.1, 1.0e+09, 0.25e+08] ]
 
 # this means repeat the above for each band
 counts_prior_repeat: True

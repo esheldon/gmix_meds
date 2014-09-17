@@ -7,7 +7,7 @@
 
 # t for testbed
 
-run: "ngmix007t"
+run: "ngmix008t"
 run_type: "mcmc"
 
 # testbeds are defined in deswl/desmeds/testbed
