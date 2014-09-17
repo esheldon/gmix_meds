@@ -335,6 +335,8 @@ def get_g_priors_ngmix(conf):
         elif typ =='ba':
             sigma=conf['g_prior_pars'][i]
             g_prior = ngmix.priors.GPriorBA(sigma)
+        elif typ=='flat':
+            g_prior=ngmix.priors.ZDisk2D(1.0)
         else:
             raise ValueError("implement gprior '%s'")
         g_priors.append(g_prior)
