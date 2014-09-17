@@ -98,6 +98,7 @@ class MedsFit(dict):
 
         self._unpack_priors(priors)
 
+        # load meds files and image flags array
         self._load_meds_files()
         self._load_coadd_cat_files()
 
@@ -105,6 +106,8 @@ class MedsFit(dict):
         self._set_index_list()
 
         self.psfex_lists, self.psfex_flags_lists = self._get_psfex_lists()
+
+        self._combine_image_flags()
 
         self.checkpoint_file=checkpoint_file
         self.checkpoint_data=checkpoint_data
@@ -295,8 +298,9 @@ class MedsFit(dict):
             self.data['flags'][dindex] = PSF_FIT_FAILURE 
             return
 
-        if len(mb_obs_list) == 0:
-            print("  not all bands had at least one psf fit succeed")
+        if len(mb_obs_list) != self['nband']:
+            print("  not all bands had at least one psf fit"
+                  " succeed and were without image flags")
             self.data['flags'][dindex] = PSF_FIT_FAILURE 
             return
 
@@ -332,10 +336,6 @@ class MedsFit(dict):
         n_se_images=len(self.sdata['mb_obs_list'])
          
         if max_s2n >= self['min_psf_s2n'] and len(self['fit_models']) > 0:
-            # we use this as a guess for the real galaxy models
-            print("    fitting coadd gauss")
-            self._run_model_fit('gauss', coadd=True)
-
             for model in self['fit_models']:
                 print('    fitting:',model)
 
@@ -361,13 +361,9 @@ class MedsFit(dict):
         sets .coadd_gauss_fitter or .fitter or .coadd_fitter
         """
         if coadd:
-            if model=='gauss':
-                self.guesser=self._get_guesser(self['coadd_gauss_guess'])
-            else:
-                self.guesser=self._get_guesser(self['coadd_model_guess'])
+            self.guesser=self._get_guesser(self['coadd_model_guess'])
             mb_obs_list=self.sdata['coadd_mb_obs_list']
         else:
-            #self.guesser=self._get_guesser(self['guess_type'])
             self.guesser=self._get_guesser(self['me_model_guess'])
             mb_obs_list=self.sdata['mb_obs_list']
 
@@ -468,16 +464,14 @@ class MedsFit(dict):
             print('Box size too big:',box_size)
             flags |= BOX_SIZE_TOO_BIG
 
-        # need coadd and at lease one SE image
+        # need coadd and at least one SE image
         ncutout=meds['ncutout'][mindex]
         if ncutout < 2:
             print('No cutouts')
             flags |= NO_CUTOUTS
 
-        # check image flags
-
         # note coadd is never flagged
-        image_flags=self._get_image_flags(meds, band, mindex)
+        image_flags=self._get_image_flags(band, mindex)
         w,=numpy.where(image_flags==0)
 
         # need coadd and at lease one SE image
@@ -522,6 +516,8 @@ class MedsFit(dict):
         self.psfrec_g1_wsum=0.0
         self.psfrec_g2_wsum=0.0
 
+        # only append if good ones found, can use to demand the length is
+        # nband.  But we want to finish to set the psfrec info
         for band in self.iband:
 
             self.coadd_band_wsum=0.0
@@ -535,8 +531,10 @@ class MedsFit(dict):
             if len(cobs_list) > 0:
                 coadd_mb_obs_list.append(cobs_list)
 
-            n_im[band]=len(obs_list)
-            if n_im[band] > 0:
+            nme = len(obs_list)
+            n_im[band] = nme
+
+            if nme > 0:
                 if self['reject_outliers']:
                     self._reject_outliers(obs_list)
                 mb_obs_list.append(obs_list)
@@ -625,26 +623,6 @@ class MedsFit(dict):
             print('        rejected:',nreject)
 
 
-    def _get_image_flags(self, meds, band, mindex):
-        """
-        find images associated with the object and get the image flags
-
-        Also add in the psfex flags, eventually incorporated into meds
-        """
-        ncutout=meds['ncutout'][mindex]
-        if not self['check_image_flags']:
-            image_flags = numpy.zeros(ncutout, dtype='i4')
-        else:
-
-            file_ids = meds['file_id'][mindex, 0:ncutout]
-            image_info=meds.get_image_info()
-            image_flags = image_info['image_flags'][file_ids]
-
-            for i,file_id in enumerate(file_ids):
-                psfex_flags = self.psfex_flags_lists[band][file_id]
-                image_flags[i] |= psfex_flags
-
-        return image_flags
 
     def _get_band_observations(self, band, mindex):
         """
@@ -659,12 +637,12 @@ class MedsFit(dict):
         meds=self.meds_list[band]
         ncutout=meds['ncutout'][mindex]
 
-        image_flags=self._get_image_flags(meds, band, mindex)
+        image_flags=self._get_image_flags(band, mindex)
 
         coadd_obs_list = ObsList()
         obs_list       = ObsList()
 
-        for icut in xrange(0,ncutout):
+        for icut in xrange(ncutout):
             iflags = image_flags[icut]
             if iflags != 0:
                 flags = IMAGE_FLAGS
@@ -735,7 +713,7 @@ class MedsFit(dict):
         jacob = self._get_jacobian(meds, mindex, icut)
 
         # for the psf fitting code
-        wt.clip(min=0.0, max=None, out=wt)
+        wt=wt.clip(min=0.0)
 
         psf_obs = self._get_psf_observation(band, mindex, icut, jacob)
 
@@ -1530,6 +1508,33 @@ class MedsFit(dict):
         plt.write_img(1920,1200,fname)
 
 
+    def _combine_image_flags(self):
+        """
+        add the psf flags, properly shifted
+        """
+        for band in self.iband:
+            image_flags = self.all_image_flags[band]
+            psf_flags   = self.psfex_flags_lists[band]
+            for i in xrange(image_flags.size):
+                image_flags[i] |= (psf_flags[i] << PSFEX_FLAGS_SHIFT)
+
+    def _get_image_flags(self, band, mindex):
+        """
+        find images associated with the object and get the image flags
+
+        Also add in the psfex flags, eventually incorporated into meds
+        """
+        meds=self.meds_list[band]
+        ncutout=meds['ncutout'][mindex]
+
+        if self['check_image_flags']:
+            file_ids = meds['file_id'][mindex, 0:ncutout]
+            image_flags = self.all_image_flags[band][file_ids]
+        else:
+            image_flags = numpy.zeros(ncutout, dtype='i4')
+
+        return image_flags
+
     def _load_meds_files(self):
         """
         Load all listed meds files
@@ -1537,11 +1542,14 @@ class MedsFit(dict):
 
         self.meds_list=[]
         self.meds_meta_list=[]
+        self.all_image_flags=[]
 
         for i,f in enumerate(self.meds_files):
             print(f)
             medsi=meds.MEDS(f)
             medsi_meta=medsi.get_meta()
+            image_info=medsi.get_image_info()
+
             if i==0:
                 nobj_tot=medsi.size
             else:
@@ -1551,6 +1559,7 @@ class MedsFit(dict):
                                      "sizes: %d/%d" % (nobj_tot,nobj))
             self.meds_list.append(medsi)
             self.meds_meta_list.append(medsi_meta)
+            self.all_image_flags.append( image_info['image_flags'].copy() )
 
         self.nobj_tot = self.meds_list[0].size
 
@@ -1657,8 +1666,7 @@ class MedsFit(dict):
 
     def _get_psfex_objects(self, meds):
         """
-        Load psfex objects for each of the SE images
-        include the coadd so we get  the index right
+        Load psfex objects for all images, including coadd
         """
 
         psfex_list=[]
@@ -1668,23 +1676,18 @@ class MedsFit(dict):
         nimage=info.size
 
         for i in xrange(nimage):
-            impath=info['image_path'][i].strip()
+            pex=None
 
+            impath=info['image_path'][i].strip()
             psfpath, flags = self._psfex_path_from_image_path(meds, impath)
 
-            if flags != 0:
-                # shift beyond astrometry flags
-                flags = flags << PSFEX_FLAGS_SHIFT 
-                pex=None
-            else:
+            if flags==0:
                 if not os.path.exists(psfpath):
                     # this flag is Mike's
                     # 16 = Error encountered somewhere along the line 
                     # in making the PSFEx files.
                     print("warning: missing psfex: %s" % psfpath)
-                    pex   = None
                     flags = 1<<16
-                    flags = flags << PSFEX_FLAGS_SHIFT 
                 else:
                     pex=psfex.PSFEx(psfpath)
 
@@ -1826,8 +1829,6 @@ class MedsFit(dict):
 
         if self['fit_me_galaxy']:
             models = models + self['fit_models']
-
-        models = ['coadd_gauss'] + models
 
         return models
 
@@ -2271,18 +2272,10 @@ class MHMedsFitHybrid(MedsFit):
         n_se_images=len(self.sdata['mb_obs_list'])
          
         if max_s2n >= self['min_psf_s2n'] and len(self['fit_models']) > 0:
-
-            # we use this as a guess for the real galaxy models, and for
-            # step sizes
-            print("    fitting coadd gauss")
-            self._run_model_fit('gauss', coadd=True,
-                                fitter_type=self['coadd_gauss_fitter_class'])
-
             for model in self['fit_models']:
                 print('    fitting:',model)
 
                 print('    coadd')
-                #self._run_model_fit(model, coadd=True, fitter_type='mh')
                 self._run_model_fit(model, coadd=True, 
                                     fitter_type=self['coadd_fitter_class'])
 
@@ -2311,10 +2304,7 @@ class MHMedsFitHybrid(MedsFit):
         """
 
         if coadd:
-            if fitter_type=='emcee' and model=='gauss':
-                self.guesser=self._get_guesser(self['coadd_gauss_guess'])
-            else:
-                self.guesser=self._get_guesser(self['coadd_model_guess'])
+            self.guesser=self._get_guesser(self['coadd_model_guess'])
             mb_obs_list=self.sdata['coadd_mb_obs_list']
         else:
             self.guesser=self._get_guesser(self['me_model_guess'])
