@@ -231,12 +231,13 @@ class Concat(object):
         names=list( data0.dtype.names )
         dt=[tdt for tdt in data0.dtype.descr]
 
-        flux_ind = names.index('coadd_psf_flux_err')
-        dt.insert(flux_ind+1, ('coadd_psf_flux_s2n','f8',nbands) )
-        names.insert(flux_ind+1,'coadd_psf_flux_s2n')
+        if 'coadd_psf_flux_err' in names:
+            flux_ind = names.index('coadd_psf_flux_err')
+            dt.insert(flux_ind+1, ('coadd_psf_flux_s2n','f8',nbands) )
+            names.insert(flux_ind+1,'coadd_psf_flux_s2n')
 
-        dt.insert(flux_ind+2, ('coadd_psf_mag','f8',nbands) )
-        names.insert(flux_ind+2,'coadd_psf_mag')
+            dt.insert(flux_ind+2, ('coadd_psf_mag','f8',nbands) )
+            names.insert(flux_ind+2,'coadd_psf_mag')
 
 
         flux_ind = names.index('psf_flux_err')
@@ -245,7 +246,6 @@ class Concat(object):
 
         dt.insert(flux_ind+2, ('psf_mag','f8',nbands) )
         names.insert(flux_ind+2,'psf_mag')
-
 
 
         do_T=False
@@ -281,7 +281,12 @@ class Concat(object):
         data=numpy.zeros(data0.size, dtype=dt)
         eu.numpy_util.copy_fields(data0, data)
 
-        all_models=['coadd_psf','psf'] + models 
+        all_models=models
+        if 'coadd_psf_flux' in names:
+            all_models=all_models + ['coadd_psf']
+        if 'psf_flux' in names:
+            all_models=all_models + ['psf']
+
         for ft in all_models:
             if self.nbands==1:
                 self.calc_mag_and_flux_stuff_scalar(data, meta, ft)
