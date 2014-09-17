@@ -1,0 +1,22 @@
+# using nmedstest3, which at this time is flat prior g, no shear
+run: "ngmixtest4"
+run_type: "mcmc"
+
+# testbeds are defined in deswl/desmeds/testbed
+dataset: "testbed"
+testbed: {"name":"sva1", "release":"SVA1_COADD_SPTE"}
+
+# must exist in tiles
+withbands: ["g","r","i","z"]
+
+# what we will process
+bands:     ["r","i","z"]
+
+# if a testbed, we will only use a subset of the tiles
+# in here
+medsconf: "013"
+
+nper: 10
+
+# flat g prior
+config: "nmedstest3"
