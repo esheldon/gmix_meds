@@ -1,4 +1,4 @@
-# flat prior on g, no shear, to test if fluxes come out in better agreement
+# 2 gauss psf
 fitter: "ngmix"
 fitter_class: "coadd-only"
 fit_me_galaxy: False
@@ -15,7 +15,7 @@ emcee_burnin: 800
 emcee_nstep: 800
 
 psf_em_pars:
-    ngauss: 3
+    ngauss: 2
     ntry: 20
     maxiter: 5000
     tol: 5.0e-6
@@ -40,7 +40,8 @@ use_cen_prior: True
 cen_width: 0.27
 
 # from fitting to all cosmos galaxies in galsim data
-g_prior_types: ["flat"]
+#g_prior_types: ["flat"]
+g_prior_types: ["cosmos-sersic"]
 
 
 # 1.0e+06 is about 700 arcsec, 2600 pixels
