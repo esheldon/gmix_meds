@@ -130,6 +130,7 @@ class MedsFit(dict):
 
         self['work_dir'] = self.get('work_dir',os.environ.get('TMPDIR','/tmp'))
 
+        self['check_image_flags']=self.get('check_image_flags',False)
         self['use_psf_rerun']=self.get('use_psf_rerun',False)
 
     def _unpack_priors(self, priors_in):
@@ -143,67 +144,46 @@ class MedsFit(dict):
         priors={}
         gflat_priors={}
 
-        if 'joint_prior' in priors_in:
-            print("NEED TO SUPPORT MULTIPLE BANDS FOR JOINT")
-            prior=priors_in['joint_prior']
-            gflat_prior=priors_in['joint_prior_gflat']
+        cen_prior=priors_in['cen_prior']
 
-            for i,model in enumerate(self['fit_models']):
-                priors[model]=prior
-                gflat_priors[model]=gflat_prior
+        counts_prior_repeat=self.get('counts_prior_repeat',False)
 
-                # extra for the coadd gaussian fit
-                if i==1:
-                    priors["gauss"] = prior
-                    gflat_priors["gauss"] = gflat_prior
+        g_prior_flat=ZDisk2D(1.0)
 
+        g_priors=priors_in['g_priors']
+        T_priors=priors_in['T_priors']
+        counts_priors=priors_in['counts_priors']
 
-        else:
-            cen_prior=priors_in['cen_prior']
+        models = self['fit_models']
+        nmod=len(models)
 
-            counts_prior_repeat=self.get('counts_prior_repeat',False)
+        nprior=len(g_priors)
+        if nprior != nmod:
+            raise ValueError("len(models)=%d but got len(priors)=%d" % (nmod,nprior))
 
-            g_prior_flat=ZDisk2D(1.0)
+        for i in xrange(nmod):
+            model=self['fit_models'][i]
+            print("loading prior for:",model)
 
-            g_priors=priors_in['g_priors']
-            T_priors=priors_in['T_priors']
-            counts_priors=priors_in['counts_priors']
+            cp = counts_priors[i]
+            if counts_prior_repeat:
+                cp = [cp]*self['nband']
 
-            models = self['fit_models']
-            nmod=len(models)
+            print("    full")
+            prior = PriorSimpleSep(cen_prior,
+                                   g_priors[i],
+                                   T_priors[i],
+                                   cp)
 
-            nprior=len(g_priors)
-            if nprior != nmod:
-                raise ValueError("len(models)=%d but got len(priors)=%d" % (nmod,nprior))
+            # for the exploration, for which we do not apply g prior during
+            print("    gflat")
+            gflat_prior = PriorSimpleSep(cen_prior,
+                                         g_prior_flat,
+                                         T_priors[i],
+                                         cp)
 
-            for i in xrange(nmod):
-                model=self['fit_models'][i]
-                print("loading prior for:",model)
-
-                cp = counts_priors[i]
-                if counts_prior_repeat:
-                    cp = [cp]*self['nband']
-
-                print("    full")
-                prior = PriorSimpleSep(cen_prior,
-                                       g_priors[i],
-                                       T_priors[i],
-                                       cp)
-
-                # for the exploration, for which we do not apply g prior during
-                print("    gflat")
-                gflat_prior = PriorSimpleSep(cen_prior,
-                                             g_prior_flat,
-                                             T_priors[i],
-                                             cp)
-
-                priors[model]=prior
-                gflat_priors[model]=gflat_prior
-
-                # for the coadd gaussian fit
-                if i==0:
-                    priors["gauss"] = prior
-                    gflat_priors["gauss"] = gflat_prior
+            priors[model]=prior
+            gflat_priors[model]=gflat_prior
 
         self.priors=priors
         self.gflat_priors=gflat_priors
@@ -333,8 +313,6 @@ class MedsFit(dict):
         s2n=self.data['coadd_psf_flux'][dindex,:]/self.data['coadd_psf_flux_err'][dindex,:]
         max_s2n=numpy.nanmax(s2n)
 
-        n_se_images=len(self.sdata['mb_obs_list'])
-         
         if max_s2n >= self['min_psf_s2n'] and len(self['fit_models']) > 0:
             for model in self['fit_models']:
                 print('    fitting:',model)
@@ -342,7 +320,7 @@ class MedsFit(dict):
                 print('    coadd')
                 self._run_model_fit(model, coadd=True)
 
-                if self['fit_me_galaxy'] and n_se_images > 0:
+                if self['fit_me_galaxy']:
                     print('    multi-epoch')
                     self._run_model_fit(model, coadd=False)
         else:
@@ -358,7 +336,7 @@ class MedsFit(dict):
         """
         wrapper to run fit, copy pars, maybe make plots
 
-        sets .coadd_gauss_fitter or .fitter or .coadd_fitter
+        sets .fitter or .coadd_fitter
         """
         if coadd:
             self.guesser=self._get_guesser(self['coadd_model_guess'])
@@ -377,10 +355,7 @@ class MedsFit(dict):
             self._do_make_plots(fitter, model, coadd=coadd)
 
         if coadd:
-            if model=='gauss':
-                self.coadd_gauss_fitter=fitter
-            else:
-                self.coadd_fitter=fitter
+            self.coadd_fitter=fitter
         else:
             self.fitter=fitter
 
@@ -411,7 +386,8 @@ class MedsFit(dict):
         # note flat on g!
         prior=self.gflat_priors[model]
 
-        guess=self.guesser(n=self['emcee_nwalkers'], prior=prior)
+        epars=self['emcee_pars']
+        guess=self.guesser(n=epars['nwalkers'], prior=prior)
         #for olist in mb_obs_list:
         #    print("    image filename:",olist[0].filename)
         #    print("    psfex filename:",olist[0].psf.filename)
@@ -420,12 +396,12 @@ class MedsFit(dict):
                           model,
                           nu=self['nu'],
                           prior=prior,
-                          nwalkers=self['emcee_nwalkers'],
-                          mca_a=self['emcee_a'],
+                          nwalkers=epars['nwalkers'],
+                          mca_a=epars['a'],
                           random_state=self.random_state)
 
-        pos=fitter.run_mcmc(guess,self['emcee_burnin'])
-        pos=fitter.run_mcmc(pos,self['emcee_nstep'])
+        pos=fitter.run_mcmc(guess,epars['burnin'])
+        pos=fitter.run_mcmc(pos,epars['nstep'])
 
         return fitter
 
@@ -1112,21 +1088,19 @@ class MedsFit(dict):
     def _get_guesser(self, guess_type):
         if guess_type=='coadd_psf':
             guesser=self._get_guesser_from_coadd_psf()
+
         elif guess_type=='coadd_cat':
             guesser=self._get_guesser_from_coadd_cat()
 
-        elif guess_type=='coadd_gauss':
-            guesser=self._get_guesser_from_coadd_gauss()
-        elif guess_type=='coadd_gauss_best':
-            guesser=self._get_guesser_from_coadd_gauss_best()
-
-
         elif guess_type=='coadd_mcmc':
             guesser=self._get_guesser_from_coadd_mcmc()
+
         elif guess_type=='coadd_mcmc_best':
             guesser=self._get_guesser_from_coadd_mcmc_best() 
+
         #elif guess_type=='coadd_lm':
         #    guesser=self._get_guesser_from_coadd_lm()
+
         else:
             raise ValueError("bad guess type: '%s'" % guess_type)
 
@@ -1234,27 +1208,6 @@ class MedsFit(dict):
         guesser=FromMCMCGuesser(trials, sigmas)
         return guesser
 
-    def _get_guesser_from_coadd_gauss(self):
-        """
-        get a random set of points from the coadd chain
-        """
-
-        print('        getting guess from coadd gauss')
-
-        fitter=self.coadd_gauss_fitter
-
-        # trials in default scaling
-        trials = fitter.get_trials()
-        #lnprobs = fitter.get_lnprobs()
-
-        # result with default scaling
-        res=fitter.get_result()
-        sigmas=res['pars_err']
-
-        guesser=FromMCMCGuesser(trials, sigmas)
-        return guesser
-
-
     def _get_guesser_from_coadd_mcmc_best(self):
         """
         guess based on best result from mcmc run
@@ -1265,33 +1218,11 @@ class MedsFit(dict):
         fitter=self.coadd_fitter
         best_pars=fitter.get_best_pars()
 
-        # result with default scaling
         res=fitter.get_result()
         sigmas=res['pars_err']
 
-        #guesser=FromParsGuesser(best_pars, sigmas)
         guesser=FixedParsGuesser(best_pars, sigmas)
         return guesser
-
-
-    def _get_guesser_from_coadd_gauss_best(self):
-        """
-        get a random set of points from the coadd chain
-        """
-
-        print('        getting guess from coadd gauss best')
-
-        fitter=self.coadd_gauss_fitter
-        best_pars=fitter.get_best_pars()
-
-        # result with default scaling
-        res=fitter.get_result()
-        sigmas=res['pars_err']
-
-        #guesser=FromParsGuesser(best_pars, sigmas)
-        guesser=FixedParsGuesser(best_pars, sigmas)
-        return guesser
-
 
     '''
     def _get_guesser_from_coadd_lm(self):
@@ -2208,10 +2139,11 @@ class MHMedsFitLM(MedsFit):
                         prior=prior,
                         random_state=self.random_state)
 
+        mhpars=self['mh_pars']
         print_pars(guess,front="    mh guess:")
-        pos=fitter.run_mcmc(guess,self['mh_burnin'])
+        pos=fitter.run_mcmc(guess,mhpars['burnin'])
         print_pars(guess,front="    mh start after burnin:")
-        pos=fitter.run_mcmc(pos,self['mh_nstep'])
+        pos=fitter.run_mcmc(pos,mhpars['nstep'])
 
         return fitter
 
@@ -2269,21 +2201,17 @@ class MHMedsFitHybrid(MedsFit):
         s2n=self.data['coadd_psf_flux'][dindex,:]/self.data['coadd_psf_flux_err'][dindex,:]
         max_s2n=numpy.nanmax(s2n)
 
-        n_se_images=len(self.sdata['mb_obs_list'])
-         
         if max_s2n >= self['min_psf_s2n'] and len(self['fit_models']) > 0:
             for model in self['fit_models']:
                 print('    fitting:',model)
 
                 print('    coadd')
-                self._run_model_fit(model, coadd=True, 
-                                    fitter_type=self['coadd_fitter_class'])
+                self._run_model_fit(model, self['coadd_fitter_class'],coadd=True)
 
-                if self['fit_me_galaxy'] and n_se_images > 0:
+                if self['fit_me_galaxy']:
                     print('    multi-epoch')
                     # fitter class should be mh...
-                    self._run_model_fit(model, coadd=False,
-                                        fitter_type=self['fitter_class'])
+                    self._run_model_fit(model, self['fitter_class'], coadd=False)
 
         else:
             mess="    psf s/n too low: %s (%s)"
@@ -2294,11 +2222,11 @@ class MHMedsFitHybrid(MedsFit):
 
         return flags
 
-    def _run_model_fit(self, model, coadd=False, fitter_type='mh'):
+    def _run_model_fit(self, model, fitter_type, coadd=False):
         """
         wrapper to run fit, copy pars, maybe make plots
 
-        sets .coadd_gauss_fitter or .fitter or .coadd_fitter
+        sets .fitter or .coadd_fitter
 
         this one does not currently use self['guess_type']
         """
@@ -2322,10 +2250,7 @@ class MHMedsFitHybrid(MedsFit):
             self._do_make_plots(fitter, model, coadd=coadd, fitter_type=fitter_type)
 
         if coadd:
-            if model=='gauss':
-                self.coadd_gauss_fitter=fitter
-            else:
-                self.coadd_fitter=fitter
+            self.coadd_fitter=fitter
         else:
             self.fitter=fitter
 
@@ -2361,6 +2286,8 @@ class MHMedsFitHybrid(MedsFit):
 
         from ngmix.fitting import MHSimple
 
+        mhpars=self['mh_pars']
+
         # note flat on g!
         prior=self.gflat_priors[model]
 
@@ -2373,7 +2300,7 @@ class MHMedsFitHybrid(MedsFit):
         step_sizes = 0.5*sigmas
 
         # this is 5-element, use 5th for all fluxes
-        min_steps = self['min_step_sizes']
+        min_steps = mhpars['min_step_sizes']
         max_steps = 0.5*self.priors[model].get_widths()
 
         print_pars(max_steps, front="        max_steps:")
@@ -2397,9 +2324,9 @@ class MHMedsFitHybrid(MedsFit):
                         random_state=self.random_state)
 
         print_pars(guess,front="        mh guess:             ")
-        pos=fitter.run_mcmc(guess,self['mh_burnin'])
+        pos=fitter.run_mcmc(guess,mhpars['burnin'])
 
-        n=int(self['mh_burnin']*0.1)
+        n=int(mhpars['burnin']*0.1)
 
         acc=fitter.sampler.get_accepted()
         arate = acc[-n:].sum()/(1.0*n)
@@ -2417,12 +2344,12 @@ class MHMedsFitHybrid(MedsFit):
         fitter.set_step_sizes(step_sizes)
         print_pars(step_sizes, front="            new step sizes:")
 
-        pos=fitter.run_mcmc(pos,self['mh_burnin'])
+        pos=fitter.run_mcmc(pos,mhpars['burnin'])
 
         # in case we ended on a bad point
         pos=fitter.get_best_pars()
         print_pars(pos,        front="            mh start after 2nd burnin:")
-        pos=fitter.run_mcmc(pos,self['mh_nstep'])
+        pos=fitter.run_mcmc(pos,mhpars['nstep'])
 
         return fitter
 
@@ -2574,10 +2501,9 @@ class FixedParsGuesser(GuesserBase):
     """
     just return a copy of the input pars
     """
-    def __init__(self, pars, pars_err, scaling='linear'):
+    def __init__(self, pars, pars_err):
         self.pars=pars
         self.pars_err=pars_err
-        self.scaling=scaling
 
     def __call__(self, get_sigmas=False, prior=None):
         """
