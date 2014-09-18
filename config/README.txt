@@ -6,3 +6,6 @@ based on the coadd catalog parameters
 
 test is currently as close to 008 as I can get except using emcee everywhere
 and coadd
+
+
+nmedstest3 - flat g prior, made no difference
