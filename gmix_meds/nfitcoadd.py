@@ -327,6 +327,9 @@ class MedsFitCoadd(MedsFit):
 
         obs.filename=fname
 
+        psf_fwhm=2.35*numpy.sqrt(psf_gmix.get_T()/2.0)
+        print("        psf fwhm:",psf_fwhm)
+
         if self['make_plots']:
             self._do_make_psf_plots(band, psf_gmix, psf_obs, mindex, icut)
 
