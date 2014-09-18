@@ -17,3 +17,9 @@ ngmix008t - nmeds010
         - no difference
 
     - repurposing for 2 gauss psf
+        - for DES0423-4748, r band has bad seeing and g-r, r-i are odd.
+        - maybe somehow this is fitting the psf for bad seeing?  Or for good
+          seeing?
+        - looks the same
+
+    - running with multi-epoch to see if I have consistency
