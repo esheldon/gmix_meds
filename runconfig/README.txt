@@ -22,4 +22,4 @@ ngmix008t - nmeds010
           seeing?
         - looks the same
 
-    - running with multi-epoch to see if I have consistency
+    - repurposing again, running with multi-epoch to see if I have consistency
