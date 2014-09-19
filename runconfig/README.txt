@@ -23,3 +23,7 @@ ngmix008t - nmeds010
         - looks the same
 
     - repurposing again, running with multi-epoch to see if I have consistency
+        - yes
+    - repurposed to try aperture corr, same basically
+    - repurposed to try new astrometry
+

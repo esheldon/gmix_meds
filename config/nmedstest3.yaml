@@ -4,8 +4,9 @@ fitter_class: "mh"
 coadd_fitter_class: "emcee"
 fit_me_galaxy: True
 
-check_image_flags: False
-use_psf_rerun: False
+check_image_flags: True
+use_psf_rerun: True
+psfex_blacklist: "/astro/astronfs02/esheldon/psfex-rerun/psfex_blacklist"
 
 coadd_model_guess: "coadd_psf"
 me_model_guess: "coadd_mcmc_best"
