@@ -1,3 +1,10 @@
+ngmix012
+    - new astrometry
+    - more stable fitting I think; no gauss fit just emcee on the coadd, and
+      base guess for me on that.
+    - no box size cut
+    - exp only?
+
 010 was used in 008t after 007t with 011.  It is same but with psf guesses, trying
 to reproduce results for 005t(008)
 
