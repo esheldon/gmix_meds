@@ -100,7 +100,7 @@ class MedsFit(dict):
 
         # load meds files and image flags array
         self._load_meds_files()
-        self._load_coadd_cat_files()
+        self._maybe_load_coadd_cat_files()
 
         self.obj_range=obj_range
         self._set_index_list()
@@ -141,7 +141,7 @@ class MedsFit(dict):
             self.coadd_wsum               = zeros(nband,dtype='f8')
             self.coadd_wmax               = zeros(nband,dtype='f8')
             self.coadd_mask_frac          = zeros(nband,dtype='f8')
-            self.coadd_psfrec_counts_wsum = zeros(nband,dtype='f8')
+            #self.coadd_psfrec_counts_wsum = zeros(nband,dtype='f8')
             self.coadd_psfrec_T_wsum      = zeros(nband,dtype='f8')
             self.coadd_psfrec_g1_wsum     = zeros(nband,dtype='f8')
             self.coadd_psfrec_g2_wsum     = zeros(nband,dtype='f8')
@@ -159,7 +159,7 @@ class MedsFit(dict):
             self.coadd_wsum[:]=0
             self.coadd_wmax[:]=0
             self.coadd_mask_frac[:]=0
-            self.coadd_psfrec_counts_wsum[:]=0
+            #self.coadd_psfrec_counts_wsum[:]=0
             self.coadd_psfrec_T_wsum[:]=0
             self.coadd_psfrec_g1_wsum[:]=0
             self.coadd_psfrec_g2_wsum[:]=0
@@ -571,7 +571,7 @@ class MedsFit(dict):
         self.data['psfrec_counts_mean'][dindex,band]=counts
     '''
 
-    def set_psf_means(self):
+    def set_psf_means_old(self):
         dindex=self.dindex
 
         wsum=self.coadd_wsum
@@ -589,7 +589,7 @@ class MedsFit(dict):
             T=DEFVAL
             g1=DEFVAL
             g2=DEFVAL
-            mask_frac=1.0
+            mask_frac=PDEFVAL
             counts=DEFVAL
 
         self.data['coadd_npix'][dindex,wband]=self.coadd_npix[wband]
@@ -628,6 +628,74 @@ class MedsFit(dict):
         self.data['psfrec_g'][dindex,wband,0]=g1
         self.data['psfrec_g'][dindex,wband,1]=g2
         self.data['psfrec_counts_mean'][dindex,wband]=counts
+
+
+    def set_psf_means(self):
+        dindex=self.dindex
+
+        wsum=self.coadd_wsum
+        wband,=numpy.where( (wsum > 0.0) & (self.coadd_npix > 0) )
+
+        if wband.size > 0:
+            wsum = wsum.sum()
+            iwsum = 1.0/wsum
+            npix=self.coadd_npix[wband].sum()
+            wmax=self.coadd_wmax[wband].max()
+
+            T=self.coadd_psfrec_T_wsum[wband].sum()*iwsum
+            g1=self.coadd_psfrec_g1_wsum[wband].sum()*iwsum
+            g2=self.coadd_psfrec_g2_wsum[wband].sum()*iwsum
+            mask_frac=(wsum/wmax)/npix
+
+        else:
+            wsum=0.0
+            npix=0
+            wmax=0.0
+            T=DEFVAL
+            g1=DEFVAL
+            g2=DEFVAL
+            mask_frac=PDEFVAL
+
+        self.data['coadd_npix'][dindex]=npix
+        self.data['coadd_wsum'][dindex]=wsum
+        self.data['coadd_wmax'][dindex]=wmax
+        self.data['coadd_mask_frac'][dindex]=mask_frac
+        self.data['coadd_psfrec_T'][dindex]=T
+        self.data['coadd_psfrec_g'][dindex,0]=g1
+        self.data['coadd_psfrec_g'][dindex,1]=g2
+
+        wsum=self.wsum
+        wband,=numpy.where( (wsum > 0.0) & (self.npix > 0) )
+
+        if wband.size > 0:
+            wsum = wsum.sum()
+            iwsum = 1.0/wsum
+            npix=self.npix[wband].sum()
+            wmax=self.wmax[wband].max()
+
+            T=self.psfrec_T_wsum[wband].sum()*iwsum
+            g1=self.psfrec_g1_wsum[wband].sum()*iwsum
+            g2=self.psfrec_g2_wsum[wband].sum()*iwsum
+            mask_frac=(wsum/wmax)/npix
+
+        else:
+            wsum=0.0
+            npix=0
+            wmax=0.0
+            T=DEFVAL
+            g1=DEFVAL
+            g2=DEFVAL
+            mask_frac=PDEFVAL
+
+        self.data['npix'][dindex]=npix
+        self.data['wsum'][dindex]=wsum
+        self.data['wmax'][dindex]=wmax
+        self.data['mask_frac'][dindex]=mask_frac
+        self.data['psfrec_T'][dindex]=T
+        self.data['psfrec_g'][dindex,0]=g1
+        self.data['psfrec_g'][dindex,1]=g2
+
+
 
     def _reject_outliers(self, obs_list):
         imlist=[]
@@ -756,7 +824,7 @@ class MedsFit(dict):
 
         if icut==0:
             self.coadd_npix[band] += npix
-            self.coadd_psfrec_counts_wsum[band] += imsum*wsum
+            #self.coadd_psfrec_counts_wsum[band] += imsum*wsum
             self.coadd_psfrec_T_wsum[band] += T*wsum
             self.coadd_psfrec_g1_wsum[band] += g1*wsum
             self.coadd_psfrec_g2_wsum[band] += g2*wsum
@@ -1359,11 +1427,15 @@ class MedsFit(dict):
             pars=res['pars']
             pars_cov=res['pars_cov']
 
+            pars_best=fitter.get_best_pars()
+
             flux=pars[5:]
             flux_cov=pars_cov[5:, 5:]
 
             self.data[n['pars']][dindex,:] = pars
             self.data[n['pars_cov']][dindex,:,:] = pars_cov
+
+            self.data[n['pars_best']][dindex,:] = pars_best
 
 
             self.data[n['flux']][dindex] = flux
@@ -1492,7 +1564,7 @@ class MedsFit(dict):
             image_flags = self.all_image_flags[band]
             psf_flags   = self.psfex_flags_lists[band]
             for i in xrange(image_flags.size):
-                image_flags[i] |= (psf_flags[i] << PSFEX_FLAGS_SHIFT)
+                image_flags[i] |= psf_flags[i]
 
     def _get_image_flags(self, band, mindex):
         """
@@ -1539,23 +1611,25 @@ class MedsFit(dict):
 
         self.nobj_tot = self.meds_list[0].size
 
-    def _load_coadd_cat_files(self):
+    def _maybe_load_coadd_cat_files(self):
         """
         load the catalogs for fit guesses
         """
         import fitsio
-        cat_list=[]
-        for m in self.meds_list:
-            image_info=m.get_image_info()
-            image_path=image_info['image_path'][0].strip()
-            cat_path=get_coadd_cat_path(image_path)
+        if ('cat' in self['coadd_model_guess']
+                or 'cat' in self['me_model_guess']):
+            cat_list=[]
+            for m in self.meds_list:
+                image_info=m.get_image_info()
+                image_path=image_info['image_path'][0].strip()
+                cat_path=get_coadd_cat_path(image_path)
 
-            print("loading catalog:",cat_path)
-            cat=fitsio.read(cat_path, lower=True)
+                print("loading catalog:",cat_path)
+                cat=fitsio.read(cat_path, lower=True)
 
-            cat_list.append(cat)
+                cat_list.append(cat)
 
-        self._cat_list=cat_list
+            self._cat_list=cat_list
 
     def _get_psfex_lists(self):
         """
@@ -1619,6 +1693,8 @@ class MedsFit(dict):
         if desdata not in psfpath:
             psfpath=psfpath.replace(meds_desdata,desdata)
 
+        flags=0
+
         if self['use_psf_rerun'] and 'coadd' not in psfpath:
             psfparts=psfpath.split('/')
             psfparts[-6] = 'EXTRA' # replace 'OPS'
@@ -1632,13 +1708,13 @@ class MedsFit(dict):
             key='%s-%s' % (expname, ccd)
 
             blacklist=self._get_psfex_blacklist()
-            flags=blacklist.get(key, 0)
+            flagsall=blacklist.get(key, 0)
 
-            if flags != 0:
+            # we only worry about certain flags
+            checkflags=self['psf_flags2check']
+            if (flagsall & checkflags) != 0:
+                flags = checkflags
                 print(psfpath,flags)
-
-        else:
-            flags=0
 
         return psfpath, flags
 
@@ -1667,10 +1743,15 @@ class MedsFit(dict):
                     print("warning: missing psfex: %s" % psfpath)
                     flags = 1<<16
                 else:
+                    print("loading:",psfpath)
                     pex=psfex.PSFEx(psfpath)
-
+        
+            flags = flags << PSFEX_FLAGS_SHIFT
             psfex_list.append(pex)
             flags_list.append(flags)
+
+            if flags != 0 and pex is not None:
+                raise RuntimeError("got flags %d but not pex none" % flags)
 
         return psfex_list, flags_list
 
@@ -1733,6 +1814,8 @@ class MedsFit(dict):
             fitsio.fitslib.array_to_native(self.data, inplace=True)
 
             # for nband==1 the written array drops the arrayness
+            if self['nband']==1:
+                raise ValueError("fix for 1 band")
             self.data.dtype=self._get_dtype()
             self.epoch_data=self.checkpoint_data['epoch_data']
 
@@ -1889,21 +1972,40 @@ class MedsFit(dict):
 
             ('box_size','i2'),
 
-            ('coadd_npix','i4',bshape),
-            ('coadd_wsum','f8',bshape),
-            ('coadd_wmax','f8',bshape),
-            ('coadd_mask_frac','f8',bshape),
-            ('coadd_psfrec_counts_mean','f8',bshape),
-            ('coadd_psfrec_T','f8',bshape),
-            ('coadd_psfrec_g','f8', (nband,2)),
+            #('coadd_npix','i4',bshape),
+            #('coadd_wsum','f8',bshape),
+            #('coadd_wmax','f8',bshape),
+            #('coadd_mask_frac','f8',bshape),
+            #('coadd_psfrec_counts_mean','f8',bshape),
+            #('coadd_psfrec_T','f8',bshape),
+            #('coadd_psfrec_g','f8', (nband,2)),
 
-            ('npix','i4',bshape),
-            ('wsum','f8',bshape),
-            ('wmax','f8',bshape),
-            ('mask_frac','f8',bshape),
-            ('psfrec_counts_mean','f8',bshape),
-            ('psfrec_T','f8',bshape),
-            ('psfrec_g','f8', (nband,2))]
+            #('npix','i4',bshape),
+            #('wsum','f8',bshape),
+            #('wmax','f8',bshape),
+            #('mask_frac','f8',bshape),
+            #('psfrec_counts_mean','f8',bshape),
+            #('psfrec_T','f8',bshape),
+            #('psfrec_g','f8', (nband,2))
+
+            ('coadd_npix','i4'),
+            ('coadd_wsum','f8'),
+            ('coadd_wmax','f8'),
+            ('coadd_mask_frac','f8'),
+            #('coadd_psfrec_counts_mean','f8'),
+            ('coadd_psfrec_T','f8'),
+            ('coadd_psfrec_g','f8', 2),
+
+            ('npix','i4'),
+            ('wsum','f8'),
+            ('wmax','f8'),
+            ('mask_frac','f8'),
+            #('psfrec_counts_mean','f8'),
+            ('psfrec_T','f8'),
+            ('psfrec_g','f8', 2)
+
+
+           ]
 
         # coadd fit with em 1 gauss
         # the psf flux fits are done for each band separately
@@ -1916,9 +2018,9 @@ class MedsFit(dict):
                    (n['dof'],'f8',bshape)]
 
         if nband==1:
-            cov_shape=(nband,)
+            fcov_shape=(nband,)
         else:
-            cov_shape=(nband,nband)
+            fcov_shape=(nband,nband)
 
         models=self._get_all_models()
         for model in models:
@@ -1929,19 +2031,18 @@ class MedsFit(dict):
 
             dt+=[(n['flags'],'i4'),
                  (n['pars'],'f8',np),
+                 (n['pars_best'],'f8',np),
                  (n['pars_cov'],'f8',(np,np)),
-                 (n['logpars'],'f8',np),
-                 (n['logpars_cov'],'f8',(np,np)),
                  (n['flux'],'f8',bshape),
-                 (n['flux_cov'],'f8',cov_shape),
+                 (n['flux_cov'],'f8',fcov_shape),
                  (n['g'],'f8',2),
                  (n['g_cov'],'f8',(2,2)),
                 
                  (n['s2n_w'],'f8'),
                  (n['chi2per'],'f8'),
                  (n['dof'],'f8'),
-                 (n['aic'],'f8'),
-                 (n['bic'],'f8'),
+                 #(n['aic'],'f8'),
+                 #(n['bic'],'f8'),
                  (n['arate'],'f8'),
                  (n['tau'],'f8'),
                 ]
@@ -1962,13 +2063,13 @@ class MedsFit(dict):
         num=self.index_list.size
         data=numpy.zeros(num, dtype=dt)
 
-        data['coadd_mask_frac'] = 1.0
-        data['coadd_psfrec_counts_mean'] = DEFVAL
+        data['coadd_mask_frac'] = PDEFVAL
+        #data['coadd_psfrec_counts_mean'] = DEFVAL
         data['coadd_psfrec_T'] = DEFVAL
         data['coadd_psfrec_g'] = DEFVAL
 
-        data['mask_frac'] = 1.0
-        data['psfrec_counts_mean'] = DEFVAL
+        data['mask_frac'] = PDEFVAL
+        #data['psfrec_counts_mean'] = DEFVAL
         data['psfrec_T'] = DEFVAL
         data['psfrec_g'] = DEFVAL
 
@@ -1987,6 +2088,7 @@ class MedsFit(dict):
             data[n['flags']] = NO_ATTEMPT
 
             data[n['pars']] = DEFVAL
+            data[n['pars_best']] = DEFVAL
             data[n['pars_cov']] = PDEFVAL
             data[n['flux']] = DEFVAL
             data[n['flux_cov']] = PDEFVAL
@@ -1995,8 +2097,8 @@ class MedsFit(dict):
 
             data[n['s2n_w']] = DEFVAL
             data[n['chi2per']] = PDEFVAL
-            data[n['aic']] = BIG_PDEFVAL
-            data[n['bic']] = BIG_PDEFVAL
+            #data[n['aic']] = BIG_PDEFVAL
+            #data[n['bic']] = BIG_PDEFVAL
 
             data[n['tau']] = PDEFVAL
 
@@ -2623,9 +2725,7 @@ class FromParsGuesser(GuesserBase):
 
 _stat_names=['s2n_w',
              'chi2per',
-             'dof',
-             'aic',
-             'bic']
+             'dof']
 
 
 _psf_ngauss_map={'em1':1, 'em2':2}
