@@ -261,6 +261,15 @@ class Concat(object):
             dt.insert(flux_ind+2, magf)
             names.insert(flux_ind+2, mag_name)
 
+            
+            pars_best_name='%s_pars_best' % ft
+            if pars_best_name in names:
+                mag_name='%s_mag_best' % ft
+                magf = (mag_name, 'f8', nbands)
+                dt.insert(flux_ind+3, magf)
+                names.insert(flux_ind+3, mag_name)
+
+
             Tn = '%s_T' % ft
             Ten = '%s_err' % Tn
             Ts2n = '%s_s2n' % Tn
@@ -330,12 +339,17 @@ class Concat(object):
         Get magnitudes
         """
 
+        names = data.dtype.names
+
         flux_name='%s_flux' % model
         flux_err_name='%s_flux_err' % model
         cov_name='%s_flux_cov' % model
         s2n_name='%s_flux_s2n' % model
         flag_name = '%s_flags' % model
         mag_name='%s_mag' % model
+
+        pars_best_name='%s_pars_best' % model
+        mag_best_name='%s_mag_best' % model
 
         data[mag_name][:,band] = -9999.
         data[s2n_name][:,band] = 0.0
@@ -349,6 +363,11 @@ class Concat(object):
             flux = ( data[flux_name][w,band]/PIXSCALE2 ).clip(min=0.001)
             magzero=meta['magzp_ref'][band]
             data[mag_name][w,band] = magzero - 2.5*numpy.log10( flux )
+
+            if pars_best_name in names:
+                flux_best = data[pars_best_name][w,5+band]
+                flux_best = (flux_best/PIXSCALE2 ).clip(min=0.001)
+                data[mag_best_name][w,band] = magzero - 2.5*numpy.log10( flux_best )
 
             if model in ['coadd_psf','psf']:
                 flux=data[flux_name][w,band]
