@@ -1226,6 +1226,7 @@ def get_model_names(model):
            'flags',
            'pars',
            'pars_cov',
+           'pars_best',
            'logpars',
            'logpars_cov',
            'flux',
