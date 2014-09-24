@@ -13,7 +13,7 @@ me_model_guess: "coadd_mcmc_best"
 
 nu: 0.0
 
-#max_box_size: 4096
+#max_box_size: 192
 
 emcee_pars:
     a: 2.0
