@@ -1992,7 +1992,6 @@ class MedsFit(dict):
             ('coadd_wsum','f8'),
             ('coadd_wmax','f8'),
             ('coadd_mask_frac','f8'),
-            #('coadd_psfrec_counts_mean','f8'),
             ('coadd_psfrec_T','f8'),
             ('coadd_psfrec_g','f8', 2),
 
@@ -2000,7 +1999,6 @@ class MedsFit(dict):
             ('wsum','f8'),
             ('wmax','f8'),
             ('mask_frac','f8'),
-            #('psfrec_counts_mean','f8'),
             ('psfrec_T','f8'),
             ('psfrec_g','f8', 2)
 
@@ -2041,8 +2039,6 @@ class MedsFit(dict):
                  (n['s2n_w'],'f8'),
                  (n['chi2per'],'f8'),
                  (n['dof'],'f8'),
-                 #(n['aic'],'f8'),
-                 #(n['bic'],'f8'),
                  (n['arate'],'f8'),
                  (n['tau'],'f8'),
                 ]
@@ -2064,12 +2060,10 @@ class MedsFit(dict):
         data=numpy.zeros(num, dtype=dt)
 
         data['coadd_mask_frac'] = PDEFVAL
-        #data['coadd_psfrec_counts_mean'] = DEFVAL
         data['coadd_psfrec_T'] = DEFVAL
         data['coadd_psfrec_g'] = DEFVAL
 
         data['mask_frac'] = PDEFVAL
-        #data['psfrec_counts_mean'] = DEFVAL
         data['psfrec_T'] = DEFVAL
         data['psfrec_g'] = DEFVAL
 
@@ -2097,8 +2091,6 @@ class MedsFit(dict):
 
             data[n['s2n_w']] = DEFVAL
             data[n['chi2per']] = PDEFVAL
-            #data[n['aic']] = BIG_PDEFVAL
-            #data[n['bic']] = BIG_PDEFVAL
 
             data[n['tau']] = PDEFVAL
 
