@@ -1,17 +1,36 @@
 fitter: "ngmix"
-fitter_class: "coadd-only"
-fit_me_galaxy: False
+#fitter_class: "coadd-only"
+fitter_class: "mh"
+coadd_fitter_class: "emcee"
+fit_me_galaxy: True
 
-nu: 0.0
+check_image_flags: True
+
+use_psf_rerun: False
+#psfex_blacklist: "/astro/astronfs02/esheldon/psfex-rerun/psfex_blacklist"
+psfex_blacklist: "/astro/astronfs02/esheldon/psfex-rerun/psfex_blacklist_20140920.dat"
+
+# this should combine all the flags of interest
+psf_flags2check: 1
+
+
+coadd_model_guess: "coadd_psf"
+me_model_guess: "coadd_mcmc_best"
+
+nu: 5.0
 
 max_box_size: 192
 
-# using same as 008 here.  maybe more steps fewer walkers better in a way
-# since they are independent
-emcee_a: 2.0
-emcee_nwalkers: 80
-emcee_burnin: 800
-emcee_nstep: 800
+emcee_pars:
+    a: 2.0
+    nwalkers: 80
+    burnin: 800
+    nstep: 800
+
+mh_pars:
+    burnin: 5000
+    nstep: 5000
+    min_step_sizes: [0.0001,0.0001,0.001,0.001,0.0001,0.001]
 
 psf_em_pars:
     ngauss: 3
@@ -32,12 +51,14 @@ psf_offset_max: 0.25
 # in addition to gauss fit on coadd and a psf flux
 fit_models: ['exp']
 
+# for now only
 do_shear: True
 
 use_cen_prior: True
 cen_width: 0.27
 
 # from fitting to all cosmos galaxies in galsim data
+#g_prior_types: ["flat"]
 g_prior_types: ["cosmos-sersic"]
 
 

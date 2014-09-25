@@ -1,4 +1,4 @@
-run: "ngmixtest2"
+run: "ngmixtest3"
 run_type: "mcmc"
 
 # testbeds are defined in deswl/desmeds/testbed
@@ -9,7 +9,7 @@ testbed: {"name":"sva1", "release":"SVA1_COADD_SPTE"}
 withbands: ["g","r","i","z"]
 
 # what we will process
-bands:     ["r","i","z"]
+bands:     ["g","r","i","z"]
 
 # if a testbed, we will only use a subset of the tiles
 # in here
