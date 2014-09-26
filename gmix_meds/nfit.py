@@ -633,7 +633,9 @@ class MedsFit(dict):
                     # pixscale is sqrt(det(jacobian_matrix)) (see below)
                     #
                     # pars is model_fits['exp_pars'][id,:] or whatever model
-                    # is chosen.
+                    # is chosen.  Note you should check the flags as well, if not zero
+                    # that object was not modeled due to being faint or the psf was
+                    # not fit successfully (this possible incompleteness is a problem..)
                     #
                     # then you can instantiate a new jacobian there
                     #
@@ -656,6 +658,9 @@ class MedsFit(dict):
                     #
                     #    psf_gmix = ngmix.GMix(pars=psf_fit_pars)
                     #
+                    # not you should also check psf_fit_flags.  If those are not zero,
+                    # no good measurement of the psf was gotten.
+
 
 
 
