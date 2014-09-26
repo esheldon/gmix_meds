@@ -619,7 +619,7 @@ class MedsFit(dict):
                     #      'icut', 'orig_start_row', 'orig_start_col'
                     #
                     # so the postage stamp location of one of the objects specified in
-                    # ids defined above, say id=ids[35]
+                    # ids defined above, say id=ids[1]
                     #
                     #      row=meds_object_data['orig_row'][id,icut] - orig_start_row
                     #      col=meds_object_data['orig_col'][id,icut] - orig_start_col
