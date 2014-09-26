@@ -54,7 +54,7 @@ EM_MAX_ITER=100
 # shift psf flags past astrometry flags, which end at 9
 PSFEX_FLAGS_SHIFT = 9
 
-_CHECKPOINTS_DEFAULT_MINUTES=[30,60,110]
+_CHECKPOINTS_DEFAULT_MINUTES=[0,30,60,110]
 
 class UtterFailure(Exception):
     """
@@ -72,6 +72,7 @@ class MedsFit(dict):
                  priors,
                  meds_files,
                  obj_range=None,
+                 model_data=None,
                  checkpoint_file=None,
                  checkpoint_data=None):
         """
@@ -89,8 +90,7 @@ class MedsFit(dict):
         """
 
         self.update(conf)
-        self._set_some_defaults()
-        
+
         self.meds_files=get_as_list(meds_files)
 
         self['nband']=len(self.meds_files)
@@ -98,19 +98,23 @@ class MedsFit(dict):
 
         self._unpack_priors(priors)
 
+        self.obj_range=obj_range
+        self.model_data=model_data
+        self.checkpoint_file=checkpoint_file
+        self.checkpoint_data=checkpoint_data
+
+        self._set_some_defaults()
+
         # load meds files and image flags array
         self._load_meds_files()
         self._maybe_load_coadd_cat_files()
 
-        self.obj_range=obj_range
         self._set_index_list()
 
         self.psfex_lists, self.psfex_flags_lists = self._get_psfex_lists()
 
         self._combine_image_flags()
 
-        self.checkpoint_file=checkpoint_file
-        self.checkpoint_data=checkpoint_data
         self._setup_checkpoints()
 
         self.random_state=numpy.random.RandomState()
@@ -131,7 +135,13 @@ class MedsFit(dict):
         self['work_dir'] = self.get('work_dir',os.environ.get('TMPDIR','/tmp'))
 
         self['check_image_flags']=self.get('check_image_flags',False)
+
         self['use_psf_rerun']=self.get('use_psf_rerun',False)
+
+        if self.model_data is not None:
+            self['model_neighbors']=True
+        else:
+            self['model_neighbors']=False
 
     def _reset_mb_sums(self):
         from numpy import zeros
@@ -290,6 +300,7 @@ class MedsFit(dict):
         t0=time.time()
 
         self.dindex=dindex
+        self.mindex = self.index_list[dindex]
 
         # for checkpointing
         self.data['processed'][dindex]=1
@@ -325,6 +336,9 @@ class MedsFit(dict):
             self.data['flags'][dindex] = PSF_FIT_FAILURE 
             return
 
+        if self['model_neighbors']:
+            self._set_coadd_seg_maps()
+
         print(coadd_mb_obs_list[0][0].image.shape)
 
         self.data['nimage_use'][dindex, :] = n_im[:]
@@ -340,6 +354,13 @@ class MedsFit(dict):
 
         self.data['flags'][dindex] = flags
         self.data['time'][dindex] = time.time()-t0
+
+    def _set_coadd_seg_maps(self):
+        mindex=self.mindex
+        self._coadd_seg_maps=[]
+        for m in self.meds_list:
+            seg=meds.get_cutout(mindex, 0, type='seg')
+            self._coadd_seg_maps.append(seg)
 
     def _fit_all_models(self):
         """
@@ -546,7 +567,91 @@ class MedsFit(dict):
 
         # means must go accross bands
         self.set_psf_means()
+
+        if self['model_neighbors']:
+            self._model_neighbors(coadd_mb_obs_list)
+            self._model_neighbors(mb_obs_list)
+
         return coadd_mb_obs_list, mb_obs_list, n_im
+
+    def _model_neighbors(self, mb_obs_list):
+        """
+        model the neighbors
+
+        need the full object_data from the meds file, as well as a results
+        structure holding the fits
+        """
+
+        mindex = self.mindex
+        seg=self._coadd_seg
+
+        # import code here
+        for band, obs_list in enumerate(mb_obs_list):
+            # get objects that are in this object's segmentation map.
+            # we can do something more sophisticated later
+            seg = self._coadd_seg_maps[band]
+
+            # this will return nothing if there were no neighbors in the
+            # postage stamp
+            w=numpy.where( (seg > 0) & (seg != mindex) )
+            if w[0].size > 0:
+
+                ids=numpy.unique(seg[w]) - 1
+                for obs in obs_list:
+                    pass
+
+                    # your code will use
+                    #     obs
+                    #     band (to extract model parameters)
+                    #     self.model_data
+                    #     ids, which can subscript the
+                    #         model_fits and meds_object data (see below)
+                    #
+                    # self.model_data is a dict with keys
+                    #    'model_fits': the model fits from a previous run
+                    #    'epochs': associated epoch measurements for psf etc.
+                    #    'meds_object_data': the data such as orig_row etc. for
+                    #        all objects, not just those in the subset processed for this
+                    #        instance.  matches row-by-row with model_fits.
+                    #
+                    # note obs.meta has fields 
+                    #
+                    #      'icut', 'orig_start_row', 'orig_start_col'
+                    #
+                    # so the postage stamp location of one of the objects specified in
+                    # ids defined above, say id=ids[35]
+                    #
+                    #      row=meds_object_data['orig_row'][id,icut] - orig_start_row
+                    #      col=meds_object_data['orig_col'][id,icut] - orig_start_col
+                    #
+                    # and the fit center for this object in the postage stamp is
+                    #
+                    #       row_cutout=row + pars[0]/pixscale
+                    #       col_cutout=col + pars[1]/pixscale
+                    #
+                    # pars[0] is the offset from the canonical center in arcsec.  the
+                    # pixscale is sqrt(det(jacobian_matrix)) (see below)
+                    #
+                    # pars is model_fits['exp_pars'][id,:] or whatever model
+                    # is chosen.
+                    #
+                    # then you can instantiate a new jacobian there
+                    #
+                    #     jacob=Jacobian(row_cutout,col_cutout,dudrow,dudcol,dvdrow,dvdcol)
+                    #
+                    # where the dudrow etc. are parts of the jacobian matrix 
+                    #
+                    #    meds_object_data['dudrow'][id,icut]
+                    #
+                    # and also you can get the psf fit from
+                    #
+                    #    _all_epochs_data['psf_fit_pars'][some_index]
+                    #
+                    # where some_index corresponds to the entry where 'id' matches the above 
+                    # id and 'icutout' matches icut.  The matching could be slow but
+                    # do whatever you need to now, we can optimize later
+
+
 
     '''
     def set_psfrec_counts_mean_byband(self, band):
@@ -855,6 +960,10 @@ class MedsFit(dict):
 
         obs.filename=fname
 
+        meta={'icut':icut,
+              'orig_start_row':meds['orig_start_row'][mindex, icut],
+              'orig_start_col':meds['orig_start_col'][mindex, icut]}
+
         psf_fwhm=2.35*numpy.sqrt(psf_gmix.get_T()/2.0)
         print("        psf fwhm:",psf_fwhm)
 
@@ -987,6 +1096,7 @@ class MedsFit(dict):
         im = meds.get_cutout(mindex, icut)
         im = im.astype('f8', copy=False)
         return im
+
 
     def _get_meds_weight(self, meds, mindex, icut):
         """

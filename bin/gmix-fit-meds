@@ -23,9 +23,6 @@ parser = OptionParser(__doc__)
 parser.add_option("--obj-range",default=None,
                   help=("Inclusive, zero-offset range of objects to "
                         "process"))
-parser.add_option("--det-cat", default=None,
-                  help="detection cat for matched fluxes")
-
 parser.add_option("--work-dir", default=None,
                   help=("copy files local for processing.  "
                         "Also write to local files and copy out."
@@ -36,6 +33,10 @@ parser.add_option("--profile", action='store_true',
 
 parser.add_option("--make-plots", action='store_true',
                   help=("make some plots"))
+
+parser.add_option("--model-file", default=None,
+                  help=("model fits to use for modeling the neighbors of each object"))
+
 
 
 def make_ngmix_meta(conf, meds_meta_list, meds_files):
@@ -549,10 +550,24 @@ def go(config_file, meds_files, out_file, options):
 
     conf['config_file']=config_file
 
+    if options.model_file is not None:
+        with fitsio.FITS(options.model_file) as fits:
+            model_data={}
+            model_data['model_fits']=fits['model_fits'][:]
+            model_data['epochs']=fits['epoch_data'][:]
+            object_data=[]
+            for mf in meds_files_full:
+                data=fitsio.read(mf,ext='object_data')
+                object_data.append(data)
+            model_data['meds_object_data']=object_data
+    else:
+        model_data=None
+
     data, epoch_data, meta=run_fitter(meds_files,
                                       meds_files_full,
                                       conf, 
                                       obj_range=rng_send,
+                                      model_data=model_data,
                                       checkpoint_file=checkpoint_file,
                                       checkpoint_data=checkpoint_data)
 
