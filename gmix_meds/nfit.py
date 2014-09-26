@@ -650,6 +650,12 @@ class MedsFit(dict):
                     # where some_index corresponds to the entry where 'id' matches the above 
                     # id and 'icutout' matches icut.  The matching could be slow but
                     # do whatever you need to now, we can optimize later
+                    #
+                    # these psf parameter can be used to generate the gaussian mixture
+                    # for the psf
+                    #
+                    #    psf_gmix = ngmix.GMix(pars=psf_fit_pars)
+                    #
 
 
 
