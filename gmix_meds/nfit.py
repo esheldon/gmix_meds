@@ -973,7 +973,7 @@ class MedsFit(dict):
         meta={'icut':icut,
               'orig_start_row':meds['orig_start_row'][mindex, icut],
               'orig_start_col':meds['orig_start_col'][mindex, icut]}
-        obs.update_meta(meta)
+        obs.update_meta_data(meta)
 
         psf_fwhm=2.35*numpy.sqrt(psf_gmix.get_T()/2.0)
         print("        psf fwhm:",psf_fwhm)
