@@ -907,7 +907,6 @@ class MedsFit(dict):
 
         GMixMaxIterEM is raised if psf fitting fails
         """
-        import images
         meds=self.meds_list[band]
 
         fname = self._get_meds_orig_filename(meds, mindex, icut)
