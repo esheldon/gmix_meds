@@ -17,6 +17,7 @@ from ngmix import srandu
 from ngmix import Jacobian
 from ngmix import GMixMaxIterEM, GMixRangeError, print_pars
 from ngmix import Observation, ObsList, MultiBandObsList
+from ngmix import GMixModel, GMix
 
 from .lmfit import get_model_names
 
@@ -320,7 +321,11 @@ class MedsFit(dict):
         if flags != 0:
             self.data['flags'][dindex] = flags
             return 0
-
+        
+        #need coadd seg maps here to model nbrs
+        if self['model_neighbors']:
+            self._set_coadd_seg_maps()
+        
         # MultiBandObsList obects
         coadd_mb_obs_list, mb_obs_list, n_im = \
                 self._get_multi_band_observations(mindex)
@@ -335,9 +340,6 @@ class MedsFit(dict):
                   " succeed and were without image flags")
             self.data['flags'][dindex] = PSF_FIT_FAILURE 
             return
-
-        if self['model_neighbors']:
-            self._set_coadd_seg_maps()
 
         print(coadd_mb_obs_list[0][0].image.shape)
 
@@ -359,7 +361,7 @@ class MedsFit(dict):
         mindex=self.mindex
         self._coadd_seg_maps=[]
         for m in self.meds_list:
-            seg=meds.get_cutout(mindex, 0, type='seg')
+            seg=m.get_cutout(mindex, 0, type='seg')
             self._coadd_seg_maps.append(seg)
 
     def _fit_all_models(self):
@@ -567,39 +569,171 @@ class MedsFit(dict):
 
         # means must go accross bands
         self.set_psf_means()
-
+        
         if self['model_neighbors']:
-            self._model_neighbors(coadd_mb_obs_list)
+            print("    modelling neighbors:")
+            print("        doing coadd:")
+            self._model_neighbors(coadd_mb_obs_list, coadd=True)
+            print("        doing SE:")
             self._model_neighbors(mb_obs_list)
 
         return coadd_mb_obs_list, mb_obs_list, n_im
 
-    def _model_neighbors(self, mb_obs_list):
+    def _model_neighbors(self, mb_obs_list, coadd=False):
         """
         model the neighbors
 
         need the full object_data from the meds file, as well as a results
         structure holding the fits
         """
-
-        mindex = self.mindex
-        seg=self._coadd_seg
-
+        
+        mindex_local = self.mindex #index in current meds file
+        
+        model = self['nbrs_model']        
+        if coadd:
+            n = Namer('coadd_'+model)
+        else:
+            n = Namer(model)
+        
         # import code here
         for band, obs_list in enumerate(mb_obs_list):
-            # get objects that are in this object's segmentation map.
-            # we can do something more sophisticated later
+            print("            doing band %d" % band)
             seg = self._coadd_seg_maps[band]
-
+            mod = self.model_data['meds_object_data'][band]
+            meds = self.meds_list[band]
+            number = meds['number'][mindex_local] #number for seg map, index+1 into entire meds file
+            mindex_global = number-1
+            
+            # get objects that are in this object's segmentation map.
             # this will return nothing if there were no neighbors in the
             # postage stamp
-            w=numpy.where( (seg > 0) & (seg != mindex) )
+            w=numpy.where((seg > 0) & (seg != number))
             if w[0].size > 0:
-
+                
+                w=numpy.where(seg > 0)
                 ids=numpy.unique(seg[w]) - 1
                 for obs in obs_list:
-                    pass
+                    #copy old image and weight map
+                    obs.image_orig = obs.image.copy()
+                    obs.weight_orig = obs.weight.copy()
+                    icut_cen = obs.meta['icut']
+                    fid_cen = meds['file_id'][mindex_local,icut_cen]
+                    tot_image = numpy.zeros(obs.image.shape)
+                    
+                    for cid in ids:
+                        if self.model_data['model_fits'][n(self['nbrs_model_flags'])][cid] == 0:
+                            ##################################################
+                            #render each object in the seg map with a good fit
+                            
+                            #get cutout with same file_id as central object
+                            icut_obj, = numpy.where(mod['file_id'][cid] == fid_cen)
+                            if len(icut_obj) == 0:
+                                print("                could not find cutout for nbr %d cutout %d" % (cid,icut_obj))
+                                continue
+                            if len(icut_obj) > 1:
+                                print("                found duplicate cutouts for nbr %d cutout %d" % (cid,icut_obj))
+                                assert len(icut_obj) == 1, "found duplicate cutouts for nbr %d cutout %d!" % (cid,icut_obj)
+                            icut_obj = icut_obj[0]
+                            
+                            #find psf entry and make sure it is OK 
+                            q, = numpy.where((self.model_data['epochs']['number'] == cid+1) & 
+                                             (self.model_data['epochs']['file_id'] == fid_cen) & 
+                                             (self.model_data['epochs']['band_num'] == band))
+                            #skip if psf fit was bad or could not find psf
+                            if len(q) == 0:
+                                print("                could not find PSF fit for nbr %d cutout %d" % (cid,icut_obj))
+                                continue                            
+                            if len(q) > 1:
+                                print("                found duplicate PSF fits for nbr %d cutout %d" % (cid,icut_obj))
+                                assert len(q) == 1, "found duplicate PSF fits for nbr %d cutout %d" % (cid,icut_obj)
+                            if self.model_data['epochs']['psf_fit_flags'][q[0]] > 0:
+                                continue
+                            pars_psf = self.model_data['epochs']['psf_fit_pars'][q[0]]
+                            
+                            #fiducial location of object in postage stamp
+                            row = mod['orig_row'][cid,icut_obj] - obs.meta['orig_start_row']
+                            col = mod['orig_col'][cid,icut_obj] - obs.meta['orig_start_col']
+                            
+                            #parameters for object
+                            pars_obj = self.model_data['model_fits'][n(self['nbrs_model_pars'])][cid]                            
+                            pinds = range(5)
+                            pinds.append(band+5)
+                            pars_obj = pars_obj[pinds] 
+                            
+                            #get jacobian
+                            jacob = Jacobian(row,col,
+                                             mod['dudrow'][cid,icut_obj],
+                                             mod['dudcol'][cid,icut_obj],
+                                             mod['dvdrow'][cid,icut_obj],
+                                             mod['dvdcol'][cid,icut_obj])
+                            pixscale = jacob.get_scale()
+                            row += pars_obj[0]/pixscale
+                            col += pars_obj[1]/pixscale
+                            jacob.set_cen(row,col)
+                            
+                            #now render image of object
+                            psf_gmix = GMix(pars=pars_psf)
+                            gmix_sky = GMixModel(pars_obj, model)
+                            gmix_image = gmix_sky.convolve(psf_gmix)
+                            obj_image = gmix_image.make_image(obs.image.shape, jacobian=jacob)
+                            
+                            tot_image += obj_image
+                            if cid == mindex_global:
+                                cen_image = obj_image.copy()
+                            
+                            if self['nbrs_model_method'] == 'subtract':
+                                #subtract its flux if not central
+                                if cid != mindex_global:
+                                    obs.image -= obj_image
+                            
+                    if self['make_plots']:
+                        def plot_seg(seg):
+                            seg_new = seg.copy()
+                            seg_new = seg_new.astype(float)
+                            uvals = numpy.unique(seg)
+                            mval = 1.0*(len(uvals)-1)
+                            ind = 1.0
+                            for uval in uvals:
+                                if uval > 0:
+                                    qx,qy = numpy.where(seg == uval)
+                                    seg_new[qx[:],qy[:]] = ind/mval
+                                    ind += 1
+                                    
+                            return seg_new
 
+                        import matplotlib.pyplot as plt                        
+                        f,axs = plt.subplots(2,3)
+                        axs[0,0].imshow(obs.image_orig)
+                        axs[0,0].set_title('original image: COId = %d' % mod['id'][mindex_global])
+                        axs[0,1].imshow(tot_image-cen_image)
+                        axs[0,1].set_title('models of nbrs')
+                        if coadd:
+                            axs[0,2].imshow(plot_seg(seg))
+                        else:
+                            axs[0,2].imshow(plot_seg(meds.interpolate_coadd_seg(mindex_local,icut_cen)))
+                        axs[0,2].set_title('seg map')
+                        axs[1,0].imshow(obs.image)
+                        axs[1,0].set_title('corrected image')                        
+                        msk = tot_image > 0
+                        frac = numpy.zeros(tot_image.shape)
+                        frac[msk] = cen_image[msk]/tot_image[msk]
+                        axs[1,1].imshow(frac)
+                        axs[1,1].set_title('fraction of flux due to central')
+                        axs[1,2].imshow(obs.weight)
+                        axs[1,2].set_title('weight map')
+                        f.tight_layout()
+                        if icut_cen > 0:
+                            plt.savefig('%06d-nbrs-model-band%d-icut%d.png' % (mindex_global,band,icut_cen))
+                            print("                %06d-nbrs-model-band%d-icut%d.png" % (mindex_global,band,icut_cen))
+                        else:
+                            plt.savefig('%06d-nbrs-model-band%d-coadd.png' % (mindex_global,band))
+                            print("                %06d-nbrs-model-band%d-coadd.png" % (mindex_global,band))
+                        if False:
+                            plt.show()
+                            import ipdb
+                            ipdb.set_trace()
+                        plt.close('all')
+                        
                     # your code will use
                     #     obs
                     #     band (to extract model parameters)
@@ -1117,6 +1251,8 @@ class MedsFit(dict):
             wt=meds.get_cweight_cutout(mindex, icut)
         elif self['region']=="cweight-nearest":
             wt=meds.get_cweight_cutout_nearest(mindex, icut)
+        elif self['region']=='weight':
+            wt=meds.get_cutout(mindex, icut, type='weight')
         else:
             raise ValueError("support other region types")
 
@@ -1491,6 +1627,12 @@ class MedsFit(dict):
 
         Also add a weights attribute to the fitter
         """
+
+        #do unweighted version first
+        fitter.calc_result() 
+        uw_result = fitter.get_result()
+        fitter._unweighted_result = uw_result
+        
         # trials in default scaling, should not matter
         trials=fitter.get_trials()
 
@@ -1540,9 +1682,9 @@ class MedsFit(dict):
         if coadd:
             model = 'coadd_%s' % model
 
-        n=get_model_names(model)
+        n=Namer(model)
 
-        self.data[n['flags']][dindex] = res['flags']
+        self.data[n('flags')][dindex] = res['flags']
 
         if res['flags'] == 0:
             pars=res['pars']
@@ -1553,35 +1695,50 @@ class MedsFit(dict):
             flux=pars[5:]
             flux_cov=pars_cov[5:, 5:]
 
-            self.data[n['pars']][dindex,:] = pars
-            self.data[n['pars_cov']][dindex,:,:] = pars_cov
+            self.data[n('pars')][dindex,:] = pars
+            self.data[n('pars_cov')][dindex,:,:] = pars_cov
 
-            self.data[n['pars_best']][dindex,:] = pars_best
+            self.data[n('pars_best')][dindex,:] = pars_best
 
 
-            self.data[n['flux']][dindex] = flux
-            self.data[n['flux_cov']][dindex] = flux_cov
+            self.data[n('flux')][dindex] = flux
+            self.data[n('flux_cov')][dindex] = flux_cov
 
-            self.data[n['g']][dindex,:] = res['g']
-            self.data[n['g_cov']][dindex,:,:] = res['g_cov']
+            self.data[n('g')][dindex,:] = res['g']
+            self.data[n('g_cov')][dindex,:,:] = res['g_cov']
 
             for sn in _stat_names:
-                self.data[n[sn]][dindex] = res[sn]
+                self.data[n(sn)][dindex] = res[sn]
 
             # this stuff won't be in the result for LM fitting
             if 'arate' in res:
-                self.data[n['arate']][dindex] = res['arate']
+                self.data[n('arate')][dindex] = res['arate']
                 if res['tau'] is not None:
-                    self.data[n['tau']][dindex] = res['tau']
+                    self.data[n('tau')][dindex] = res['tau']
 
                 if self['do_shear']:
-                    self.data[n['g_sens']][dindex,:] = res['g_sens']
-                    self.data[n['P']][dindex] = res['P']
-                    self.data[n['Q']][dindex,:] = res['Q']
-                    self.data[n['R']][dindex,:,:] = res['R']
-     
+                    self.data[n('g_sens')][dindex,:] = res['g_sens']
+                    self.data[n('P')][dindex] = res['P']
+                    self.data[n('Q')][dindex,:] = res['Q']
+                    self.data[n('R')][dindex,:,:] = res['R']
+        
+        #copy in unweighted pars
+        if hasattr(fitter, '_unweighted_result'):
+            res=fitter._unweighted_result
+            self.data[n('flags_uw')][dindex] = res['flags']
+            
+            if res['flags'] == 0:
+                pars=res['pars']
+                pars_cov=res['pars_cov']
+                self.data[n('pars_uw')][dindex,:] = pars                
+                self.data[n('pars_cov_uw')][dindex,:,:] = pars_cov
+                self.data[n('chi2per_uw')][dindex] = res['chi2per']
+                self.data[n('dof_uw')][dindex] = res['dof']
+                if 'arate' in res:
+                    self.data[n('arate_uw')][dindex] = res['arate']
+                    if res['tau'] is not None:
+                        self.data[n('tau_uw')][dindex] = res['tau']
 
-               
 
     def _do_make_plots(self, fitter, model, coadd=False,
                        fitter_type='emcee'):
@@ -2129,12 +2286,12 @@ class MedsFit(dict):
         # coadd fit with em 1 gauss
         # the psf flux fits are done for each band separately
         for name in ['coadd_psf','psf']:
-            n=get_model_names(name)
-            dt += [(n['flags'],   'i4',bshape),
-                   (n['flux'],    'f8',bshape),
-                   (n['flux_err'],'f8',bshape),
-                   (n['chi2per'],'f8',bshape),
-                   (n['dof'],'f8',bshape)]
+            n=Namer(name)
+            dt += [(n('flags'),   'i4',bshape),
+                   (n('flux'),    'f8',bshape),
+                   (n('flux_err'),'f8',bshape),
+                   (n('chi2per'),'f8',bshape),
+                   (n('dof'),'f8',bshape)]
 
         if nband==1:
             fcov_shape=(nband,)
@@ -2144,31 +2301,42 @@ class MedsFit(dict):
         models=self._get_all_models()
         for model in models:
 
-            n=get_model_names(model)
+            n=Namer(model)
 
             np=simple_npars
-
-            dt+=[(n['flags'],'i4'),
-                 (n['pars'],'f8',np),
-                 (n['pars_best'],'f8',np),
-                 (n['pars_cov'],'f8',(np,np)),
-                 (n['flux'],'f8',bshape),
-                 (n['flux_cov'],'f8',fcov_shape),
-                 (n['g'],'f8',2),
-                 (n['g_cov'],'f8',(2,2)),
+            
+            dt+=[(n('flags'),'i4'),
+                 (n('pars'),'f8',np),
+                 (n('pars_best'),'f8',np),
+                 (n('pars_cov'),'f8',(np,np)),
+                 (n('flux'),'f8',bshape),
+                 (n('flux_cov'),'f8',fcov_shape),
+                 (n('g'),'f8',2),
+                 (n('g_cov'),'f8',(2,2)),
                 
-                 (n['s2n_w'],'f8'),
-                 (n['chi2per'],'f8'),
-                 (n['dof'],'f8'),
-                 (n['arate'],'f8'),
-                 (n['tau'],'f8'),
+                 (n('s2n_w'),'f8'),
+                 (n('chi2per'),'f8'),
+                 (n('dof'),'f8'),
+                 (n('arate'),'f8'),
+                 (n('tau'),'f8'),
                 ]
+            
+            #use a simple set for now - keep flags just in case
+            dt+=[(n('flags_uw'),'i4'),
+                 (n('pars_uw'),'f8',np),
+                 (n('pars_cov_uw'),'f8',(np,np)),
+                 (n('chi2per_uw'),'f8'),
+                 (n('dof_uw'),'f8'),
+                 (n('arate_uw'),'f8'),
+                 (n('tau_uw'),'f8'),
+                 ]
+            
             if self['do_shear']:
-                dt += [(n['g_sens'], 'f8', 2),
-                       (n['P'], 'f8'),
-                       (n['Q'], 'f8', 2),
-                       (n['R'], 'f8', (2,2))]
-
+                dt += [(n('g_sens'), 'f8', 2),
+                       (n('P'), 'f8'),
+                       (n('Q'), 'f8', 2),
+                       (n('R'), 'f8', (2,2))]
+            
         return dt
 
     def _make_struct(self):
@@ -2187,39 +2355,45 @@ class MedsFit(dict):
         data['mask_frac'] = PDEFVAL
         data['psfrec_T'] = DEFVAL
         data['psfrec_g'] = DEFVAL
-
-
+        
         for name in ['coadd_psf','psf']:
-            n=get_model_names(name)
-            data[n['flags']] = NO_ATTEMPT
-            data[n['flux']] = DEFVAL
-            data[n['flux_err']] = PDEFVAL
-            data[n['chi2per']] = PDEFVAL
+            n=Namer(name)
+            data[n('flags')] = NO_ATTEMPT
+            data[n('flux')] = DEFVAL
+            data[n('flux_err')] = PDEFVAL
+            data[n('chi2per')] = PDEFVAL
 
         models=self._get_all_models()
         for model in models:
-            n=get_model_names(model)
+            n=Namer(model)
 
-            data[n['flags']] = NO_ATTEMPT
+            data[n('flags')] = NO_ATTEMPT
+            
+            data[n('pars')] = DEFVAL
+            data[n('pars_best')] = DEFVAL
+            data[n('pars_cov')] = PDEFVAL
+            data[n('flux')] = DEFVAL
+            data[n('flux_cov')] = PDEFVAL
+            data[n('g')] = DEFVAL
+            data[n('g_cov')] = PDEFVAL
 
-            data[n['pars']] = DEFVAL
-            data[n['pars_best']] = DEFVAL
-            data[n['pars_cov']] = PDEFVAL
-            data[n['flux']] = DEFVAL
-            data[n['flux_cov']] = PDEFVAL
-            data[n['g']] = DEFVAL
-            data[n['g_cov']] = PDEFVAL
+            data[n('s2n_w')] = DEFVAL
+            data[n('chi2per')] = PDEFVAL
 
-            data[n['s2n_w']] = DEFVAL
-            data[n['chi2per']] = PDEFVAL
-
-            data[n['tau']] = PDEFVAL
-
+            data[n('tau')] = PDEFVAL
+            
+            #use a simple set for now - keep flags just in case
+            data[n('flags_uw')] = NO_ATTEMPT
+            data[n('pars_uw')] = DEFVAL
+            data[n('pars_cov_uw')] = PDEFVAL            
+            data[n('chi2per_uw')] = PDEFVAL
+            data[n('tau_uw')] = PDEFVAL
+            
             if self['do_shear']:
-                data[n['g_sens']] = DEFVAL
-                data[n['P']] = DEFVAL
-                data[n['Q']] = DEFVAL
-                data[n['R']] = DEFVAL
+                data[n('g_sens')] = DEFVAL
+                data[n('P')] = DEFVAL
+                data[n('Q')] = DEFVAL
+                data[n('R')] = DEFVAL
 
      
         self.data=data
