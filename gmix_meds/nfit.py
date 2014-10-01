@@ -1117,6 +1117,8 @@ class MedsFit(dict):
             wt=meds.get_cweight_cutout(mindex, icut)
         elif self['region']=="cweight-nearest":
             wt=meds.get_cweight_cutout_nearest(mindex, icut)
+        elif self['region']=='weight':
+            wt=meds.get_cutout(mindex, icut, type='weight')
         else:
             raise ValueError("support other region types")
 
