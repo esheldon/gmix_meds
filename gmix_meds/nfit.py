@@ -17,6 +17,7 @@ from ngmix import srandu
 from ngmix import Jacobian
 from ngmix import GMixMaxIterEM, GMixRangeError, print_pars
 from ngmix import Observation, ObsList, MultiBandObsList
+from ngmix import GMixModel, GMix
 
 from .lmfit import get_model_names
 
@@ -320,7 +321,11 @@ class MedsFit(dict):
         if flags != 0:
             self.data['flags'][dindex] = flags
             return 0
-
+        
+        #need coadd seg maps here to model nbrs
+        if self['model_neighbors']:
+            self._set_coadd_seg_maps()
+        
         # MultiBandObsList obects
         coadd_mb_obs_list, mb_obs_list, n_im = \
                 self._get_multi_band_observations(mindex)
@@ -335,9 +340,6 @@ class MedsFit(dict):
                   " succeed and were without image flags")
             self.data['flags'][dindex] = PSF_FIT_FAILURE 
             return
-
-        if self['model_neighbors']:
-            self._set_coadd_seg_maps()
 
         print(coadd_mb_obs_list[0][0].image.shape)
 
@@ -359,7 +361,7 @@ class MedsFit(dict):
         mindex=self.mindex
         self._coadd_seg_maps=[]
         for m in self.meds_list:
-            seg=meds.get_cutout(mindex, 0, type='seg')
+            seg=m.get_cutout(mindex, 0, type='seg')
             self._coadd_seg_maps.append(seg)
 
     def _fit_all_models(self):
@@ -567,14 +569,14 @@ class MedsFit(dict):
 
         # means must go accross bands
         self.set_psf_means()
-
+        
         if self['model_neighbors']:
-            self._model_neighbors(coadd_mb_obs_list)
+            self._model_neighbors(coadd_mb_obs_list, coadd=True)
             self._model_neighbors(mb_obs_list)
 
         return coadd_mb_obs_list, mb_obs_list, n_im
 
-    def _model_neighbors(self, mb_obs_list):
+    def _model_neighbors(self, mb_obs_list, coadd=False):
         """
         model the neighbors
 
@@ -583,23 +585,150 @@ class MedsFit(dict):
         """
 
         mindex = self.mindex
-        seg=self._coadd_seg
+        
+        #hard code these for now
+        model = 'exp'
+        print("""
+#################################################
+WARNING: ALWAYS USING \'exp\' FOR NBRS MODELLING!
+#################################################
+""")
+        nbrs_model_method = 'subtract'
+        print("""
+######################################################
+WARNING: ALWAYS USING \'subtract\' FOR NBRS MODELLING!
+######################################################
+""")
 
+        print("""
+######################################################
+WARNING: HACKED BAND INDEX TO OBJECT MODEL PARAMETERS!
+######################################################
+""")
+        band_hack = 2
+        
+        if coadd:
+            n = Namer('coadd_'+model)
+        else:
+            n = Namer(model)
+            
         # import code here
         for band, obs_list in enumerate(mb_obs_list):
             # get objects that are in this object's segmentation map.
-            # we can do something more sophisticated later
             seg = self._coadd_seg_maps[band]
-
+            mod = self.model_data['meds_object_data'][band]
+            
             # this will return nothing if there were no neighbors in the
             # postage stamp
-            w=numpy.where( (seg > 0) & (seg != mindex) )
+            w=numpy.where((seg > 0) & (seg != mindex-1))
             if w[0].size > 0:
-
+                
+                w=numpy.where(seg > 0)
                 ids=numpy.unique(seg[w]) - 1
                 for obs in obs_list:
-                    pass
-
+                    #copy old image and weight map
+                    obs.image_orig = obs.image.copy()
+                    obs.weight_orig = obs.weight.copy()
+                    icut_cen = obs.meta['icut']
+                    fid_cen = mod['file_id'][mindex,icut_cen]
+                    
+                    tot_image = numpy.zeros(obs.image.shape)
+                    
+                    for cid in ids:
+                        if self.model_data['model_fits'][n('flags')][cid] == 0:
+                            ##################################################
+                            #render each object in the seg map with a good fit
+                            
+                            #get cutout with same file_id as central object
+                            #this might be overkill since assumption that two objects
+                            # which are in same postage-stamp have the same set of SE
+                            # images is probably very good
+                            icut_obj, = numpy.where(mod['file_id'][cid] == fid_cen)
+                            assert len(icut_obj) == 1, "Trouble finding matching cutout for nbr object! Found %ld entries." % len(icut_obj)
+                            icut_obj = icut_obj[0]
+                            
+                            #find psf entry and make sure it is OK 
+                            #FIXME: i would do this, but I am hacking the rband so band == 1
+                            #q, = numpy.where((self.model_data['epochs']['number'] == cid) & 
+                            #                 (self.model_data['epochs']['cutout_index'] == icut_obj) & 
+                            #                 (self.model_data['epochs']['band_num'] == band))
+                            q, = numpy.where((self.model_data['epochs']['number'] == cid) & 
+                                             (self.model_data['epochs']['cutout_index'] == icut_obj) & 
+                                             (self.model_data['epochs']['band_num'] == band_hack))
+                            assert len(q) == 1, "Trouble finding matching psf model for nbr object! Found %ld entries." % len(q)
+                            if len(q) == 0:
+                                continue
+                            #skip if psf fit was bad                            
+                            if self.model_data['epochs']['psf_fit_flags'][q[0]] > 0:
+                                continue
+                            pars_psf = self.model_data['epochs']['psf_fit_pars'][q[0]]
+                            
+                            #fiducial location of object in postage stamp
+                            row = mod['orig_row'][cid,icut_obj] - obs.meta['orig_start_row']
+                            col = mod['orig_col'][cid,icut_obj] - obs.meta['orig_start_col']
+                            
+                            #parameters for object
+                            #FIXME using wrong pars - need to pars_best_uw
+                            pars_obj = self.model_data['model_fits'][n('pars')][cid]                            
+                            pinds = range(5)
+                            #FIXME: I would use this, but I am hacking with the r band file
+                            #pinds.append(band+6)
+                            pinds.append(band_hack+6) #7 for rband
+                            pars_obj = pars_obj[pinds] 
+                            
+                            #get jacobian
+                            jacob = Jacobian(0,0,
+                                             mod['dudrow'][cid,icut_obj],
+                                             mod['dudcol'][cid,icut_obj],
+                                             mod['dvdrow'][cid,icut_obj],
+                                             mod['dvdcol'][cid,icut_obj])
+                            pixscale = jacob.get_scale()
+                            row += pars_obj[0]/pixscale
+                            col += pars_obj[1]/pixscale
+                            jacob.set_cen(row,col)
+                            
+                            #now render image of object
+                            #Erin, I am using GmixModel instead of GMix for the PSF
+                            # I think this is OK.
+                            psf_gmix = GMix(pars=pars_psf)
+                            gmix_sky = GMixModel(pars_obj, model)
+                            gmix_image = gmix_sky.convolve(psf_gmix)
+                            obj_image = gmix_image.make_image(obs.image.shape, jacobian=jacob)
+                            
+                            tot_image += obj_image
+                            if cid == mindex:
+                                cen_image = obj_image.copy()
+                            
+                            if nbrs_model_method == 'subtract':
+                                #subtract its flux if not central
+                                if cid != mindex:
+                                    obs.image -= obj_image
+                            
+                    if self['make_plots']:
+                        import matplotlib.pyplot as plt                        
+                        f,axs = plt.subplots(2,2)
+                        axs[0,0].imshow(obs.image_orig)
+                        axs[0,0].set_title('original image %d' % mod['id'][mindex])
+                        axs[0,1].imshow(tot_image-cen_image)
+                        axs[0,1].set_title('models of nbrs')
+                        axs[1,0].imshow(obs.image)
+                        axs[1,0].set_title('corrected image')                        
+                        msk = tot_image > 0
+                        frac = numpy.zeros(tot_image.shape)
+                        frac[msk] = cen_image[msk]/tot_image[msk]
+                        axs[1,1].imshow(frac)
+                        axs[1,1].set_title('fraction of flux due to central')
+                        f.tight_layout()
+                        if icut_cen == 0:
+                            plt.savefig('%06d-nbrs-model-band%d-icut%d' % (mindex,band,icut_cen))
+                        else:
+                            plt.savefig('%06d-nbrs-model-band%d-coadd.png' % (mindex,band))
+                        
+                        if False:
+                            plt.show()
+                            import ipdb
+                            ipdb.set_trace()
+                            
                     # your code will use
                     #     obs
                     #     band (to extract model parameters)
@@ -1498,7 +1627,9 @@ class MedsFit(dict):
         fitter.calc_result() 
         uw_result = fitter.get_result()
         fitter._unweighted_result = uw_result
-
+        pars_best_uw = fitter.get_best_pars()
+        fitter._unweighted_pars_best = pars_best_uw
+        
         # trials in default scaling, should not matter
         trials=fitter.get_trials()
 
@@ -1596,10 +1727,11 @@ class MedsFit(dict):
             if res['flags'] == 0:
                 pars=res['pars']
                 pars_cov=res['pars_cov']
-                self.data[n('pars_uw')][dindex,:] = pars
+                self.data[n('pars_uw')][dindex,:] = pars                
                 self.data[n('pars_cov_uw')][dindex,:,:] = pars_cov
                 self.data[n('chi2per_uw')][dindex] = res['chi2per']
                 self.data[n('dof_uw')][dindex] = res['dof']
+                self.data[n('pars_best_uw')][dindex,:] = fitter._unweighted_pars_best
                 if 'arate' in res:
                     self.data[n('arate_uw')][dindex] = res['arate']
                     if res['tau'] is not None:
@@ -2195,6 +2327,7 @@ class MedsFit(dict):
                  (n('dof_uw'),'f8'),
                  (n('arate_uw'),'f8'),
                  (n('tau_uw'),'f8'),
+                 (n('pars_best_uw'),'f8',np),
                 ]
             
             if self['do_shear']:
@@ -2254,6 +2387,7 @@ class MedsFit(dict):
             data[n('pars_cov_uw')] = PDEFVAL            
             data[n('chi2per_uw')] = PDEFVAL
             data[n('tau_uw')] = PDEFVAL
+            data[n('pars_best_uw')] = DEFVAL
             
             if self['do_shear']:
                 data[n('g_sens')] = DEFVAL

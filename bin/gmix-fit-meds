@@ -483,6 +483,7 @@ def run_fitter(meds_files,
                                            meds_files_full,
                                            conf,
                                            obj_range=obj_range,
+                                           model_data=model_data,
                                            checkpoint_file=checkpoint_file,
                                            checkpoint_data=checkpoint_data)
     else:
