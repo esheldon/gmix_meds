@@ -589,12 +589,23 @@ class MedsFit(dict):
         
         mindex_local = self.mindex #index in current meds file
         
-        model = self['nbrs_model']['model']        
+        #stuff to get names
+        nexp = Namer('exp')
+        ndev = Namer('dev')
+        if self['nbrs_model']['model'] == 'exp':
+            nmodel = nexp
+            model = 'exp'
+        elif self['nbrs_model']['model'] == 'dev':
+            nmodel = ndev
+            model = 'dev'
+
+        ncoadd = Namer('coadd')
+        nme = Namer('')
         if coadd:
-            n = Namer('coadd_'+model)
+            ntot = ncoadd
         else:
-            n = Namer(model)
-        
+            ntot = nme
+
         # import code here
         for band, obs_list in enumerate(mb_obs_list):
             print("            doing band %d" % band)
@@ -621,11 +632,39 @@ class MedsFit(dict):
                     tot_image = numpy.zeros(obs.image.shape)
                     
                     for cid in ids:
-                        if self.model_data['model_fits'][n(self['nbrs_model']['flags'])][cid] == 0:
+                        #check all flags first
+                        if self.model_data['model_fits'][self['nbrs_model']['flags']][cid] == 0:
+                            
+                            #logic for best_chi2per
+                            #if both flags != 0; skip
+                            # otherwise pick model with zero flags
+                            # othrwise pick best
+                            if self['nbrs_model']['model'] == 'best_chi2per':
+                                if self.model_data['model_fits'][ntot(nexp(self['nbrs_model']['flags']))][cid] != 0 \
+                                        and self.model_data['model_fits'][ntot(ndev(self['nbrs_model']['flags']))][cid] != 0:
+                                    continue
+                                elif self.model_data['model_fits'][ntot(nexp(self['nbrs_model']['flags']))][cid] != 0:
+                                    nmodel = ndev
+                                    model = 'dev'
+                                elif self.model_data['model_fits'][ntot(ndev(self['nbrs_model']['flags']))][cid] != 0:
+                                    nmodel = nexp
+                                    model = 'exp'
+                                elif self.model_data['model_fits'][ntot(nexp('chi2per'))][cid] > \
+                                        self.model_data['model_fits'][ntot(ndev('chi2per'))][cid]:
+                                    nmodel = ndev
+                                    model = 'dev'
+                                else:
+                                    nmodel = nexp
+                                    model = 'exp'
+                            
+                            #always reject models with bad flags
+                            if self.model_data['model_fits'][ntot(nmodel(self['nbrs_model']['flags']))][cid] != 0:
+                                continue
+                            
                             #see if need good ME fit 
                             if 'require_me_goodfit' in self['nbrs_model']:
                                 if self['nbrs_model']['require_me_goodfit']:
-                                    if self.model_data['model_fits'][self['nbrs_model']['flags']][cid] != 0:
+                                    if self.model_data['model_fits'][nme(nmodel(self['nbrs_model']['flags']))][cid] != 0:
                                         continue
                             
                             ##################################################
@@ -661,7 +700,7 @@ class MedsFit(dict):
                             col = mod['orig_col'][cid,icut_obj] - obs.meta['orig_start_col']
                             
                             #parameters for object
-                            pars_obj = self.model_data['model_fits'][n(self['nbrs_model']['pars'])][cid]                            
+                            pars_obj = self.model_data['model_fits'][ntot(nmodel(self['nbrs_model']['pars']))][cid]                            
                             pinds = range(5)
                             pinds.append(band+5)
                             pars_obj = pars_obj[pinds] 
