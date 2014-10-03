@@ -589,12 +589,23 @@ class MedsFit(dict):
         
         mindex_local = self.mindex #index in current meds file
         
-        model = self['nbrs_model']        
+        #stuff to get names
+        nexp = Namer('exp')
+        ndev = Namer('dev')
+        if self['nbrs_model']['model'] == 'exp':
+            nmodel = nexp
+            model = 'exp'
+        elif self['nbrs_model']['model'] == 'dev':
+            nmodel = ndev
+            model = 'dev'
+
+        ncoadd = Namer('coadd')
+        nme = Namer('')
         if coadd:
-            n = Namer('coadd_'+model)
+            ntot = ncoadd
         else:
-            n = Namer(model)
-        
+            ntot = nme
+
         # import code here
         for band, obs_list in enumerate(mb_obs_list):
             print("            doing band %d" % band)
@@ -619,9 +630,49 @@ class MedsFit(dict):
                     icut_cen = obs.meta['icut']
                     fid_cen = meds['file_id'][mindex_local,icut_cen]
                     tot_image = numpy.zeros(obs.image.shape)
+                    cen_image = None
                     
                     for cid in ids:
-                        if self.model_data['model_fits'][n(self['nbrs_model_flags'])][cid] == 0:
+                        #check all flags first
+                        if self.model_data['model_fits'][self['nbrs_model']['flags']][cid] == 0:
+                            
+                            #if have extra info, check its flags
+                            if 'model_extra_info' in self.model_data:
+                                if self.model_data['model_extra_info']['flags'][cid] != 0:
+                                    continue
+                            
+                            #logic for best_chi2per
+                            #if both flags != 0; skip
+                            # otherwise pick model with zero flags
+                            # othrwise pick best
+                            if self['nbrs_model']['model'] == 'best_chi2per':
+                                if self.model_data['model_fits'][ntot(nexp(self['nbrs_model']['flags']))][cid] != 0 \
+                                        and self.model_data['model_fits'][ntot(ndev(self['nbrs_model']['flags']))][cid] != 0:
+                                    continue
+                                elif self.model_data['model_fits'][ntot(nexp(self['nbrs_model']['flags']))][cid] != 0:
+                                    nmodel = ndev
+                                    model = 'dev'
+                                elif self.model_data['model_fits'][ntot(ndev(self['nbrs_model']['flags']))][cid] != 0:
+                                    nmodel = nexp
+                                    model = 'exp'
+                                elif self.model_data['model_fits'][ntot(nexp('chi2per'))][cid] > \
+                                        self.model_data['model_fits'][ntot(ndev('chi2per'))][cid]:
+                                    nmodel = ndev
+                                    model = 'dev'
+                                else:
+                                    nmodel = nexp
+                                    model = 'exp'
+                            
+                            #always reject models with bad flags
+                            if self.model_data['model_fits'][ntot(nmodel(self['nbrs_model']['flags']))][cid] != 0:
+                                continue
+                            
+                            #see if need good ME fit 
+                            if 'require_me_goodfit' in self['nbrs_model']:
+                                if self['nbrs_model']['require_me_goodfit']:
+                                    if self.model_data['model_fits'][nme(nmodel(self['nbrs_model']['flags']))][cid] != 0:
+                                        continue
+                            
                             ##################################################
                             #render each object in the seg map with a good fit
                             
@@ -655,7 +706,7 @@ class MedsFit(dict):
                             col = mod['orig_col'][cid,icut_obj] - obs.meta['orig_start_col']
                             
                             #parameters for object
-                            pars_obj = self.model_data['model_fits'][n(self['nbrs_model_pars'])][cid]                            
+                            pars_obj = self.model_data['model_fits'][ntot(nmodel(self['nbrs_model']['pars']))][cid]                            
                             pinds = range(5)
                             pinds.append(band+5)
                             pars_obj = pars_obj[pinds] 
@@ -681,7 +732,7 @@ class MedsFit(dict):
                             if cid == mindex_global:
                                 cen_image = obj_image.copy()
                             
-                            if self['nbrs_model_method'] == 'subtract':
+                            if self['nbrs_model']['method'] == 'subtract':
                                 #subtract its flux if not central
                                 if cid != mindex_global:
                                     obs.image -= obj_image
@@ -701,102 +752,44 @@ class MedsFit(dict):
                                     
                             return seg_new
 
-                        import matplotlib.pyplot as plt                        
-                        f,axs = plt.subplots(2,3)
-                        axs[0,0].imshow(obs.image_orig)
-                        axs[0,0].set_title('original image: COId = %d' % mod['id'][mindex_global])
-                        axs[0,1].imshow(tot_image-cen_image)
-                        axs[0,1].set_title('models of nbrs')
+                        import images
+                        import biggles
+                        width = 1920
+                        height = 1200
+                        biggles.configure('screen','width', width)
+                        biggles.configure('screen','height', height)
+                        tab = biggles.Table(2,3)
+                        tab.title = 'coadd_objects_id = %d' % mod['id'][mindex_global]
+                        
+                        if cen_image is None:
+                            cen_image = numpy.zeros_like(obs.image)
+                        
+                        tab[0,0] = images.view(obs.image_orig,title='original image',show=False)
+                        tab[0,1] = images.view(tot_image-cen_image,title='models of nbrs',show=False)
                         if coadd:
-                            axs[0,2].imshow(plot_seg(seg))
+                            tab[0,2] = images.view(plot_seg(seg),title='seg map',show=False)
                         else:
-                            axs[0,2].imshow(plot_seg(meds.interpolate_coadd_seg(mindex_local,icut_cen)))
-                        axs[0,2].set_title('seg map')
-                        axs[1,0].imshow(obs.image)
-                        axs[1,0].set_title('corrected image')                        
-                        msk = tot_image > 0
+                            tab[0,2] = images.view(plot_seg(meds.interpolate_coadd_seg(mindex_local,icut_cen)),title='seg map',show=False)
+                        
+                        tab[1,0] = images.view(obs.image,title='corrected image',show=False)
+                        msk = tot_image != 0
                         frac = numpy.zeros(tot_image.shape)
                         frac[msk] = cen_image[msk]/tot_image[msk]
-                        axs[1,1].imshow(frac)
-                        axs[1,1].set_title('fraction of flux due to central')
-                        axs[1,2].imshow(obs.weight)
-                        axs[1,2].set_title('weight map')
-                        f.tight_layout()
+                        tab[1,1] = images.view(frac,title='fraction of flux due to central',show=False)
+                        tab[1,2] = images.view(obs.weight,title='weight map',show=False)
+                        
                         if icut_cen > 0:
-                            plt.savefig('%06d-nbrs-model-band%d-icut%d.png' % (mindex_global,band,icut_cen))
+                            tab.write_img(1920,1200,'%06d-nbrs-model-band%d-icut%d.png' % (mindex_global,band,icut_cen))
                             print("                %06d-nbrs-model-band%d-icut%d.png" % (mindex_global,band,icut_cen))
                         else:
-                            plt.savefig('%06d-nbrs-model-band%d-coadd.png' % (mindex_global,band))
+                            tab.write_img(1920,1200,'%06d-nbrs-model-band%d-coadd.png' % (mindex_global,band))
                             print("                %06d-nbrs-model-band%d-coadd.png" % (mindex_global,band))
+
                         if False:
-                            plt.show()
+                            tab.show()
                             import ipdb
                             ipdb.set_trace()
-                        plt.close('all')
-                        
-                    # your code will use
-                    #     obs
-                    #     band (to extract model parameters)
-                    #     self.model_data
-                    #     ids, which can subscript the
-                    #         model_fits and meds_object data (see below)
-                    #
-                    # self.model_data is a dict with keys
-                    #    'model_fits': the model fits from a previous run
-                    #    'epochs': associated epoch measurements for psf etc.
-                    #    'meds_object_data': the data such as orig_row etc. for
-                    #        all objects, not just those in the subset processed for this
-                    #        instance.  matches row-by-row with model_fits.
-                    #
-                    # note obs.meta has fields 
-                    #
-                    #      'icut', 'orig_start_row', 'orig_start_col'
-                    #
-                    # so the postage stamp location of one of the objects specified in
-                    # ids defined above, say id=ids[1]
-                    #
-                    #      row=meds_object_data['orig_row'][id,icut] - orig_start_row
-                    #      col=meds_object_data['orig_col'][id,icut] - orig_start_col
-                    #
-                    # and the fit center for this object in the postage stamp is
-                    #
-                    #       row_cutout=row + pars[0]/pixscale
-                    #       col_cutout=col + pars[1]/pixscale
-                    #
-                    # pars[0] is the offset from the canonical center in arcsec.  the
-                    # pixscale is sqrt(det(jacobian_matrix)) (see below)
-                    #
-                    # pars is model_fits['exp_pars'][id,:] or whatever model
-                    # is chosen.  Note you should check the flags as well, if not zero
-                    # that object was not modeled due to being faint or the psf was
-                    # not fit successfully (this possible incompleteness is a problem..)
-                    #
-                    # then you can instantiate a new jacobian there
-                    #
-                    #     jacob=Jacobian(row_cutout,col_cutout,dudrow,dudcol,dvdrow,dvdcol)
-                    #
-                    # where the dudrow etc. are parts of the jacobian matrix 
-                    #
-                    #    meds_object_data['dudrow'][id,icut]
-                    #
-                    # and also you can get the psf fit from
-                    #
-                    #    _all_epochs_data['psf_fit_pars'][some_index]
-                    #
-                    # where some_index corresponds to the entry where 'id' matches the above 
-                    # id and 'icutout' matches icut.  The matching could be slow but
-                    # do whatever you need to now, we can optimize later
-                    #
-                    # these psf parameter can be used to generate the gaussian mixture
-                    # for the psf
-                    #
-                    #    psf_gmix = ngmix.GMix(pars=psf_fit_pars)
-                    #
-                    # not you should also check psf_fit_flags.  If those are not zero,
-                    # no good measurement of the psf was gotten.
-
-
-
+                            
 
     '''
     def set_psfrec_counts_mean_byband(self, band):

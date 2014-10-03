@@ -13,21 +13,25 @@ me_model_guess: "coadd_mcmc_best"
 nu: 0.0
 
 ################################
-#for neighbors modelling
+#for neighbors modeling
 
-nbrs_model: "exp"
-#nbr_model could be "exp" or "dev" or 
+#model could be "exp" or "dev" or 
 # anything else that can be found in 
-# the mode file
+# the model file
 
-nbrs_model_method: "subtract"
 #method to model neighbors
 # subtract: remove from image flux directly
 
 #set model parameters and flags to use
 # for the nbrs
-nbrs_model_flags: "flags"
-nbrs_model_pars: "pars_best"
+
+# require_me_goodfit - require flags == 0 in ME data
+nbrs_model: 
+    model: "exp"
+    method: "subtract"
+    flags: "flags"
+    pars: "pars_best"
+    require_me_goodfit: True 
 
 #max_box_size: 192
 
