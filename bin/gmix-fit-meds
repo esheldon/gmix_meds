@@ -37,6 +37,8 @@ parser.add_option("--make-plots", action='store_true',
 parser.add_option("--model-file", default=None,
                   help=("model fits to use for modeling the neighbors of each object"))
 
+parser.add_option("--model-extra-info", default=None,
+                  help=("extra info for neighbors modelling"))
 
 
 def make_ngmix_meta(conf, meds_meta_list, meds_files):
@@ -566,6 +568,10 @@ def go(config_file, meds_files, out_file, options):
             model_data['meds_object_data']=object_data
     else:
         model_data=None
+
+    if options.model_extra_info is not None:
+        assert model_data is not None,"You cannot use --model-extra-info without --model-data!"
+        model_data['model_extra_info'] = fitsio.read(options.model_extra_info)
 
     data, epoch_data, meta=run_fitter(meds_files,
                                       meds_files_full,

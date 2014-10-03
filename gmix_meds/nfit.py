@@ -630,10 +630,16 @@ class MedsFit(dict):
                     icut_cen = obs.meta['icut']
                     fid_cen = meds['file_id'][mindex_local,icut_cen]
                     tot_image = numpy.zeros(obs.image.shape)
+                    cen_image = None
                     
                     for cid in ids:
                         #check all flags first
                         if self.model_data['model_fits'][self['nbrs_model']['flags']][cid] == 0:
+                            
+                            #if have extra info, check its flags
+                            if 'model_extra_info' in self.model_data:
+                                if self.model_data['model_extra_info']['flags'][cid] != 0:
+                                    continue
                             
                             #logic for best_chi2per
                             #if both flags != 0; skip
@@ -754,6 +760,9 @@ class MedsFit(dict):
                         biggles.configure('screen','height', height)
                         tab = biggles.Table(2,3)
                         tab.title = 'coadd_objects_id = %d' % mod['id'][mindex_global]
+                        
+                        if cen_image is None:
+                            cen_image = numpy.zeros_like(obs.image)
                         
                         tab[0,0] = images.view(obs.image_orig,title='original image',show=False)
                         tab[0,1] = images.view(tot_image-cen_image,title='models of nbrs',show=False)
