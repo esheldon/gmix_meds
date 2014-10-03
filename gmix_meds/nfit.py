@@ -679,11 +679,11 @@ class MedsFit(dict):
                             #get cutout with same file_id as central object
                             icut_obj, = numpy.where(mod['file_id'][cid] == fid_cen)
                             if len(icut_obj) == 0:
-                                print("                could not find cutout for nbr %d cutout %d" % (cid,icut_obj))
+                                print("                could not find cutout for nbr %d file_id %d" % (cid,fid_cen))
                                 continue
                             if len(icut_obj) > 1:
-                                print("                found duplicate cutouts for nbr %d cutout %d" % (cid,icut_obj))
-                                assert len(icut_obj) == 1, "found duplicate cutouts for nbr %d cutout %d!" % (cid,icut_obj)
+                                print("                found duplicate cutouts for nbr %d file_id %d" % (cid,fid_cen))
+                                assert len(icut_obj) == 1, "found duplicate cutouts for nbr %d file_id %d!" % (cid,fid_cen)
                             icut_obj = icut_obj[0]
                             
                             #find psf entry and make sure it is OK 
