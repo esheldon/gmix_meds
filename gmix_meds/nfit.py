@@ -3003,6 +3003,123 @@ class FromParsGuesser(GuesserBase):
             return guess
 
 
+class FromAlmostFullParsGuesser(GuesserBase):
+    """
+    get full guesses from just g1,g2,T,fluxes associated with
+    psf
+    """
+    def __init__(self, pars, pars_err, scaling='linear'):
+        self.pars=pars
+        self.pars_err=pars_err
+        self.scaling=scaling
+
+    def __call__(self, n=None, get_sigmas=False, prior=None):
+        """
+        center is just distributed around zero
+        """
+
+        if n is None:
+            n=1
+            is_scalar=True
+        else:
+            is_scalar=False
+
+        pars=self.pars
+        npars=pars.size
+
+        width = pars*0 + 0.1
+
+        guess=numpy.zeros( (n, npars) )
+
+        guess[:,0] = width[0]*srandu(n)
+        guess[:,1] = width[1]*srandu(n)
+
+        for j in xrange(n):
+            itr = 0
+            maxitr = 100
+            while itr < maxitr:
+                for i in xrange(2,npars):
+                    if self.scaling=='linear':
+                        if pars[i] <= 0.0:
+                            guess[j,:] = width[i]*srandu(1)
+                        else:
+                            guess[j,i] = pars[i]*(1.0 + width[i]*srandu(1))
+                    else:
+                        # we add to log pars!
+                        guess[j,i] = pars[i] + width[i]*srandu(1)
+
+                if numpy.abs(guess[j,2]) < 1.0 \
+                        and numpy.abs(guess[j,3]) < 1.0 \
+                        and guess[j,2]*guess[j,2] + guess[j,3]*guess[j,3] < 1.0:
+                    break
+                itr += 1
+
+        if prior is not None:
+            self._fix_guess(guess, prior)
+
+        if is_scalar:
+            guess=guess[0,:]
+
+        if get_sigmas:
+            return guess, self.pars_err
+        else:
+            return guess
+
+
+class FromFullParsGuesser(GuesserBase):
+    """
+    get full guesses
+    """
+    def __init__(self, pars, pars_err, scaling='linear'):
+        self.pars=pars
+        self.pars_err=pars_err
+        self.scaling=scaling
+
+    def __call__(self, n=None, get_sigmas=False, prior=None):
+        if n is None:
+            n=1
+            is_scalar=True
+        else:
+            is_scalar=False
+
+        pars=self.pars
+        npars=pars.size
+
+        width = pars*0 + 0.1
+
+        guess=numpy.zeros( (n, npars) )
+
+        for j in xrange(n):
+            itr = 0
+            maxitr = 100
+            while itr < maxitr:
+                for i in xrange(npars):
+                    if self.scaling=='linear':
+                        if pars[i] <= 0.0:
+                            guess[j,:] = width[i]*srandu(1)
+                        else:
+                            guess[j,i] = pars[i]*(1.0 + width[i]*srandu(1))
+                    else:
+                        # we add to log pars!
+                        guess[j,i] = pars[i] + width[i]*srandu(1)
+
+                if numpy.abs(guess[j,2]) < 1.0 \
+                        and numpy.abs(guess[j,3]) < 1.0 \
+                        and guess[j,2]*guess[j,2] + guess[j,3]*guess[j,3] < 1.0:
+                    break
+                itr += 1
+
+        if prior is not None:
+            self._fix_guess(guess, prior)
+
+        if is_scalar:
+            guess=guess[0,:]
+
+        if get_sigmas:
+            return guess, self.pars_err
+        else:
+            return guess
+
 _stat_names=['s2n_w',
              'chi2per',
              'dof']
