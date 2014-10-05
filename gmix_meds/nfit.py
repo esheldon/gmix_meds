@@ -452,6 +452,8 @@ class MedsFit(dict):
 
         epars=self['emcee_pars']
         guess=self.guesser(n=epars['nwalkers'], prior=prior)
+        fmt = "%.6f "*(5+self['nband'])
+        print("        emcee guess: ",fmt%tuple(numpy.mean(guess,axis=0)))
         #for olist in mb_obs_list:
         #    print("    image filename:",olist[0].filename)
         #    print("    psfex filename:",olist[0].psf.filename)
@@ -467,6 +469,9 @@ class MedsFit(dict):
         pos=fitter.run_mcmc(guess,epars['burnin'])
         pos=fitter.run_mcmc(pos,epars['nstep'])
 
+        p = fitter.get_best_pars()
+        print("        emcee final: ",fmt%tuple(p))
+        
         return fitter
 
 
