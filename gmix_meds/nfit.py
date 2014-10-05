@@ -452,6 +452,8 @@ class MedsFit(dict):
 
         epars=self['emcee_pars']
         guess=self.guesser(n=epars['nwalkers'], prior=prior)
+        fmt = "%.6f "*(5+self['nband'])
+        print("        emcee guess: ",fmt%tuple(numpy.mean(guess,axis=0)))
         #for olist in mb_obs_list:
         #    print("    image filename:",olist[0].filename)
         #    print("    psfex filename:",olist[0].psf.filename)
@@ -467,6 +469,9 @@ class MedsFit(dict):
         pos=fitter.run_mcmc(guess,epars['burnin'])
         pos=fitter.run_mcmc(pos,epars['nstep'])
 
+        p = fitter.get_best_pars()
+        print("        emcee final: ",fmt%tuple(p))
+        
         return fitter
 
 
@@ -736,6 +741,7 @@ class MedsFit(dict):
                                 #subtract its flux if not central
                                 if cid != mindex_global:
                                     obs.image -= obj_image
+
                             
                     if self['make_plots']:
                         def plot_seg(seg):
@@ -2782,6 +2788,278 @@ class MHMedsFitHybrid(MedsFit):
 
         return fitter
 
+class MHMedsFitModelNbrs(MHMedsFitHybrid):
+    """
+    Models Nbrs
+    """
+
+    def _fit_all_models(self):
+        """
+        Fit psf flux and other models
+        """
+        
+        #default to true just in case
+        if 'fit_coadd_galaxy' not in self:
+            self['fit_coadd_galaxy'] = True
+        
+        mindex_local = self.mindex #index in current meds file
+        meds = self.meds_list[0]
+        number = meds['number'][mindex_local] #number for seg map, index+1 into entire meds file
+        mindex_global = number-1
+        
+        flags=0
+        # fit both coadd and se psf flux if exists
+        self._fit_psf_flux()
+
+        dindex=self.dindex
+        s2n=self.data['coadd_psf_flux'][dindex,:]/self.data['coadd_psf_flux_err'][dindex,:]
+        max_s2n=numpy.nanmax(s2n)
+
+        if max_s2n >= self['min_psf_s2n'] and len(self['fit_models']) > 0:
+            for model in self['fit_models']:
+                print('    fitting:',model)
+                
+                if self['fit_coadd_galaxy']:
+                    print('    coadd')
+                    self._run_model_fit(model, self['coadd_fitter_class'], coadd=True, mindex_global=mindex_global)
+
+                if self['fit_me_galaxy']:
+                    print('    multi-epoch')
+                    # fitter class should be mh...
+                    self._run_model_fit(model, self['fitter_class'], coadd=False, mindex_global=mindex_global)
+
+        else:
+            mess="    psf s/n too low: %s (%s)"
+            mess=mess % (max_s2n,self['min_psf_s2n'])
+            print(mess)
+            
+            flags |= LOW_PSF_FLUX
+
+        return flags
+
+    def _run_model_fit(self, model, fitter_type, coadd=False, mindex_global=mindex_global):
+        """
+        wrapper to run fit, copy pars, maybe make plots
+
+        sets .fitter or .coadd_fitter
+
+        this one does not currently use self['guess_type']
+        """
+        
+        nmod = Namer(model)        
+        if coadd:
+            n = Namer('coadd')
+            pars = self.model_data['model_fits'][n(nmod('pars_best'))][mindex_global]
+            pars_cov = self.model_data['model_fits'][n(nmod('pars_cov'))][mindex_global]
+            self.guesser=FromFullParsGuesser(pars,pars_cov)
+            mb_obs_list=self.sdata['coadd_mb_obs_list']
+        else:
+            pars = self.model_data['model_fits'][nmod('pars_best')][mindex_global]
+            pars_cov = self.model_data['model_fits'][nmod('pars_cov')][mindex_global]
+            self.guesser=FromFullParsGuesser(pars,pars_cov)
+            mb_obs_list=self.sdata['mb_obs_list']
+
+        fitter=self._fit_model(mb_obs_list,
+                               model,
+                               fitter_type=fitter_type)
+
+        self._copy_simple_pars(fitter, coadd=coadd)
+
+        self._print_res(fitter, coadd=coadd)
+
+        if self['make_plots']:
+            self._do_make_plots(fitter, model, coadd=coadd, fitter_type=fitter_type)
+
+        if coadd:
+            self.coadd_fitter=fitter
+        else:
+            self.fitter=fitter
+
+
+
+class MHMedsFitHybridIter(MHMedsFitHybrid):
+    """
+    This version uses MH for fitting, with guess/steps from
+    a coadd emcee run, which is seeded via iterating between 
+    a direct maximizer and emcee run on the coadd
+    """
+
+    def _fit_all_models(self):
+        """
+        Fit psf flux and other models
+        """
+
+        flags=0
+        # fit both coadd and se psf flux if exists
+        self._fit_psf_flux()
+
+        dindex=self.dindex
+        s2n=self.data['coadd_psf_flux'][dindex,:]/self.data['coadd_psf_flux_err'][dindex,:]
+        max_s2n=numpy.nanmax(s2n)
+        
+        if max_s2n >= self['min_psf_s2n'] and len(self['fit_models']) > 0:
+            for model in self['fit_models']:
+                print('    fitting:',model)
+                
+                fmt = "%.6f "*(5+self['nband'])
+                print('    coadd iter fit')
+                print('        using method \'%s\' for minimizer' % self['coadd_iter']['min_method'])
+                #try:
+                mb_obs_list=self.sdata['coadd_mb_obs_list']
+                niter = self['coadd_iter']['max']
+                for i in xrange(niter):
+                    print('        iter % 3d of %d'%(i+1,niter))
+                    if i == 0:
+                        self.guesser = self._get_guesser('coadd_psf')
+                    emceefit = self._fit_simple_emcee_guess(mb_obs_list, model)
+                    pars = emceefit.get_best_pars()
+                    bestlk = numpy.max(emceefit.get_lnprobs())
+                    print('            emcee:',fmt%tuple(pars),'loglike = %lf'%bestlk)
+                    self.guesser = FixedParsGuesser(pars,pars*0.1) #making that up, but it doesn't matter                    
+                    if self['coadd_iter']['min_method'] == 'lm':
+                        greedyfit = self._fit_simple_lm(mb_obs_list, model)
+                    else:
+                        greedyfit = self._fit_simple_max(mb_obs_list, model)
+                    pars = greedyfit._result['pars']
+                    if 'pars_err' in greedyfit._result:
+                        pars_err = greedyfit._result['pars_err']
+                    else:
+                        pars_err = greedyfit._result['pars']*0.05
+                    bestlk = greedyfit.calc_lnprob(pars)
+                    print('            min:  ',fmt%tuple(pars),'loglike = %lf'%bestlk)
+                    self.guesser = FromAlmostFullParsGuesser(pars,pars_err,scaling=None)
+
+                
+                if numpy.all(numpy.abs(pars) < 1e4):
+                    self.coadd_guesser = self.guesser                    
+                else:
+                    self.coadd_guesser = None
+                #except:
+                #    self.coadd_guesser = None
+    
+                if self.coadd_guesser == None:
+                    self.coadd_guesser = self._get_guesser('coadd_psf')
+                
+                print('    coadd')                
+                self._run_model_fit(model, self['coadd_fitter_class'],coadd=True)
+
+                if self['fit_me_galaxy']:
+                    print('    multi-epoch')
+                    # fitter class should be mh...
+                    self._run_model_fit(model, self['fitter_class'], coadd=False)
+                
+        else:
+            mess="    psf s/n too low: %s (%s)"
+            mess=mess % (max_s2n,self['min_psf_s2n'])
+            print(mess)
+            
+            flags |= LOW_PSF_FLUX
+
+        return flags
+
+    def _run_model_fit(self, model, fitter_type, coadd=False):
+        """
+        wrapper to run fit, copy pars, maybe make plots
+
+        sets .fitter or .coadd_fitter
+
+        this one does not currently use self['guess_type']
+        """
+
+        if coadd:
+            self.guesser=self.coadd_guesser #self._get_guesser(self['coadd_model_guess'])
+            mb_obs_list=self.sdata['coadd_mb_obs_list']
+        else:
+            self.guesser=self._get_guesser(self['me_model_guess'])
+            mb_obs_list=self.sdata['mb_obs_list']
+
+        fitter=self._fit_model(mb_obs_list,
+                               model,
+                               fitter_type=fitter_type)
+
+        self._copy_simple_pars(fitter, coadd=coadd)
+
+        self._print_res(fitter, coadd=coadd)
+
+        if self['make_plots']:
+            self._do_make_plots(fitter, model, coadd=coadd, fitter_type=fitter_type)
+
+        if coadd:
+            self.coadd_fitter=fitter
+        else:
+            self.fitter=fitter
+
+    def _fit_simple_emcee_guess(self, mb_obs_list, model):
+        """
+        Fit one of the "simple" models, e.g. exp or dev
+
+        use flat g prior
+        """
+
+        from ngmix.fitting import MCMCSimple
+
+        # note flat on g!
+        prior=self.gflat_priors[model]
+
+        epars=self['coadd_iter']['emcee_pars']
+        guess=self.guesser(n=epars['nwalkers'], prior=prior)
+        #for olist in mb_obs_list:
+        #    print("    image filename:",olist[0].filename)
+        #    print("    psfex filename:",olist[0].psf.filename)
+
+        fitter=MCMCSimple(mb_obs_list,
+                          model,
+                          nu=self['nu'],
+                          prior=prior,
+                          nwalkers=epars['nwalkers'],
+                          mca_a=epars['a'],
+                          random_state=self.random_state)
+
+        pos=fitter.run_mcmc(guess,epars['burnin'])
+        pos=fitter.run_mcmc(pos,epars['nstep'])
+
+        return fitter
+
+    def _fit_simple_lm(self, mb_obs_list, model):
+        """
+        Fit one of the "simple" models, e.g. exp or dev
+
+        use flat g prior
+        """
+
+        from ngmix.fitting import LMSimple
+
+        # note the prior is *not* flat in g! This is important to constrain the
+        # covariance matrix
+        
+        prior=self.priors[model]
+
+        ntry=self['coadd_iter']['lm_ntry']
+        for i in xrange(ntry):
+            guess=self.guesser(prior=prior)
+            #print_pars(guess, front='            lm guess:')
+
+            fitter=LMSimple(mb_obs_list,
+                            model,
+                            prior=prior,
+                            lm_pars=self['coadd_iter']['lm_pars'])
+
+            fitter.run_lm(guess)
+            res=fitter.get_result()
+            if res['flags']==0:
+                break
+
+        res['ntry']=i+1
+        return fitter
+
+    def _fit_simple_max(self, mb_obs_list, model):
+        from ngmix.fitting import MaxSimple        
+        guess=self.guesser(prior=self.priors[model])
+        fitter=MaxSimple(mb_obs_list,model,method=self['coadd_iter']['min_method'])
+        fitter.run_max(guess)
+        return fitter
+                            
+
 
 class GuesserBase(object):
     def _fix_guess(self, guess, prior, ntry=4):
@@ -3002,6 +3280,123 @@ class FromParsGuesser(GuesserBase):
         else:
             return guess
 
+
+class FromAlmostFullParsGuesser(GuesserBase):
+    """
+    get full guesses from just g1,g2,T,fluxes associated with
+    psf
+    """
+    def __init__(self, pars, pars_err, scaling='linear'):
+        self.pars=pars
+        self.pars_err=pars_err
+        self.scaling=scaling
+
+    def __call__(self, n=None, get_sigmas=False, prior=None):
+        """
+        center is just distributed around zero
+        """
+
+        if n is None:
+            n=1
+            is_scalar=True
+        else:
+            is_scalar=False
+
+        pars=self.pars
+        npars=pars.size
+
+        width = pars*0 + 0.1
+
+        guess=numpy.zeros( (n, npars) )
+
+        guess[:,0] = width[0]*srandu(n)
+        guess[:,1] = width[1]*srandu(n)
+
+        for j in xrange(n):
+            itr = 0
+            maxitr = 100
+            while itr < maxitr:
+                for i in xrange(2,npars):
+                    if self.scaling=='linear':
+                        if pars[i] <= 0.0:
+                            guess[j,:] = width[i]*srandu(1)
+                        else:
+                            guess[j,i] = pars[i]*(1.0 + width[i]*srandu(1))
+                    else:
+                        # we add to log pars!
+                        guess[j,i] = pars[i] + width[i]*srandu(1)
+
+                if numpy.abs(guess[j,2]) < 1.0 \
+                        and numpy.abs(guess[j,3]) < 1.0 \
+                        and guess[j,2]*guess[j,2] + guess[j,3]*guess[j,3] < 1.0:
+                    break
+                itr += 1
+
+        if prior is not None:
+            self._fix_guess(guess, prior)
+
+        if is_scalar:
+            guess=guess[0,:]
+
+        if get_sigmas:
+            return guess, self.pars_err
+        else:
+            return guess
+
+
+class FromFullParsGuesser(GuesserBase):
+    """
+    get full guesses
+    """
+    def __init__(self, pars, pars_err, scaling='linear'):
+        self.pars=pars
+        self.pars_err=pars_err
+        self.scaling=scaling
+
+    def __call__(self, n=None, get_sigmas=False, prior=None):
+        if n is None:
+            n=1
+            is_scalar=True
+        else:
+            is_scalar=False
+
+        pars=self.pars
+        npars=pars.size
+
+        width = pars*0 + 0.1
+
+        guess=numpy.zeros( (n, npars) )
+
+        for j in xrange(n):
+            itr = 0
+            maxitr = 100
+            while itr < maxitr:
+                for i in xrange(npars):
+                    if self.scaling=='linear':
+                        if pars[i] <= 0.0:
+                            guess[j,:] = width[i]*srandu(1)
+                        else:
+                            guess[j,i] = pars[i]*(1.0 + width[i]*srandu(1))
+                    else:
+                        # we add to log pars!
+                        guess[j,i] = pars[i] + width[i]*srandu(1)
+
+                if numpy.abs(guess[j,2]) < 1.0 \
+                        and numpy.abs(guess[j,3]) < 1.0 \
+                        and guess[j,2]*guess[j,2] + guess[j,3]*guess[j,3] < 1.0:
+                    break
+                itr += 1
+
+        if prior is not None:
+            self._fix_guess(guess, prior)
+
+        if is_scalar:
+            guess=guess[0,:]
+
+        if get_sigmas:
+            return guess, self.pars_err
+        else:
+            return guess
 
 _stat_names=['s2n_w',
              'chi2per',
