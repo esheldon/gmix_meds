@@ -2825,7 +2825,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                     emceefit = self._fit_simple_emcee_guess(mb_obs_list, model)
                     pars = emceefit.get_best_pars()
                     bestlk = numpy.max(emceefit.get_lnprobs())
-                    print('            emcee:',fmt%tuple(pars),', loglike = %lf'%bestlk)
+                    print('            emcee:',fmt%tuple(pars),'loglike = %lf'%bestlk)
                     self.guesser = FixedParsGuesser(pars,pars*0.1) #making that up, but it doesn't matter                    
                     if self['coadd_iter']['min_method'] == 'lm':
                         greedyfit = self._fit_simple_lm(mb_obs_list, model)
@@ -2837,7 +2837,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                     else:
                         pars_err = greedyfit._result['pars']*0.05
                     bestlk = greedyfit.calc_lnprob(pars)
-                    print('            min:  ',fmt%tuple(pars),', loglike = %lf'%bestlk)
+                    print('            min:  ',fmt%tuple(pars),'loglike = %lf'%bestlk)
                     self.guesser = FromAlmostFullParsGuesser(pars,pars_err,scaling=None)
 
                 
