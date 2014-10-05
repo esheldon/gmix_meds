@@ -2758,7 +2758,7 @@ class MHMedsFitHybrid(MedsFit):
                         nu=self['nu'],
                         random_state=self.random_state)
 
-        print_pars(guess,front="        mh guess:             ")
+        print_pars(guess,front="        mh guess:   ")
         pos=fitter.run_mcmc(guess,mhpars['burnin'])
 
         n=int(mhpars['burnin']*0.1)
