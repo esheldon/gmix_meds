@@ -316,6 +316,7 @@ class MedsFit(dict):
         self.data['number'][dindex] = self.meds_list[0]['number'][mindex]
         self.data['box_size'][dindex] = \
                 self.meds_list[0]['box_size'][mindex]
+        print('coadd_objects_id: %ld' % self.data['id'][dindex])
 
         flags = self._obj_check(mindex)
         if flags != 0:
