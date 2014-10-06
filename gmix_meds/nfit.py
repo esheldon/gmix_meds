@@ -2758,7 +2758,7 @@ class MHMedsFitHybrid(MedsFit):
                         nu=self['nu'],
                         random_state=self.random_state)
 
-        print_pars(guess,front="        mh guess:             ")
+        print_pars(guess,front="        mh guess:   ")
         pos=fitter.run_mcmc(guess,mhpars['burnin'])
 
         n=int(mhpars['burnin']*0.1)
@@ -2821,12 +2821,12 @@ class MHMedsFitModelNbrs(MHMedsFitHybrid):
                 
                 if self['fit_coadd_galaxy']:
                     print('    coadd')
-                    self._run_model_fit(model, self['coadd_fitter_class'], coadd=True, mindex_global=mindex_global)
+                    self._run_model_fit(model, self['coadd_fitter_class'], mindex_global, coadd=True)
 
                 if self['fit_me_galaxy']:
                     print('    multi-epoch')
                     # fitter class should be mh...
-                    self._run_model_fit(model, self['fitter_class'], coadd=False, mindex_global=mindex_global)
+                    self._run_model_fit(model, self['fitter_class'], mindex_global, coadd=False)
 
         else:
             mess="    psf s/n too low: %s (%s)"
@@ -2837,7 +2837,7 @@ class MHMedsFitModelNbrs(MHMedsFitHybrid):
 
         return flags
 
-    def _run_model_fit(self, model, fitter_type, coadd=False, mindex_global=mindex_global):
+    def _run_model_fit(self, model, fitter_type, mindex_global, coadd=False):
         """
         wrapper to run fit, copy pars, maybe make plots
 
@@ -2851,12 +2851,14 @@ class MHMedsFitModelNbrs(MHMedsFitHybrid):
             n = Namer('coadd')
             pars = self.model_data['model_fits'][n(nmod('pars_best'))][mindex_global]
             pars_cov = self.model_data['model_fits'][n(nmod('pars_cov'))][mindex_global]
-            self.guesser=FromFullParsGuesser(pars,pars_cov)
+            pars_err = numpy.array([numpy.sqrt(pars_cov[i,i]) for i in xrange(len(pars))])
+            self.guesser=FromFullParsGuesser(pars,pars_err,scaling=None)
             mb_obs_list=self.sdata['coadd_mb_obs_list']
         else:
             pars = self.model_data['model_fits'][nmod('pars_best')][mindex_global]
             pars_cov = self.model_data['model_fits'][nmod('pars_cov')][mindex_global]
-            self.guesser=FromFullParsGuesser(pars,pars_cov)
+            pars_err = numpy.array([numpy.sqrt(pars_cov[i,i]) for i in xrange(len(pars))])
+            self.guesser=FromFullParsGuesser(pars,pars_err,scaling=None)
             mb_obs_list=self.sdata['mb_obs_list']
 
         fitter=self._fit_model(mb_obs_list,
