@@ -2910,6 +2910,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                 mb_obs_list=self.sdata['coadd_mb_obs_list']
                 niter = self['coadd_iter']['max']
                 for i in xrange(niter):
+                    print('        coadd_objects_id = %d'%(self.data['id'][dindex]))
                     print('        iter % 3d of %d'%(i+1,niter))
                     if i == 0:
                         self.guesser = self._get_guesser('coadd_psf')
@@ -2932,7 +2933,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                     self.guesser = FromAlmostFullParsGuesser(pars,pars_err,scaling=None)
 
                 
-                if numpy.all(numpy.abs(pars) < 1e4):
+                if numpy.all(numpy.abs(pars) < 1e6):
                     self.coadd_guesser = self.guesser                    
                 else:
                     self.coadd_guesser = None
