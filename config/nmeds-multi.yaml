@@ -7,18 +7,22 @@ check_image_flags: True
 
 use_psf_rerun: False
 
-coadd_model_guess: "coadd_psf"
-me_model_guess: "coadd_mcmc_best"
+coadd_model_guess: "iter"
+me_model_guess: "iter"
 
 nu: 0.0
 
-################################
-# for guessing the coadd params
-# set coadd_model_guess: "coadd_iter"
-#  to use
+nbrs_model:
+    model: "exp"
+    method: "subtract"
+    flags: "flags"
+    pars: "pars_best"
+    require_me_goodfit: True
+
+#max_box_size: 192
 
 coadd_iter: 
-    max: 3
+    max: 1
 
     emcee_pars:
         a: 2.0
@@ -34,29 +38,29 @@ coadd_iter:
         xtol: 1.0e-3
         maxfev: 500
 
+me_iter: 
+    max: 1
+    
+    emcee_pars:
+        a: 2.0
+        nwalkers: 50
+        burnin: 10
+        nstep: 40
 
-################################
-#for neighbors modeling
+    min_method: 'Nelder-Mead'
 
-#model could be "exp" or "dev" or 
-# anything else that can be found in 
-# the model file
+    lm_ntry: 5
+    lm_pars:
+        ftol: 1.0e-6
+        xtol: 1.0e-3
+        maxfev: 500
 
-#method to model neighbors
-# subtract: remove from image flux directly
-
-#set model parameters and flags to use
-# for the nbrs
-
-# require_me_goodfit - require flags == 0 in ME data
-nbrs_model: 
-    model: "exp"
-    method: "subtract"
-    flags: "flags"
-    pars: "pars_best"
-    require_me_goodfit: True 
-
-#max_box_size: 192
+#coadd_em_pars:
+#    ngauss: 10
+#    ntry: 20
+#    maxiter: 10000
+#    tol: 5.0e-6
+#    cen_limit: 0.25
 
 emcee_pars:
     a: 2.0
@@ -65,8 +69,8 @@ emcee_pars:
     nstep: 800
 
 mh_pars:
-    burnin: 5000
-    nstep: 5000
+    burnin: 500
+    nstep: 1000
     min_step_sizes: [0.0001,0.0001,0.001,0.001,0.0001,0.001]
 
 psf_em_pars:
