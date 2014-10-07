@@ -150,8 +150,7 @@ class MedsFit(dict):
 
         self.coadd_npix               = 0.0
         self.coadd_wsum               = 0.0
-        self.coadd_wsum_byband        = zeros(nband)
-        self.coadd_wmax_byband        = zeros(nband)
+        self.coadd_wrelsum            = 0.0
         #self.coadd_psfrec_counts_wsum = zeros(nband,dtype='f8')
         self.coadd_psfrec_T_wsum      = 0.0
         self.coadd_psfrec_g1_wsum     = 0.0
@@ -159,8 +158,7 @@ class MedsFit(dict):
 
         self.npix               = 0.0
         self.wsum               = 0.0
-        self.wsum_byband        = zeros(nband)
-        self.wmax_byband        = zeros(nband)
+        self.wrelsum            = 0.0
         self.psfrec_T_wsum      = 0.0
         self.psfrec_g1_wsum     = 0.0
         self.psfrec_g2_wsum     = 0.0
@@ -519,6 +517,7 @@ class MedsFit(dict):
         Get a MultiBandObsList object for the SE observations.
         """
 
+        dindex=self.dindex
         coadd_mb_obs_list=MultiBandObsList()
         mb_obs_list=MultiBandObsList()
 
@@ -549,11 +548,12 @@ class MedsFit(dict):
                     self._reject_outliers(obs_list)
                 mb_obs_list.append(obs_list)
 
-            #self.set_psfrec_counts_mean_byband(band)
-
         # means must go accross bands
         self.set_psf_means()
         
+        print("        mask_frac:",self.data['mask_frac'][dindex],
+              "coadd mask_frac:",self.data['coadd_mask_frac'][dindex])
+
         if self['model_neighbors']:
             print("    modelling neighbors:")
             print("        doing coadd:")
@@ -783,14 +783,10 @@ class MedsFit(dict):
 
         npix=self.coadd_npix
         wsum=self.coadd_wsum
-        mask_frac=PDEFVAL
         if npix > 0:
-            wsum_byband=self.coadd_wsum_byband
-            wmax_byband=self.coadd_wmax_byband
-            w,=numpy.where(wmax_byband > 0)
-            if w.size > 0:
-                relsum=(wsum_byband[w]/wmax_byband[w]).sum()
-                mask_frac = 1.0-relsum/npix
+            mask_frac = 1.0 - self.coadd_wrelsum/npix
+        else:
+            mask_frac=PDEFVAL
 
         if wsum > 0:
             iwsum = 1.0/wsum
@@ -813,16 +809,10 @@ class MedsFit(dict):
         npix=self.npix
         wsum=self.wsum
 
-        npix=self.npix
-        wsum=self.wsum
-        mask_frac=PDEFVAL
         if npix > 0:
-            wsum_byband=self.wsum_byband
-            wmax_byband=self.wmax_byband
-            w,=numpy.where(wmax_byband > 0)
-            if w.size > 0:
-                relsum=(wsum_byband[w]/wmax_byband[w]).sum()
-                mask_frac = 1.0-relsum/npix
+            mask_frac = 1.0 - self.wrelsum/npix
+        else:
+            mask_frac=PDEFVAL
 
         if wsum > 0:
             iwsum = 1.0/wsum
@@ -962,7 +952,7 @@ class MedsFit(dict):
         npix = im.size
 
         wsum = wt.sum()
-        wmax=wt.max()
+        wmax = wt.max()
         imsum = psf_obs.image.sum()
 
         g1,g2,T=psf_gmix.get_g1g2T()
@@ -974,20 +964,24 @@ class MedsFit(dict):
             self.coadd_psfrec_g1_wsum += g1*wsum
             self.coadd_psfrec_g2_wsum += g2*wsum
             self.coadd_wsum += wsum
-            self.coadd_wsum_byband[band] += wsum
+            #self.coadd_wsum_byband[band] += wsum
 
-            if wmax > self.coadd_wmax_byband[band]:
-                self.coadd_wmax_byband[band]=wmax
+            #if wmax > self.coadd_wmax_byband[band]:
+            #    self.coadd_wmax_byband[band]=wmax
+            if wmax > 0.0:
+                self.coadd_wrelsum += wsum/wmax
         else:
             self.npix += npix
             self.psfrec_T_wsum += T*wsum
             self.psfrec_g1_wsum += g1*wsum
             self.psfrec_g2_wsum += g2*wsum
             self.wsum += wsum
-            self.wsum_byband[band] += wsum
+            #self.wsum_byband[band] += wsum
 
-            if wmax > self.wmax_byband[band]:
-                self.wmax_byband[band]=wmax
+            #if wmax > self.wmax_byband[band]:
+            #    self.wmax_byband[band]=wmax
+            if wmax > 0.0:
+                self.wrelsum += wsum/wmax
 
         self._set_psf_result(psf_gmix, imsum)
         self._set_wsum_wmax_npix(wsum,wmax,npix)
@@ -1951,16 +1945,14 @@ class MedsFit(dict):
         if res['flags']==0:
             if coadd:
                 type='coadd'
-                mask_frac=self.data['coadd_mask_frac'][dindex]
             else:
                 type='mb'
-                mask_frac=self.data['mask_frac'][dindex]
 
             print("        %s linear pars:" % type)
             print_pars(res['pars'],    front='        ')
             print_pars(res['pars_err'],front='        ')
             if 'arate' in res:
-                print('        arate:',res['arate'],'mask_frac',mask_frac)
+                print('        arate:',res['arate'])
 
     def _setup_checkpoints(self):
         """
