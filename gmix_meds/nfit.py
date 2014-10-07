@@ -2780,13 +2780,9 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
             for model in self['fit_models']:
                 print('    fitting:',model)
                 
-                fmt = "%.6f "*(5+self['nband'])
-                print('    coadd iter fit')
-                print('        using method \'%s\' for minimizer' % self['coadd_iter']['min_method'])
-                
+                print('    coadd iter fit')                
                 self.coadd_guesser = \
-                    self._guess_params_iter(self, 
-                                            self.sdata['coadd_mb_obs_list'], 
+                    self._guess_params_iter(self.sdata['coadd_mb_obs_list'], 
                                             model, 
                                             self['coadd_iter'],
                                             self._get_guesser('coadd_psf'))
@@ -2797,17 +2793,19 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                 self._run_model_fit(model, self['coadd_fitter_class'],coadd=True)
 
                 if self['fit_me_galaxy']:
-                    print('    multi-epoch')
                     if 'me_iter' in self:
+                        print('    multi-epoch iter fit')                
                         self.me_guesser = \
-                            self._guess_params_iter(self,
-                                                    self.sdata['mb_obs_list'],
-                                                    model, self['me_iter'], 
+                            self._guess_params_iter(self.sdata['mb_obs_list'],
+                                                    model, 
+                                                    self['me_iter'], 
                                                     self._get_guesser('coadd_psf'))
                     else:
                         self.me_guesser = None
                     if self.me_guesser == None:
                         self.me_guesser = self._get_guesser('coadd_psf')
+                        
+                    print('    multi-epoch')
                     # fitter class should be mh...
                     self._run_model_fit(model, self['fitter_class'], coadd=False)
         else:
@@ -2820,14 +2818,16 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         return flags
 
     def _guess_params_iter(self, mb_obs_list, model, params, start):
-        for i in xrange(niter):
-            print('        iter % 3d of %d'%(i+1,niter))
+        fmt = "%.6f "*(5+self['nband'])
+        print('        using method \'%s\' for minimizer' % params['min_method'])
+        for i in xrange(params['max']):
+            print('        iter % 3d of %d'%(i+1,params['max']))
             if i == 0:
                 self.guesser = start
             emceefit = self._fit_simple_emcee_guess(mb_obs_list, model, params)
             pars = emceefit.get_best_pars()
             bestlk = numpy.max(emceefit.get_lnprobs())
-            print('            emcee:',fmt%tuple(pars),'loglike = %lf'%bestlk)
+            print('            emcee:       ',fmt%tuple(pars),'loglike = %lf'%bestlk)
             self.guesser = FixedParsGuesser(pars,pars*0.1) #making that up, but it doesn't matter                    
             if params['min_method'] == 'lm':
                 greedyfit = self._fit_simple_lm(mb_obs_list, model, params)
@@ -2839,7 +2839,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
             else:
                 pars_err = greedyfit._result['pars']*0.05
             bestlk = greedyfit.calc_lnprob(pars)
-            print('            min:  ',fmt%tuple(pars),'loglike = %lf'%bestlk)
+            print('            greedy min:  ',fmt%tuple(pars),'loglike = %lf'%bestlk)
             self.guesser = FromAlmostFullParsGuesser(pars,pars_err,scaling=None)
         
         if numpy.all(numpy.abs(pars) < 1e7):
