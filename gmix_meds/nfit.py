@@ -2783,40 +2783,13 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                 fmt = "%.6f "*(5+self['nband'])
                 print('    coadd iter fit')
                 print('        using method \'%s\' for minimizer' % self['coadd_iter']['min_method'])
-                #try:
-                mb_obs_list=self.sdata['coadd_mb_obs_list']
-                niter = self['coadd_iter']['max']
-                for i in xrange(niter):
-                    print('        coadd_objects_id = %d'%(self.data['id'][dindex]))
-                    print('        iter % 3d of %d'%(i+1,niter))
-                    if i == 0:
-                        self.guesser = self._get_guesser('coadd_psf')
-                    emceefit = self._fit_simple_emcee_guess(mb_obs_list, model)
-                    pars = emceefit.get_best_pars()
-                    bestlk = numpy.max(emceefit.get_lnprobs())
-                    print('            emcee:',fmt%tuple(pars),'loglike = %lf'%bestlk)
-                    self.guesser = FixedParsGuesser(pars,pars*0.1) #making that up, but it doesn't matter                    
-                    if self['coadd_iter']['min_method'] == 'lm':
-                        greedyfit = self._fit_simple_lm(mb_obs_list, model)
-                    else:
-                        greedyfit = self._fit_simple_max(mb_obs_list, model)
-                    pars = greedyfit._result['pars']
-                    if 'pars_err' in greedyfit._result:
-                        pars_err = greedyfit._result['pars_err']
-                    else:
-                        pars_err = greedyfit._result['pars']*0.05
-                    bestlk = greedyfit.calc_lnprob(pars)
-                    print('            min:  ',fmt%tuple(pars),'loglike = %lf'%bestlk)
-                    self.guesser = FromAlmostFullParsGuesser(pars,pars_err,scaling=None)
-
                 
-                if numpy.all(numpy.abs(pars) < 1e6):
-                    self.coadd_guesser = self.guesser                    
-                else:
-                    self.coadd_guesser = None
-                #except:
-                #    self.coadd_guesser = None
-    
+                self.coadd_guesser = \
+                    self._guess_params_iter(self, 
+                                            self.sdata['coadd_mb_obs_list'], 
+                                            model, 
+                                            self['coadd_iter'],
+                                            self._get_guesser('coadd_psf'))
                 if self.coadd_guesser == None:
                     self.coadd_guesser = self._get_guesser('coadd_psf')
                 
@@ -2825,9 +2798,18 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
 
                 if self['fit_me_galaxy']:
                     print('    multi-epoch')
+                    if 'me_iter' in self:
+                        self.me_guesser = \
+                            self._guess_params_iter(self,
+                                                    self.sdata['mb_obs_list'],
+                                                    model, self['me_iter'], 
+                                                    self._get_guesser('coadd_psf'))
+                    else:
+                        self.me_guesser = None
+                    if self.me_guesser == None:
+                        self.me_guesser = self._get_guesser('coadd_psf')
                     # fitter class should be mh...
                     self._run_model_fit(model, self['fitter_class'], coadd=False)
-                
         else:
             mess="    psf s/n too low: %s (%s)"
             mess=mess % (max_s2n,self['min_psf_s2n'])
@@ -2837,6 +2819,34 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
 
         return flags
 
+    def _guess_params_iter(self, mb_obs_list, model, params, start):
+        for i in xrange(niter):
+            print('        iter % 3d of %d'%(i+1,niter))
+            if i == 0:
+                self.guesser = start
+            emceefit = self._fit_simple_emcee_guess(mb_obs_list, model, params)
+            pars = emceefit.get_best_pars()
+            bestlk = numpy.max(emceefit.get_lnprobs())
+            print('            emcee:',fmt%tuple(pars),'loglike = %lf'%bestlk)
+            self.guesser = FixedParsGuesser(pars,pars*0.1) #making that up, but it doesn't matter                    
+            if params['min_method'] == 'lm':
+                greedyfit = self._fit_simple_lm(mb_obs_list, model, params)
+            else:
+                greedyfit = self._fit_simple_max(mb_obs_list, model, params)
+            pars = greedyfit._result['pars']
+            if 'pars_err' in greedyfit._result:
+                pars_err = greedyfit._result['pars_err']
+            else:
+                pars_err = greedyfit._result['pars']*0.05
+            bestlk = greedyfit.calc_lnprob(pars)
+            print('            min:  ',fmt%tuple(pars),'loglike = %lf'%bestlk)
+            self.guesser = FromAlmostFullParsGuesser(pars,pars_err,scaling=None)
+        
+        if numpy.all(numpy.abs(pars) < 1e7):
+            return self.guesser
+        else:
+            return None
+    
     def _run_model_fit(self, model, fitter_type, coadd=False):
         """
         wrapper to run fit, copy pars, maybe make plots
@@ -2847,10 +2857,10 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         """
 
         if coadd:
-            self.guesser=self.coadd_guesser #self._get_guesser(self['coadd_model_guess'])
+            self.guesser=self.coadd_guesser
             mb_obs_list=self.sdata['coadd_mb_obs_list']
         else:
-            self.guesser=self._get_guesser(self['me_model_guess'])
+            self.guesser=self.me_guesser
             mb_obs_list=self.sdata['mb_obs_list']
 
         fitter=self._fit_model(mb_obs_list,
@@ -2869,7 +2879,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         else:
             self.fitter=fitter
 
-    def _fit_simple_emcee_guess(self, mb_obs_list, model):
+    def _fit_simple_emcee_guess(self, mb_obs_list, model, params):
         """
         Fit one of the "simple" models, e.g. exp or dev
 
@@ -2881,7 +2891,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         # note flat on g!
         prior=self.gflat_priors[model]
 
-        epars=self['coadd_iter']['emcee_pars']
+        epars=params['emcee_pars']
         guess=self.guesser(n=epars['nwalkers'], prior=prior)
         #for olist in mb_obs_list:
         #    print("    image filename:",olist[0].filename)
@@ -2900,7 +2910,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
 
         return fitter
 
-    def _fit_simple_lm(self, mb_obs_list, model):
+    def _fit_simple_lm(self, mb_obs_list, model, params):
         """
         Fit one of the "simple" models, e.g. exp or dev
 
@@ -2914,7 +2924,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         
         prior=self.priors[model]
 
-        ntry=self['coadd_iter']['lm_ntry']
+        ntry=params['lm_ntry']
         for i in xrange(ntry):
             guess=self.guesser(prior=prior)
             #print_pars(guess, front='            lm guess:')
@@ -2922,7 +2932,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
             fitter=LMSimple(mb_obs_list,
                             model,
                             prior=prior,
-                            lm_pars=self['coadd_iter']['lm_pars'])
+                            lm_pars=params['lm_pars'])
 
             fitter.run_lm(guess)
             res=fitter.get_result()
@@ -2932,10 +2942,10 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         res['ntry']=i+1
         return fitter
 
-    def _fit_simple_max(self, mb_obs_list, model):
+    def _fit_simple_max(self, mb_obs_list, model, params):
         from ngmix.fitting import MaxSimple        
         guess=self.guesser(prior=self.priors[model])
-        fitter=MaxSimple(mb_obs_list,model,method=self['coadd_iter']['min_method'])
+        fitter=MaxSimple(mb_obs_list,model,method=params['min_method'])
         fitter.run_max(guess)
         return fitter
                             
