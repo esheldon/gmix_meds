@@ -2155,22 +2155,6 @@ class MedsFit(dict):
 
             ('box_size','i2'),
 
-            #('coadd_npix','i4',bshape),
-            #('coadd_wsum','f8',bshape),
-            #('coadd_wmax','f8',bshape),
-            #('coadd_mask_frac','f8',bshape),
-            #('coadd_psfrec_counts_mean','f8',bshape),
-            #('coadd_psfrec_T','f8',bshape),
-            #('coadd_psfrec_g','f8', (nband,2)),
-
-            #('npix','i4',bshape),
-            #('wsum','f8',bshape),
-            #('wmax','f8',bshape),
-            #('mask_frac','f8',bshape),
-            #('psfrec_counts_mean','f8',bshape),
-            #('psfrec_T','f8',bshape),
-            #('psfrec_g','f8', (nband,2))
-
             ('coadd_npix','i4'),
             ('coadd_mask_frac','f8'),
             ('coadd_psfrec_T','f8'),
@@ -2179,7 +2163,6 @@ class MedsFit(dict):
             ('mask_frac','f8'),
             ('psfrec_T','f8'),
             ('psfrec_g','f8', 2)
-
 
            ]
 
