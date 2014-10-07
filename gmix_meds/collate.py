@@ -77,6 +77,7 @@ class Concat(object):
         just run through and read the data, verifying we can read it
         """
 
+        nchunk=len(self.chunk_list)
         for i,split in enumerate(self.chunk_list):
 
             print('\t%d/%d ' %(i+1,nchunk), end='')
