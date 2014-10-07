@@ -13,6 +13,29 @@ me_model_guess: "coadd_mcmc_best"
 nu: 0.0
 
 ################################
+# for guessing the coadd params
+# set coadd_model_guess: "coadd_iter"
+#  to use
+
+coadd_iter: 
+    max: 3
+
+    emcee_pars:
+        a: 2.0
+        nwalkers: 50
+        burnin: 10
+        nstep: 40
+
+    min_method: 'Nelder-Mead'
+
+    lm_ntry: 5
+    lm_pars:
+        ftol: 1.0e-6
+        xtol: 1.0e-3
+        maxfev: 500
+
+
+################################
 #for neighbors modeling
 
 #model could be "exp" or "dev" or 

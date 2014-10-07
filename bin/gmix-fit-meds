@@ -243,7 +243,12 @@ def run_ngmix(meds_files,
         priors['counts_priors'] = get_counts_priors_ngmix(conf)
 
     if conf['fitter_class']=='mh':
-        meds_fitter=gmix_meds.nfit.MHMedsFitHybrid
+        if conf['coadd_model_guess'] == 'coadd_iter':
+            meds_fitter=gmix_meds.nfit.MHMedsFitHybridIter
+        elif model_data is not None:
+            meds_fitter=gmix_meds.nfit.MHMedsFitModelNbrs
+        else:
+            meds_fitter=gmix_meds.nfit.MHMedsFitHybrid
     elif conf['fitter_class']=='emcee':
         meds_fitter=gmix_meds.nfit.MedsFit
     elif conf['fitter_class']=="coadd-only":
