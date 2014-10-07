@@ -147,43 +147,23 @@ class MedsFit(dict):
     def _reset_mb_sums(self):
         from numpy import zeros
         nband=self['nband']
-        if not hasattr(self,'coadd_npix'):
-            self.coadd_npix               = zeros(nband,dtype='i4')
-            self.coadd_wsum               = zeros(nband,dtype='f8')
-            self.coadd_wmax               = zeros(nband,dtype='f8')
-            self.coadd_mask_frac          = zeros(nband,dtype='f8')
-            #self.coadd_psfrec_counts_wsum = zeros(nband,dtype='f8')
-            self.coadd_psfrec_T_wsum      = zeros(nband,dtype='f8')
-            self.coadd_psfrec_g1_wsum     = zeros(nband,dtype='f8')
-            self.coadd_psfrec_g2_wsum     = zeros(nband,dtype='f8')
 
-            self.npix               = zeros(nband,dtype='i4')
-            self.wsum               = zeros(nband,dtype='f8')
-            self.wmax               = zeros(nband,dtype='f8')
-            self.mask_frac          = zeros(nband,dtype='f8')
-            self.psfrec_counts_wsum = zeros(nband,dtype='f8')
-            self.psfrec_T_wsum      = zeros(nband,dtype='f8')
-            self.psfrec_g1_wsum     = zeros(nband,dtype='f8')
-            self.psfrec_g2_wsum     = zeros(nband,dtype='f8')
-        else:
-            self.coadd_npix[:]=0
-            self.coadd_wsum[:]=0
-            self.coadd_wmax[:]=0
-            self.coadd_mask_frac[:]=0
-            #self.coadd_psfrec_counts_wsum[:]=0
-            self.coadd_psfrec_T_wsum[:]=0
-            self.coadd_psfrec_g1_wsum[:]=0
-            self.coadd_psfrec_g2_wsum[:]=0
+        self.coadd_npix               = 0.0
+        self.coadd_wsum               = 0.0
+        self.coadd_wsum_byband        = zeros(nband)
+        self.coadd_wmax_byband        = zeros(nband)
+        #self.coadd_psfrec_counts_wsum = zeros(nband,dtype='f8')
+        self.coadd_psfrec_T_wsum      = 0.0
+        self.coadd_psfrec_g1_wsum     = 0.0
+        self.coadd_psfrec_g2_wsum     = 0.0
 
-            self.npix[:]=0
-            self.wsum[:]=0
-            self.wmax[:]=0
-            self.mask_frac[:]=0
-            self.psfrec_counts_wsum[:]=0
-            self.psfrec_T_wsum[:]=0
-            self.psfrec_g1_wsum[:]=0
-            self.psfrec_g2_wsum[:]=0
-
+        self.npix               = 0.0
+        self.wsum               = 0.0
+        self.wsum_byband        = zeros(nband)
+        self.wmax_byband        = zeros(nband)
+        self.psfrec_T_wsum      = 0.0
+        self.psfrec_g1_wsum     = 0.0
+        self.psfrec_g2_wsum     = 0.0
 
     def _unpack_priors(self, priors_in):
         """
@@ -556,7 +536,6 @@ class MedsFit(dict):
             #self.coadd_psfrec_counts_wsum=0.0
 
             #self.band_wsum=0.0
-            #self.psfrec_counts_wsum=0.0
 
             cobs_list, obs_list = self._get_band_observations(band, mindex)
 
@@ -796,155 +775,73 @@ class MedsFit(dict):
                             tab.show()
                             import ipdb
                             ipdb.set_trace()
-                            
-
-    '''
-    def set_psfrec_counts_mean_byband(self, band):
-        dindex=self.dindex
-
-        wsum=self.coadd_band_wsum
-        wcounts_sum=self.coadd_psfrec_counts_wsum
-        if wsum > 0:
-            counts=wcounts_sum/wsum
-        else:
-            counts=DEFVAL
-
-        self.data['coadd_psfrec_counts_mean'][dindex,band]=counts
-
-        wsum=self.band_wsum
-        wcounts_sum=self.psfrec_counts_wsum
-        if wsum > 0:
-            counts=wcounts_sum/wsum
-        else:
-            counts=DEFVAL
-
-        self.data['psfrec_counts_mean'][dindex,band]=counts
-    '''
-
-    def set_psf_means_old(self):
-        dindex=self.dindex
-
-        wsum=self.coadd_wsum
-        wband,=numpy.where( (wsum > 0.0) & (self.coadd_npix > 0) )
-
-        if wband.size > 0:
-            iwsum = 1.0/wsum[wband]
-            T=self.coadd_psfrec_T_wsum[wband]*iwsum
-            g1=self.coadd_psfrec_g1_wsum[wband]*iwsum
-            g2=self.coadd_psfrec_g2_wsum[wband]*iwsum
-            mask_frac=(wsum[wband]/self.coadd_wmax[wband])/self.coadd_npix[wband]
-
-            counts=self.coadd_psfrec_counts_wsum[wband]*iwsum
-        else:
-            T=DEFVAL
-            g1=DEFVAL
-            g2=DEFVAL
-            mask_frac=PDEFVAL
-            counts=DEFVAL
-
-        self.data['coadd_npix'][dindex,wband]=self.coadd_npix[wband]
-        self.data['coadd_wsum'][dindex,wband]=self.coadd_wsum[wband]
-        self.data['coadd_wmax'][dindex,wband]=self.coadd_wmax[wband]
-        self.data['coadd_mask_frac'][dindex,wband]=mask_frac
-        self.data['coadd_psfrec_T'][dindex,wband]=T
-        self.data['coadd_psfrec_g'][dindex,wband,0]=g1
-        self.data['coadd_psfrec_g'][dindex,wband,1]=g2
-        self.data['coadd_psfrec_counts_mean'][dindex,wband]=counts
-
-
-        wsum=self.wsum
-        wband,=numpy.where( (wsum > 0.0) & (self.npix > 0) )
-
-        if wband.size > 0:
-            iwsum = 1.0/wsum[wband]
-            T=self.psfrec_T_wsum[wband]*iwsum
-            g1=self.psfrec_g1_wsum[wband]*iwsum
-            g2=self.psfrec_g2_wsum[wband]*iwsum
-            mask_frac=(wsum[wband]/self.wmax[wband])/self.npix[wband]
-
-            counts=self.psfrec_counts_wsum[wband]*iwsum
-        else:
-            T=DEFVAL
-            g1=DEFVAL
-            g2=DEFVAL
-            mask_frac=1.0
-            counts=DEFVAL
-
-        self.data['npix'][dindex,wband]=self.npix[wband]
-        self.data['wsum'][dindex,wband]=self.wsum[wband]
-        self.data['wmax'][dindex,wband]=self.wmax[wband]
-        self.data['mask_frac'][dindex,wband]=mask_frac
-        self.data['psfrec_T'][dindex,wband]=T
-        self.data['psfrec_g'][dindex,wband,0]=g1
-        self.data['psfrec_g'][dindex,wband,1]=g2
-        self.data['psfrec_counts_mean'][dindex,wband]=counts
-
 
     def set_psf_means(self):
         dindex=self.dindex
 
+        # if npix == 0 there was some problem, and mask_frac would
+        # not be calculable
+
+        npix=self.coadd_npix
         wsum=self.coadd_wsum
-        wband,=numpy.where( (wsum > 0.0) & (self.coadd_npix > 0) )
+        mask_frac=PDEFVAL
+        if npix > 0:
+            wsum_byband=self.coadd_wsum_byband
+            wmax_byband=self.coadd_wmax_byband
+            w,=numpy.where(wmax_byband > 0)
+            if w.size > 0:
+                relsum=(wsum_byband[w]/wmax_byband[w]).sum()
+                mask_frac = 1.0-relsum/npix
 
-        if wband.size > 0:
-            wsum = wsum.sum()
+        if wsum > 0:
             iwsum = 1.0/wsum
-            npix=self.coadd_npix[wband].sum()
-            wmax=self.coadd_wmax[wband].max()
 
-            T=self.coadd_psfrec_T_wsum[wband].sum()*iwsum
-            g1=self.coadd_psfrec_g1_wsum[wband].sum()*iwsum
-            g2=self.coadd_psfrec_g2_wsum[wband].sum()*iwsum
-            mask_frac=(wsum/wmax)/npix
+            T  = self.coadd_psfrec_T_wsum*iwsum
+            g1 = self.coadd_psfrec_g1_wsum*iwsum
+            g2 = self.coadd_psfrec_g2_wsum*iwsum
 
         else:
             wsum=0.0
-            npix=0
-            wmax=0.0
             T=DEFVAL
             g1=DEFVAL
             g2=DEFVAL
-            mask_frac=PDEFVAL
 
-        self.data['coadd_npix'][dindex]=npix
-        self.data['coadd_wsum'][dindex]=wsum
-        self.data['coadd_wmax'][dindex]=wmax
         self.data['coadd_mask_frac'][dindex]=mask_frac
         self.data['coadd_psfrec_T'][dindex]=T
         self.data['coadd_psfrec_g'][dindex,0]=g1
         self.data['coadd_psfrec_g'][dindex,1]=g2
 
+        npix=self.npix
         wsum=self.wsum
-        wband,=numpy.where( (wsum > 0.0) & (self.npix > 0) )
 
-        if wband.size > 0:
-            wsum = wsum.sum()
+        npix=self.npix
+        wsum=self.wsum
+        mask_frac=PDEFVAL
+        if npix > 0:
+            wsum_byband=self.wsum_byband
+            wmax_byband=self.wmax_byband
+            w,=numpy.where(wmax_byband > 0)
+            if w.size > 0:
+                relsum=(wsum_byband[w]/wmax_byband[w]).sum()
+                mask_frac = 1.0-relsum/npix
+
+        if wsum > 0:
             iwsum = 1.0/wsum
-            npix=self.npix[wband].sum()
-            wmax=self.wmax[wband].max()
 
-            T=self.psfrec_T_wsum[wband].sum()*iwsum
-            g1=self.psfrec_g1_wsum[wband].sum()*iwsum
-            g2=self.psfrec_g2_wsum[wband].sum()*iwsum
-            mask_frac=(wsum/wmax)/npix
+            T  = self.psfrec_T_wsum*iwsum
+            g1 = self.psfrec_g1_wsum*iwsum
+            g2 = self.psfrec_g2_wsum*iwsum
 
         else:
             wsum=0.0
-            npix=0
-            wmax=0.0
             T=DEFVAL
             g1=DEFVAL
             g2=DEFVAL
-            mask_frac=PDEFVAL
 
-        self.data['npix'][dindex]=npix
-        self.data['wsum'][dindex]=wsum
-        self.data['wmax'][dindex]=wmax
         self.data['mask_frac'][dindex]=mask_frac
         self.data['psfrec_T'][dindex]=T
         self.data['psfrec_g'][dindex,0]=g1
         self.data['psfrec_g'][dindex,1]=g2
-
 
 
     def _reject_outliers(self, obs_list):
@@ -1072,28 +969,29 @@ class MedsFit(dict):
         g1,g2,T=psf_gmix.get_g1g2T()
 
         if icut==0:
-            self.coadd_npix[band] += npix
+            self.coadd_npix += npix
             #self.coadd_psfrec_counts_wsum[band] += imsum*wsum
-            self.coadd_psfrec_T_wsum[band] += T*wsum
-            self.coadd_psfrec_g1_wsum[band] += g1*wsum
-            self.coadd_psfrec_g2_wsum[band] += g2*wsum
-            self.coadd_wsum[band] += wsum
+            self.coadd_psfrec_T_wsum += T*wsum
+            self.coadd_psfrec_g1_wsum += g1*wsum
+            self.coadd_psfrec_g2_wsum += g2*wsum
+            self.coadd_wsum += wsum
+            self.coadd_wsum_byband[band] += wsum
 
-            if wmax > self.coadd_wmax[band]:
-                self.coadd_wmax[band]=wmax
+            if wmax > self.coadd_wmax_byband[band]:
+                self.coadd_wmax_byband[band]=wmax
         else:
-            self.npix[band] += npix
-            self.psfrec_counts_wsum[band] += imsum*wsum
-            self.psfrec_T_wsum[band] += T*wsum
-            self.psfrec_g1_wsum[band] += g1*wsum
-            self.psfrec_g2_wsum[band] += g2*wsum
-            self.wsum[band] += wsum
+            self.npix += npix
+            self.psfrec_T_wsum += T*wsum
+            self.psfrec_g1_wsum += g1*wsum
+            self.psfrec_g2_wsum += g2*wsum
+            self.wsum += wsum
+            self.wsum_byband[band] += wsum
 
-            if wmax > self.wmax[band]:
-                self.wmax[band]=wmax
+            if wmax > self.wmax_byband[band]:
+                self.wmax_byband[band]=wmax
 
         self._set_psf_result(psf_gmix, imsum)
-        self._set_wsum_wmax(wsum,wmax)
+        self._set_wsum_wmax_npix(wsum,wmax,npix)
 
         psf_obs.set_gmix(psf_gmix)
 
@@ -1295,12 +1193,13 @@ class MedsFit(dict):
         ed['psf_fit_pars'][epoch_index,:] = pars
 
 
-    def _set_wsum_wmax(self, wsum, wmax):
+    def _set_wsum_wmax_npix(self, wsum, wmax, npix):
         """
         set weight sum and max for this epoch
         """
 
         epoch_index=self.epoch_index
+        self.epoch_data['npix'][epoch_index] = npix
         self.epoch_data['wsum'][epoch_index] = wsum
         self.epoch_data['wmax'][epoch_index] = wmax
 
@@ -2049,17 +1948,20 @@ class MedsFit(dict):
 
     def _print_res(self, fitter, coadd=False):
         res=fitter.get_result()
+        dindex=self.dindex
         if res['flags']==0:
             if coadd:
                 type='coadd'
+                mask_frac=self.data['coadd_mask_frac'][dindex]
             else:
                 type='mb'
+                mask_frac=self.data['mask_frac'][dindex]
 
             print("        %s linear pars:" % type)
             print_pars(res['pars'],    front='        ')
             print_pars(res['pars_err'],front='        ')
             if 'arate' in res:
-                print('        arate:',res['arate'])
+                print('        arate:',res['arate'],'mask_frac',mask_frac)
 
     def _setup_checkpoints(self):
         """
@@ -2164,12 +2066,15 @@ class MedsFit(dict):
         """
         get all model names, includeing the coadd_ ones
         """
+        return make_all_model_names(self['fit_models'], self['fit_me_galaxy'])
+        '''
         models=['coadd_%s' % model for model in self['fit_models']]
 
         if self['fit_me_galaxy']:
             models = models + self['fit_models']
 
         return models
+        '''
 
     def _count_all_cutouts(self):
         """
@@ -2199,6 +2104,7 @@ class MedsFit(dict):
             ('orig_col','f8'),
             ('file_id','i4'),   # id in meds file
             ('image_id','i8'),  # image_id specified in meds creation, e.g. for image table
+            ('npix','i4'), # was not in ngmix009
             ('wsum','f8'),
             ('wmax','f8'),
             ('psf_fit_flags','i4'),
@@ -2250,36 +2156,14 @@ class MedsFit(dict):
 
             ('box_size','i2'),
 
-            #('coadd_npix','i4',bshape),
-            #('coadd_wsum','f8',bshape),
-            #('coadd_wmax','f8',bshape),
-            #('coadd_mask_frac','f8',bshape),
-            #('coadd_psfrec_counts_mean','f8',bshape),
-            #('coadd_psfrec_T','f8',bshape),
-            #('coadd_psfrec_g','f8', (nband,2)),
-
-            #('npix','i4',bshape),
-            #('wsum','f8',bshape),
-            #('wmax','f8',bshape),
-            #('mask_frac','f8',bshape),
-            #('psfrec_counts_mean','f8',bshape),
-            #('psfrec_T','f8',bshape),
-            #('psfrec_g','f8', (nband,2))
-
             ('coadd_npix','i4'),
-            ('coadd_wsum','f8'),
-            ('coadd_wmax','f8'),
             ('coadd_mask_frac','f8'),
             ('coadd_psfrec_T','f8'),
             ('coadd_psfrec_g','f8', 2),
 
-            ('npix','i4'),
-            ('wsum','f8'),
-            ('wmax','f8'),
             ('mask_frac','f8'),
             ('psfrec_T','f8'),
             ('psfrec_g','f8', 2)
-
 
            ]
 
@@ -3559,3 +3443,16 @@ class Namer(object):
             return name
         else:
             return '%s_%s' % (self.front, name)
+
+def make_all_model_names(fit_models, fit_me_galaxy):
+    """
+    get all model names, includeing the coadd_ ones
+    """
+    models=['coadd_%s' % model for model in fit_models]
+
+    if fit_me_galaxy:
+        models = models + fit_models
+
+    return models
+
+
