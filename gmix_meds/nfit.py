@@ -352,6 +352,9 @@ class MedsFit(dict):
         # fit both coadd and se psf flux if exists
         self._fit_psf_flux()
 
+        if 'fit_coadd_galaxy' not in self:
+            self['fit_coadd_galaxy'] = True
+        
         dindex=self.dindex
         s2n=self.data['coadd_psf_flux'][dindex,:]/self.data['coadd_psf_flux_err'][dindex,:]
         max_s2n=numpy.nanmax(s2n)
@@ -360,8 +363,9 @@ class MedsFit(dict):
             for model in self['fit_models']:
                 print('    fitting:',model)
 
-                print('    coadd')
-                self._run_model_fit(model, coadd=True)
+                if self['fit_coadd_galaxy']:
+                    print('    coadd')
+                    self._run_model_fit(model, coadd=True)
 
                 if self['fit_me_galaxy']:
                     print('    multi-epoch')
@@ -2509,6 +2513,9 @@ class MHMedsFitHybrid(MedsFit):
         # fit both coadd and se psf flux if exists
         self._fit_psf_flux()
 
+        if 'fit_coadd_galaxy' not in self:
+            self['fit_coadd_galaxy'] = True
+        
         dindex=self.dindex
         s2n=self.data['coadd_psf_flux'][dindex,:]/self.data['coadd_psf_flux_err'][dindex,:]
         max_s2n=numpy.nanmax(s2n)
@@ -2516,9 +2523,10 @@ class MHMedsFitHybrid(MedsFit):
         if max_s2n >= self['min_psf_s2n'] and len(self['fit_models']) > 0:
             for model in self['fit_models']:
                 print('    fitting:',model)
-
-                print('    coadd')
-                self._run_model_fit(model, self['coadd_fitter_class'],coadd=True)
+                
+                if self['fit_coadd_galaxy']:
+                    print('    coadd')
+                    self._run_model_fit(model, self['coadd_fitter_class'],coadd=True)
 
                 if self['fit_me_galaxy']:
                     print('    multi-epoch')
@@ -2729,13 +2737,13 @@ class MHMedsFitModelNbrs(MHMedsFitHybrid):
             pars = self.model_data['model_fits'][n(nmod('pars_best'))][mindex_global]
             pars_cov = self.model_data['model_fits'][n(nmod('pars_cov'))][mindex_global]
             pars_err = numpy.array([numpy.sqrt(pars_cov[i,i]) for i in xrange(len(pars))])
-            self.guesser=FromFullParsGuesser(pars,pars_err,scaling=None)
+            self.guesser=FromFullParsGuesser(pars,pars_err)
             mb_obs_list=self.sdata['coadd_mb_obs_list']
         else:
             pars = self.model_data['model_fits'][nmod('pars_best')][mindex_global]
             pars_cov = self.model_data['model_fits'][nmod('pars_cov')][mindex_global]
             pars_err = numpy.array([numpy.sqrt(pars_cov[i,i]) for i in xrange(len(pars))])
-            self.guesser=FromFullParsGuesser(pars,pars_err,scaling=None)
+            self.guesser=FromFullParsGuesser(pars,pars_err)
             mb_obs_list=self.sdata['mb_obs_list']
 
         fitter=self._fit_model(mb_obs_list,
@@ -2840,7 +2848,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                 pars_err = greedyfit._result['pars']*0.05
             bestlk = greedyfit.calc_lnprob(pars)
             print('            greedy min:  ',fmt%tuple(pars),'loglike = %lf'%bestlk)
-            self.guesser = FromAlmostFullParsGuesser(pars,pars_err,scaling=None)
+            self.guesser = FromAlmostFullParsGuesser(pars,pars_err)
         
         if numpy.all(numpy.abs(pars) < 1e7):
             return self.guesser
@@ -3207,7 +3215,7 @@ class FromAlmostFullParsGuesser(GuesserBase):
             maxitr = 100
             while itr < maxitr:
                 for i in xrange(2,npars):
-                    if self.scaling=='linear':
+                    if self.scaling=='linear' and i >= 4:
                         if pars[i] <= 0.0:
                             guess[j,:] = width[i]*srandu(1)
                         else:
@@ -3262,7 +3270,7 @@ class FromFullParsGuesser(GuesserBase):
             maxitr = 100
             while itr < maxitr:
                 for i in xrange(npars):
-                    if self.scaling=='linear':
+                    if self.scaling=='linear' and i >= 4:
                         if pars[i] <= 0.0:
                             guess[j,:] = width[i]*srandu(1)
                         else:
