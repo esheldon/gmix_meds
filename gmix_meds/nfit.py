@@ -2600,6 +2600,8 @@ class MHMedsFitHybrid(MedsFit):
         from ngmix.fitting import MHSimple
         from .util import clip_element_wise
 
+        fac=0.4
+
         mhpars=self['mh_pars']
 
         # note flat on g!
@@ -2607,13 +2609,13 @@ class MHMedsFitHybrid(MedsFit):
 
         guess,sigmas=self.guesser(get_sigmas=True, prior=prior)
 
-        step_sizes = 0.5*sigmas
+        step_sizes = fac*sigmas
 
         # this is 5-element, use 5th for all fluxes
         min_steps = numpy.zeros(5+self['nband'])
         min_steps[0:5] = mhpars['min_step_sizes'][0:5]
         min_steps[5:] = mhpars['min_step_sizes'][5]
-        max_steps = 0.5*self.priors[model].get_widths()
+        max_steps = fac*self.priors[model].get_widths()
 
         print_pars(max_steps, front="        max_steps:")
 
@@ -2652,17 +2654,6 @@ class MHMedsFitHybrid(MedsFit):
             else:
                 trials = fitter.get_trials()
                 errors=trials[-n:, :].std(axis=0)
-
-                fac=0.5
-                '''
-                if arate > 0.6:
-                    # the variance will be too low because not moving fast enough
-                    # so use bigger steps
-                    fac=0.75
-                else:
-                    # the variance should be about right hopefully
-                    fac=0.5
-                '''
                 step_sizes = errors*fac
 
             clip_element_wise(step_sizes, min_steps, max_steps)
@@ -2860,9 +2851,13 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
             else:
                 greedyfit = self._fit_simple_max(mb_obs_list, model, params)
 
-            pars = greedyfit._result['pars']
-            if 'pars_err' in greedyfit._result:
-                pars_err = greedyfit._result['pars_err']
+            res=greedyfit.get_result()
+            if res['flags'] != 0:
+                return None
+
+            pars = res['pars']
+            if 'pars_err' in res:
+                pars_err = res['pars_err']
             else:
                 pars_err = numpy.abs(greedyfit._result['pars'])*0.05
 
@@ -2872,7 +2867,8 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
 
             self.guesser = FromAlmostFullParsGuesser(pars,pars_err)
         
-        if numpy.all(numpy.abs(pars) < 1e7):
+        # our prior on flux goes up to 1.0e9
+        if numpy.all(numpy.abs(pars) < 1e9):
             return self.guesser
         else:
             return None
