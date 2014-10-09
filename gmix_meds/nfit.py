@@ -139,6 +139,8 @@ class MedsFit(dict):
 
         self['use_psf_rerun']=self.get('use_psf_rerun',False)
 
+        self['fit_coadd_galaxy'] = self.get('fit_coadd_galaxy',True)
+
         if self.model_data is not None:
             self['model_neighbors']=True
         else:
@@ -352,9 +354,6 @@ class MedsFit(dict):
         # fit both coadd and se psf flux if exists
         self._fit_psf_flux()
 
-        if 'fit_coadd_galaxy' not in self:
-            self['fit_coadd_galaxy'] = True
-        
         dindex=self.dindex
         s2n=self.data['coadd_psf_flux'][dindex,:]/self.data['coadd_psf_flux_err'][dindex,:]
         max_s2n=numpy.nanmax(s2n)
@@ -2062,15 +2061,9 @@ class MedsFit(dict):
         """
         get all model names, includeing the coadd_ ones
         """
-        return make_all_model_names(self['fit_models'], self['fit_me_galaxy'])
-        '''
-        models=['coadd_%s' % model for model in self['fit_models']]
-
-        if self['fit_me_galaxy']:
-            models = models + self['fit_models']
-
-        return models
-        '''
+        return make_all_model_names(self['fit_models'],
+                                    self['fit_me_galaxy'],
+                                    self['fit_coadd_galaxy'])
 
     def _count_all_cutouts(self):
         """
@@ -2605,6 +2598,7 @@ class MHMedsFitHybrid(MedsFit):
         """
 
         from ngmix.fitting import MHSimple
+        from .util import clip_element_wise
 
         mhpars=self['mh_pars']
 
@@ -2613,26 +2607,17 @@ class MHMedsFitHybrid(MedsFit):
 
         guess,sigmas=self.guesser(get_sigmas=True, prior=prior)
 
-        #for olist in mb_obs_list:
-        #    print("    image filename:",olist[0].filename)
-        #    print("    psfex filename:",olist[0].psf.filename)
-
         step_sizes = 0.5*sigmas
 
         # this is 5-element, use 5th for all fluxes
-        min_steps = mhpars['min_step_sizes']
+        min_steps = numpy.zeros(5+self['nband'])
+        min_steps[0:5] = mhpars['min_step_sizes'][0:5]
+        min_steps[5:] = mhpars['min_step_sizes'][5]
         max_steps = 0.5*self.priors[model].get_widths()
 
         print_pars(max_steps, front="        max_steps:")
 
-        for i in xrange(guess.size):
-            if i > 5:
-                min_step=min_steps[5]
-            else:
-                min_step=min_steps[i]
-            max_step=max_steps[i]
-
-            step_sizes[i] = step_sizes[i].clip(min=min_step, max=max_step)
+        clip_element_wise(step_sizes, min_steps, max_steps)
 
         print_pars(step_sizes, front="        step sizes:")
 
@@ -2652,23 +2637,47 @@ class MHMedsFitHybrid(MedsFit):
         arate = acc[-n:].sum()/(1.0*n)
         print("        arate of last",n,"is",arate)
 
-        if arate < 0.01:
-            fac=0.01/0.5
-        else:
-            fac = arate/0.5
+        if arate < 0.4 or arate > 0.6:
+            print("        recalculating step sizes")
+            # change step sizes and run another burnin
 
-        pos=fitter.get_best_pars()
-        print_pars(pos,        front="            mh start after 1st burnin:")
+            if False:
+                if arate < 0.01:
+                    fac=0.01/0.5
+                else:
+                    fac = arate/0.5
 
-        step_sizes *= fac
-        fitter.set_step_sizes(step_sizes)
-        print_pars(step_sizes, front="            new step sizes:")
 
-        pos=fitter.run_mcmc(pos,mhpars['burnin'])
+                step_sizes *= fac
+            else:
+                trials = fitter.get_trials()
+                errors=trials[-n:, :].std(axis=0)
+
+                fac=0.5
+                '''
+                if arate > 0.6:
+                    # the variance will be too low because not moving fast enough
+                    # so use bigger steps
+                    fac=0.75
+                else:
+                    # the variance should be about right hopefully
+                    fac=0.5
+                '''
+                step_sizes = errors*fac
+
+            clip_element_wise(step_sizes, min_steps, max_steps)
+
+            fitter.set_step_sizes(step_sizes)
+
+            pos=fitter.get_best_pars()
+            print_pars(pos,        front="            mh start after 1st burnin:")
+            print_pars(step_sizes, front="            new step sizes:")
+
+            pos=fitter.run_mcmc(pos,mhpars['burnin'])
 
         # in case we ended on a bad point
         pos=fitter.get_best_pars()
-        print_pars(pos,        front="            mh start after 2nd burnin:")
+        print_pars(pos,        front="            mh start after burnin:")
         pos=fitter.run_mcmc(pos,mhpars['nstep'])
 
         return fitter
@@ -2788,17 +2797,18 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
             for model in self['fit_models']:
                 print('    fitting:',model)
                 
-                print('    coadd iter fit')                
-                self.coadd_guesser = \
-                    self._guess_params_iter(self.sdata['coadd_mb_obs_list'], 
-                                            model, 
-                                            self['coadd_iter'],
-                                            self._get_guesser('coadd_psf'))
-                if self.coadd_guesser == None:
-                    self.coadd_guesser = self._get_guesser('coadd_psf')
-                
-                print('    coadd')                
-                self._run_model_fit(model, self['coadd_fitter_class'],coadd=True)
+                if self['fit_coadd_galaxy']:
+                    print('    coadd iter fit')                
+                    self.coadd_guesser = \
+                        self._guess_params_iter(self.sdata['coadd_mb_obs_list'], 
+                                                model, 
+                                                self['coadd_iter'],
+                                                self._get_guesser('coadd_psf'))
+                    if self.coadd_guesser == None:
+                        self.coadd_guesser = self._get_guesser('coadd_psf')
+                    
+                    print('    coadd')                
+                    self._run_model_fit(model, self['coadd_fitter_class'],coadd=True)
 
                 if self['fit_me_galaxy']:
                     if 'me_iter' in self:
@@ -2827,27 +2837,39 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
 
     def _guess_params_iter(self, mb_obs_list, model, params, start):
         fmt = "%.6f "*(5+self['nband'])
-        print('        using method \'%s\' for minimizer' % params['min_method'])
+
+        print("        using method '%s' for minimizer" % params['min_method'])
+
         for i in xrange(params['max']):
-            print('        iter % 3d of %d'%(i+1,params['max']))
+            print('        iter % 3d of %d' % (i+1,params['max']))
+
             if i == 0:
                 self.guesser = start
+
             emceefit = self._fit_simple_emcee_guess(mb_obs_list, model, params)
+
             pars = emceefit.get_best_pars()
             bestlk = numpy.max(emceefit.get_lnprobs())
-            print('            emcee:       ',fmt%tuple(pars),'loglike = %lf'%bestlk)
-            self.guesser = FixedParsGuesser(pars,pars*0.1) #making that up, but it doesn't matter                    
+            print('            emcee:       ',
+                  fmt % tuple(pars), 'loglike = %lf' % bestlk)
+
+            # making that up, but it doesn't matter                    
+            self.guesser = FixedParsGuesser(pars,pars*0.1)
             if params['min_method'] == 'lm':
                 greedyfit = self._fit_simple_lm(mb_obs_list, model, params)
             else:
                 greedyfit = self._fit_simple_max(mb_obs_list, model, params)
+
             pars = greedyfit._result['pars']
             if 'pars_err' in greedyfit._result:
                 pars_err = greedyfit._result['pars_err']
             else:
-                pars_err = greedyfit._result['pars']*0.05
+                pars_err = numpy.abs(greedyfit._result['pars'])*0.05
+
             bestlk = greedyfit.calc_lnprob(pars)
-            print('            greedy min:  ',fmt%tuple(pars),'loglike = %lf'%bestlk)
+            print('            greedy min:  ',
+                  fmt % tuple(pars),'loglike = %lf' % bestlk)
+
             self.guesser = FromAlmostFullParsGuesser(pars,pars_err)
         
         if numpy.all(numpy.abs(pars) < 1e7):
@@ -3454,11 +3476,15 @@ class Namer(object):
         else:
             return '%s_%s' % (self.front, name)
 
-def make_all_model_names(fit_models, fit_me_galaxy):
+def make_all_model_names(fit_models, fit_me_galaxy, fit_coadd_galaxy):
     """
     get all model names, includeing the coadd_ ones
     """
-    models=['coadd_%s' % model for model in fit_models]
+
+    models=[]
+
+    if fit_coadd_galaxy:
+        models = models + ['coadd_%s' % model for model in fit_models]
 
     if fit_me_galaxy:
         models = models + fit_models

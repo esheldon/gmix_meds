@@ -2,6 +2,7 @@ fitter: "ngmix"
 fitter_class: "mh"
 coadd_fitter_class: "emcee"
 fit_me_galaxy: True
+fit_coadd_galaxy: False
 
 check_image_flags: True
 
