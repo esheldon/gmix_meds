@@ -2,9 +2,6 @@ from . import nfit
 from . import nfitcoadd
 from .nfit import MedsFit
 
-from . import lmfit
-from . import lmfit_mb
-
 from . import collate
 from . import qa
 from . import double_psf
