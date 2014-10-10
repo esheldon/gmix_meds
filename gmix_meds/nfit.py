@@ -15,7 +15,7 @@ import psfex
 import ngmix
 from ngmix import srandu
 from ngmix import Jacobian
-from ngmix import GMixMaxIterEM, GMixRangeError, print_pars
+from ngmix import GMixMaxIterEM, GMixRangeError, print_pars_ngmix
 from ngmix import Observation, ObsList, MultiBandObsList
 from ngmix import GMixModel, GMix
 
@@ -131,6 +131,8 @@ class MedsFit(dict):
 
         self['fit_coadd_galaxy'] = self.get('fit_coadd_galaxy',True)
 
+        self['print_params'] = self.get('print_params',True)
+
         if self.model_data is not None:
             self['model_neighbors']=True
         else:
@@ -209,6 +211,10 @@ class MedsFit(dict):
 
         self.priors=priors
         self.gflat_priors=gflat_priors
+
+    def _print_pars(self, pars, **kw):
+        if self['print_params']:
+            print_pars_ngmix(pars,**kw)
 
     def get_data(self):
         """
@@ -424,8 +430,7 @@ class MedsFit(dict):
 
         epars=self['emcee_pars']
         guess=self.guesser(n=epars['nwalkers'], prior=prior)
-        fmt = "%.6f "*(5+self['nband'])
-        print("        emcee guess: ",fmt%tuple(numpy.mean(guess,axis=0)))
+        self._print_pars(tuple(numpy.mean(guess,axis=0)),front="        emcee guess: ")
         #for olist in mb_obs_list:
         #    print("    image filename:",olist[0].filename)
         #    print("    psfex filename:",olist[0].psf.filename)
@@ -442,7 +447,7 @@ class MedsFit(dict):
         pos=fitter.run_mcmc(pos,epars['nstep'])
 
         p = fitter.get_best_pars()
-        print("        emcee final: ",fmt%tuple(p))
+        self._print_pars(tuple(p),front="        emcee final: ")
         
         return fitter
 
@@ -557,6 +562,20 @@ class MedsFit(dict):
 
         return coadd_mb_obs_list, mb_obs_list, n_im
 
+    def _check_model_nbrs_flags(self, cid, ntot, nmodel):
+        if self.model_data['model_fits'][ntot(nmodel(self['nbrs_model']['flags']))][cid] != 0:
+            return False
+        
+        if 'arate_min' in self['nbrs_model']:
+            if self.model_data['model_fits'][ntot(nmodel('arate'))][cid] <= self['nbrs_model']['arate_min']:
+                return False
+            
+        if 'arate_max' in self['nbrs_model']:
+            if self.model_data['model_fits'][ntot(nmodel('arate'))][cid] >= self['nbrs_model']['arate_max']:
+                return False
+        
+        return True
+
     def _model_neighbors(self, mb_obs_list, coadd=False):
         """
         model the neighbors
@@ -612,7 +631,7 @@ class MedsFit(dict):
                     
                     for cid in ids:
                         #check all flags first
-                        if self.model_data['model_fits'][self['nbrs_model']['flags']][cid] == 0:
+                        if self.model_data['model_fits']['flags'][cid] == 0:
                             
                             #if have extra info, check its flags
                             if 'model_extra_info' in self.model_data:
@@ -624,13 +643,13 @@ class MedsFit(dict):
                             # otherwise pick model with zero flags
                             # othrwise pick best
                             if self['nbrs_model']['model'] == 'best_chi2per':
-                                if self.model_data['model_fits'][ntot(nexp(self['nbrs_model']['flags']))][cid] != 0 \
-                                        and self.model_data['model_fits'][ntot(ndev(self['nbrs_model']['flags']))][cid] != 0:
+                                if self._check_model_nbrs_flags(cid, ntot, nexp) == False and \
+                                        self._check_model_nbrs_flags(cid, ntot, ndev) == False:
                                     continue
-                                elif self.model_data['model_fits'][ntot(nexp(self['nbrs_model']['flags']))][cid] != 0:
+                                elif self._check_model_nbrs_flags(cid, ntot, nexp) == False:
                                     nmodel = ndev
                                     model = 'dev'
-                                elif self.model_data['model_fits'][ntot(ndev(self['nbrs_model']['flags']))][cid] != 0:
+                                elif self._check_model_nbrs_flags(cid, ntot, ndev) == False:
                                     nmodel = nexp
                                     model = 'exp'
                                 elif self.model_data['model_fits'][ntot(nexp('chi2per'))][cid] > \
@@ -642,13 +661,13 @@ class MedsFit(dict):
                                     model = 'exp'
                             
                             #always reject models with bad flags
-                            if self.model_data['model_fits'][ntot(nmodel(self['nbrs_model']['flags']))][cid] != 0:
+                            if self._check_model_nbrs_flags(cid, ntot, nmodel) == False:
                                 continue
                             
                             #see if need good ME fit 
                             if 'require_me_goodfit' in self['nbrs_model']:
                                 if self['nbrs_model']['require_me_goodfit']:
-                                    if self.model_data['model_fits'][nme(nmodel(self['nbrs_model']['flags']))][cid] != 0:
+                                    if self._check_model_nbrs_flags(cid, nme, nmodel) == False
                                         continue
                             
                             ##################################################
@@ -743,14 +762,14 @@ class MedsFit(dict):
                         if cen_image is None:
                             cen_image = numpy.zeros_like(obs.image)
                         
-                        tab[0,0] = images.view(obs.image_orig,title='original image',show=False)
-                        tab[0,1] = images.view(tot_image-cen_image,title='models of nbrs',show=False)
+                        tab[0,0] = images.view(obs.image_orig,title='original image',show=False,nonlinear=0.075)
+                        tab[0,1] = images.view(tot_image-cen_image,title='models of nbrs',show=False,nonlinear=0.075)
                         if coadd:
                             tab[0,2] = images.view(plot_seg(seg),title='seg map',show=False)
                         else:
                             tab[0,2] = images.view(plot_seg(meds.interpolate_coadd_seg(mindex_local,icut_cen)),title='seg map',show=False)
                         
-                        tab[1,0] = images.view(obs.image,title='corrected image',show=False)
+                        tab[1,0] = images.view(obs.image,title='corrected image',show=False,nonlinear=0.075)
                         msk = tot_image != 0
                         frac = numpy.zeros(tot_image.shape)
                         frac[msk] = cen_image[msk]/tot_image[msk]
@@ -1982,9 +2001,10 @@ class MedsFit(dict):
             else:
                 type='mb'
 
-            print("        %s linear pars:" % type)
-            print_pars(res['pars'],    front='        ')
-            print_pars(res['pars_err'],front='        ')
+            if self['print_pars']:
+                print("        %s linear pars:" % type)
+            self._print_pars(res['pars'],    front='        ')
+            self._print_pars(res['pars_err'],front='        ')
             if 'arate' in res:
                 print('        arate:',res['arate'])
 
@@ -2464,12 +2484,12 @@ class MHMedsFitLM(MedsFit):
         step_sizes = 0.5*sigmas
 
         max_step = 0.5*self.priors[model].get_widths()
-        print_pars(max_step, front="        max_step:")
+        self._print_pars(max_step, front="        max_step:")
 
         for i in xrange(guess.size):
             step_sizes[i] = step_sizes[i].clip(max=max_step[i])
 
-        print_pars(step_sizes, front="        step sizes:")
+        self._print_pars(step_sizes, front="        step sizes:")
 
         fitter=MHSimple(mb_obs_list,
                         model,
@@ -2479,9 +2499,9 @@ class MHMedsFitLM(MedsFit):
                         random_state=self.random_state)
 
         mhpars=self['mh_pars']
-        print_pars(guess,front="    mh guess:")
+        self._print_pars(guess,front="    mh guess:")
         pos=fitter.run_mcmc(guess,mhpars['burnin'])
-        print_pars(guess,front="    mh start after burnin:")
+        self._print_pars(guess,front="    mh start after burnin:")
         pos=fitter.run_mcmc(pos,mhpars['nstep'])
 
         return fitter
@@ -2503,7 +2523,7 @@ class MHMedsFitLM(MedsFit):
         ntry=self['gal_lm_ntry']
         for i in xrange(ntry):
             guess=self.guesser()
-            print_pars(guess, front='            lm guess:')
+            self._print_pars(guess, front='            lm guess:')
 
             fitter=LMSimple(mb_obs_list,
                             model,
@@ -2647,11 +2667,11 @@ class MHMedsFitHybrid(MedsFit):
         min_steps[5:] = mhpars['min_step_sizes'][5]
         max_steps = fac*self.priors[model].get_widths()
 
-        print_pars(max_steps, front="        max_steps:")
+        self._print_pars(max_steps, front="        max_steps:")
 
         clip_element_wise(step_sizes, min_steps, max_steps)
 
-        print_pars(step_sizes, front="        step sizes:")
+        self._print_pars(step_sizes, front="        step sizes:")
 
         fitter=MHSimple(mb_obs_list,
                         model,
@@ -2660,7 +2680,7 @@ class MHMedsFitHybrid(MedsFit):
                         nu=self['nu'],
                         random_state=self.random_state)
 
-        print_pars(guess,front="        mh guess:   ")
+        self._print_pars(guess,front="        mh guess:   ")
         pos=fitter.run_mcmc(guess,mhpars['burnin'])
 
         n=int(mhpars['burnin']*0.1)
@@ -2690,14 +2710,14 @@ class MHMedsFitHybrid(MedsFit):
             fitter.set_step_sizes(step_sizes)
 
             pos=fitter.get_best_pars()
-            print_pars(pos,        front="            mh start after 1st burnin:")
-            print_pars(step_sizes, front="            new step sizes:")
+            self._print_pars(pos,        front="            mh start after 1st burnin:")
+            self._print_pars(step_sizes, front="            new step sizes:")
 
             pos=fitter.run_mcmc(pos,mhpars['burnin'])
 
         # in case we ended on a bad point
         pos=fitter.get_best_pars()
-        print_pars(pos,        front="            mh start after burnin:")
+        self._print_pars(pos,        front="            mh start after burnin:")
         pos=fitter.run_mcmc(pos,mhpars['nstep'])
 
         return fitter

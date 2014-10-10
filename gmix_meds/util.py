@@ -26,6 +26,7 @@ class Namer(object):
         else:
             return '%s_%s' % (self.front, name)
 
+from ngmix import print_pars
 
 class GuesserBase(object):
     def _fix_guess(self, guess, prior, ntry=4):

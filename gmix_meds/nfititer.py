@@ -274,7 +274,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         ntry=params['lm_ntry']
         for i in xrange(ntry):
             guess=self.guesser(prior=prior)
-            #print_pars(guess, front='            lm guess:')
+            #self._print_pars(guess, front='            lm guess:')
 
             fitter=LMSimple(mb_obs_list,
                             model,
