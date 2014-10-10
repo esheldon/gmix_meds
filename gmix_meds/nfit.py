@@ -1348,6 +1348,8 @@ class MedsFit(dict):
     def _get_guesser(self, guess_type):
         if guess_type=='coadd_psf':
             guesser=self._get_guesser_from_coadd_psf()
+        if guess_type=='me_psf':
+            guesser=self._get_guesser_from_me_psf()
 
         elif guess_type=='coadd_cat':
             guesser=self._get_guesser_from_coadd_cat()
@@ -1409,6 +1411,44 @@ class MedsFit(dict):
 
         guesser=FromPSFGuesser(T, psf_flux)
         return guesser
+
+    def _get_guesser_from_me_psf(self):
+        """
+        take flux guesses from psf take canonical center (0,0)
+        and near zero ellipticity.  Size is taken from around the
+        expected psf size, which is about 0.9''
+
+        The size will often be too big
+
+        """
+        print('        getting guess from me psf')
+
+        dindex=self.dindex
+        data=self.data
+
+        psf_flux=data['psf_flux'][dindex,:].copy()
+        psf_flux=psf_flux.clip(min=0.1, max=1.0e9)
+
+        nband=self['nband']
+        w,=numpy.where(data['psf_flags'][dindex,:] != 0)
+        if w.size > 0:
+            print("    found %s/%s psf failures" % (w.size,nband))
+            if w.size == psf_flux.size:
+                val=5.0
+                print("setting all to default:",val)
+            else:
+                wgood,=numpy.where(data['psf_flags'][dindex,:] == 0)
+                val=numpy.median(psf_flux[wgood])
+                print("setting to median:",val)
+
+            psf_flux[w] = val
+
+        # arbitrary
+        T = 2*(0.9/2.35)**2
+
+        guesser=FromPSFGuesser(T, psf_flux)
+        return guesser
+
 
     def _get_coadd_cat_best(self):
         """
@@ -2807,11 +2847,11 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                             self._guess_params_iter(self.sdata['mb_obs_list'],
                                                     model, 
                                                     self['me_iter'], 
-                                                    self._get_guesser('coadd_psf'))
+                                                    self._get_guesser('me_psf'))
                     else:
                         self.me_guesser = None
                     if self.me_guesser == None:
-                        self.me_guesser = self._get_guesser('coadd_psf')
+                        self.me_guesser = self._get_guesser('me_psf')
                         
                     print('    multi-epoch')
                     # fitter class should be mh...
@@ -2856,7 +2896,9 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
 
             # must ignore errors in nedler-mead
             doemcee=True
-            self.guesser = FixedParsGuesser(res1['pars'],emcee_pars*0.1)
+            #self.guesser = FixedParsGuesser(res1['pars'],emcee_pars*0.1)
+            self.guesser = FromFullParsGuesser(res1['pars'],emcee_pars*0.1)
+            #self.guesser = FromAlmostFullParsGuesser(res1['pars'],emcee_pars*0.1)
 
             greedyfit2 = self._fit_simple_lm(mb_obs_list, model, params)
             res2=greedyfit2.get_result()
@@ -3017,7 +3059,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
 
         return fitter
 
-    def _fit_simple_lm(self, mb_obs_list, model, params):
+    def _fit_simple_lm(self, mb_obs_list, model, params, use_prior=True):
         """
         Fit one of the "simple" models, e.g. exp or dev
 
@@ -3026,10 +3068,11 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
 
         from ngmix.fitting import LMSimple
 
-        # note the prior is *not* flat in g! This is important to constrain the
-        # covariance matrix
-        
-        prior=self.priors[model]
+        if use_prior:
+            #prior=self.priors[model]
+            prior=self.gflat_priors[model]
+        else:
+            prior=None
 
         ntry=params['lm_ntry']
         for i in xrange(ntry):
@@ -3051,8 +3094,14 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
 
     def _fit_simple_max(self, mb_obs_list, model, params):
         from ngmix.fitting import MaxSimple        
-        guess=self.guesser(prior=self.priors[model])
-        fitter=MaxSimple(mb_obs_list,model,method=params['min_method'])
+
+        prior=self.gflat_priors[model]
+
+        guess=self.guesser(prior=prior)
+        fitter=MaxSimple(mb_obs_list,
+                         model,
+                         prior=prior,
+                         method=params['min_method'])
         fitter.run_max(guess)
         return fitter
                             

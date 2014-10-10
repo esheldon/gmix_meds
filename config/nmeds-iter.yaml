@@ -1,0 +1,141 @@
+fitter: "ngmix"
+fitter_class: "mh"
+coadd_fitter_class: "emcee"
+fit_me_galaxy: True
+fit_coadd_galaxy: False
+
+check_image_flags: True
+
+use_psf_rerun: False
+
+coadd_model_guess: "iter"
+me_model_guess: "iter"
+
+nu: 0.0
+
+nbrs_model:
+    model: "exp"
+    method: "subtract"
+    flags: "flags"
+    pars: "pars_best"
+    require_me_goodfit: True
+
+max_box_size: 96
+
+coadd_iter: 
+    max: 1
+
+    emcee_pars:
+        a: 2.0
+        nwalkers: 50
+        burnin: 10
+        nstep: 40
+
+    min_method: 'Nelder-Mead'
+
+    # nelder-mead pars
+    nm_pars:
+        tol: 1.0e-6
+
+    # levenberg marquardt pars
+    lm_ntry: 5
+    lm_pars:
+        ftol: 1.0e-6
+        xtol: 1.0e-3
+        maxfev: 500
+
+me_iter: 
+    max: 1
+    
+    emcee_pars:
+        a: 2.0
+        nwalkers: 50
+        burnin: 10
+        nstep: 40
+
+    min_method: 'Nelder-Mead'
+
+    # nelder-mead pars
+    nm_pars:
+        tol: 1.0e-6
+
+    # levenberg marquardt pars
+    lm_ntry: 5
+    lm_pars:
+        ftol: 1.0e-6
+        xtol: 1.0e-3
+        maxfev: 500
+
+#coadd_em_pars:
+#    ngauss: 10
+#    ntry: 20
+#    maxiter: 10000
+#    tol: 5.0e-6
+#    cen_limit: 0.25
+
+emcee_pars:
+    a: 2.0
+    nwalkers: 80
+    burnin: 800
+    nstep: 800
+
+mh_pars:
+    burnin: 4000
+    nstep: 4000
+    min_step_sizes: [1.0e-6,1.0e-6,1.0e-6,1.0e-6,1.0e-4,1.0e-3]
+
+psf_em_pars:
+    ngauss: 3
+    ntry: 20
+    maxiter: 5000
+    tol: 5.0e-6
+
+# at least one band must have s/n > this or
+# we won't fit the slow mcmc 
+min_psf_s2n: 0
+
+#region: "seg_and_sky"
+region: "cweight-nearest"
+
+# in arcsec
+psf_offset_max: 0.25
+
+# in addition to a psf flux
+fit_models: 
+    - 'exp'
+#    - 'dev'
+
+do_shear: True
+
+use_cen_prior: True
+cen_width: 0.27
+
+# from fitting to all cosmos galaxies in galsim data
+g_prior_types: 
+    - "cosmos-sersic"
+#    - "cosmos-sersic"
+
+T_prior_types:
+    - "TwoSidedErf"
+#    - "TwoSidedErf"
+
+T_prior_pars:
+    - [-0.07, 0.03, 1.0e+06, 1.0e+05]
+#    - [-0.07, 0.03, 1.0e+06, 1.0e+05]
+
+counts_prior_types:
+    - "TwoSidedErf"
+#    - "TwoSidedErf"
+
+counts_prior_pars:
+    - [-1.0, 0.1, 1.0e+09, 0.25e+08]
+#    - [-1.0, 0.1, 1.0e+09, 0.25e+08]
+
+# this means repeat the above for each band
+counts_prior_repeat: True
+
+# checkpoint times in minutes, needed for condor in case we pass a batch system
+# limit such as in the condor scavenge.
+# 0 means after the first object
+
+checkpoints: [0,30,60,110]
