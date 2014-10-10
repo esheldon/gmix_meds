@@ -21,6 +21,8 @@ from ngmix import GMixModel, GMix
 
 from .lmfit import get_model_names
 
+from util import *
+
 # starting new values for these
 DEFVAL=-9999
 PDEFVAL=9999
