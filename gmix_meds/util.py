@@ -277,7 +277,31 @@ class FromAlmostFullParsGuesser(GuesserBase):
 
         guess=numpy.zeros( (n, npars) )
 
-        guess[:f prior is not None:
+
+        guess[:,0] = width[0]*srandu(n)
+        guess[:,1] = width[1]*srandu(n)
+
+        for j in xrange(n):
+            itr = 0
+            maxitr = 100
+            while itr < maxitr:
+                for i in xrange(2,npars):
+                    if self.scaling=='linear' and i >= 4:
+                        if pars[i] <= 0.0:
+                            guess[j,:] = width[i]*srandu(1)
+                        else:
+                            guess[j,i] = pars[i]*(1.0 + width[i]*srandu(1))
+                    else:
+                        # we add to log pars!
+                        guess[j,i] = pars[i] + width[i]*srandu(1)
+
+                if numpy.abs(guess[j,2]) < 1.0 \
+                        and numpy.abs(guess[j,3]) < 1.0 \
+                        and guess[j,2]*guess[j,2] + guess[j,3]*guess[j,3] < 1.0:
+                    break
+                itr += 1
+
+        if prior is not None:
             self._fix_guess(guess, prior)
 
         if is_scalar:
