@@ -15,11 +15,13 @@ import psfex
 import ngmix
 from ngmix import srandu
 from ngmix import Jacobian
-from ngmix import GMixMaxIterEM, GMixRangeError, print_pars
+from ngmix import GMixMaxIterEM, GMixRangeError, print_pars_ngmix
 from ngmix import Observation, ObsList, MultiBandObsList
 from ngmix import GMixModel, GMix
 
 from .lmfit import get_model_names
+
+from util import *
 
 # starting new values for these
 DEFVAL=-9999
@@ -56,16 +58,6 @@ EM_MAX_ITER=100
 PSFEX_FLAGS_SHIFT = 9
 
 _CHECKPOINTS_DEFAULT_MINUTES=[0,30,60,110]
-
-class UtterFailure(Exception):
-    """
-    could not make a good guess
-    """
-    def __init__(self, value):
-         self.value = value
-    def __str__(self):
-        return repr(self.value)
-
 
 class MedsFit(dict):
     def __init__(self,
@@ -140,6 +132,8 @@ class MedsFit(dict):
         self['use_psf_rerun']=self.get('use_psf_rerun',False)
 
         self['fit_coadd_galaxy'] = self.get('fit_coadd_galaxy',True)
+
+        self['print_params'] = self.get('print_params',True)
 
         if self.model_data is not None:
             self['model_neighbors']=True
@@ -219,6 +213,10 @@ class MedsFit(dict):
 
         self.priors=priors
         self.gflat_priors=gflat_priors
+
+    def _print_pars(self, pars, **kw):
+        if self['print_params']:
+            print_pars_ngmix(pars,**kw)
 
     def get_data(self):
         """
@@ -434,8 +432,7 @@ class MedsFit(dict):
 
         epars=self['emcee_pars']
         guess=self.guesser(n=epars['nwalkers'], prior=prior)
-        fmt = "%.6f "*(5+self['nband'])
-        print("        emcee guess: ",fmt%tuple(numpy.mean(guess,axis=0)))
+        self._print_pars(tuple(numpy.mean(guess,axis=0)),front="        emcee guess: ")
         #for olist in mb_obs_list:
         #    print("    image filename:",olist[0].filename)
         #    print("    psfex filename:",olist[0].psf.filename)
@@ -452,7 +449,7 @@ class MedsFit(dict):
         pos=fitter.run_mcmc(pos,epars['nstep'])
 
         p = fitter.get_best_pars()
-        print("        emcee final: ",fmt%tuple(p))
+        self._print_pars(tuple(p),front="        emcee final: ")
         
         return fitter
 
@@ -567,6 +564,20 @@ class MedsFit(dict):
 
         return coadd_mb_obs_list, mb_obs_list, n_im
 
+    def _check_model_nbrs_flags(self, cid, ntot, nmodel):
+        if self.model_data['model_fits'][ntot(nmodel(self['nbrs_model']['flags']))][cid] != 0:
+            return False
+        
+        if 'arate_min' in self['nbrs_model']:
+            if self.model_data['model_fits'][ntot(nmodel('arate'))][cid] <= self['nbrs_model']['arate_min']:
+                return False
+            
+        if 'arate_max' in self['nbrs_model']:
+            if self.model_data['model_fits'][ntot(nmodel('arate'))][cid] >= self['nbrs_model']['arate_max']:
+                return False
+        
+        return True
+
     def _model_neighbors(self, mb_obs_list, coadd=False):
         """
         model the neighbors
@@ -622,7 +633,7 @@ class MedsFit(dict):
                     
                     for cid in ids:
                         #check all flags first
-                        if self.model_data['model_fits'][self['nbrs_model']['flags']][cid] == 0:
+                        if self.model_data['model_fits']['flags'][cid] == 0:
                             
                             #if have extra info, check its flags
                             if 'model_extra_info' in self.model_data:
@@ -634,13 +645,13 @@ class MedsFit(dict):
                             # otherwise pick model with zero flags
                             # othrwise pick best
                             if self['nbrs_model']['model'] == 'best_chi2per':
-                                if self.model_data['model_fits'][ntot(nexp(self['nbrs_model']['flags']))][cid] != 0 \
-                                        and self.model_data['model_fits'][ntot(ndev(self['nbrs_model']['flags']))][cid] != 0:
+                                if self._check_model_nbrs_flags(cid, ntot, nexp) == False and \
+                                        self._check_model_nbrs_flags(cid, ntot, ndev) == False:
                                     continue
-                                elif self.model_data['model_fits'][ntot(nexp(self['nbrs_model']['flags']))][cid] != 0:
+                                elif self._check_model_nbrs_flags(cid, ntot, nexp) == False:
                                     nmodel = ndev
                                     model = 'dev'
-                                elif self.model_data['model_fits'][ntot(ndev(self['nbrs_model']['flags']))][cid] != 0:
+                                elif self._check_model_nbrs_flags(cid, ntot, ndev) == False:
                                     nmodel = nexp
                                     model = 'exp'
                                 elif self.model_data['model_fits'][ntot(nexp('chi2per'))][cid] > \
@@ -652,13 +663,13 @@ class MedsFit(dict):
                                     model = 'exp'
                             
                             #always reject models with bad flags
-                            if self.model_data['model_fits'][ntot(nmodel(self['nbrs_model']['flags']))][cid] != 0:
+                            if self._check_model_nbrs_flags(cid, ntot, nmodel) == False:
                                 continue
                             
                             #see if need good ME fit 
                             if 'require_me_goodfit' in self['nbrs_model']:
                                 if self['nbrs_model']['require_me_goodfit']:
-                                    if self.model_data['model_fits'][nme(nmodel(self['nbrs_model']['flags']))][cid] != 0:
+                                    if self._check_model_nbrs_flags(cid, nme, nmodel) == False
                                         continue
                             
                             ##################################################
@@ -753,14 +764,14 @@ class MedsFit(dict):
                         if cen_image is None:
                             cen_image = numpy.zeros_like(obs.image)
                         
-                        tab[0,0] = images.view(obs.image_orig,title='original image',show=False)
-                        tab[0,1] = images.view(tot_image-cen_image,title='models of nbrs',show=False)
+                        tab[0,0] = images.view(obs.image_orig,title='original image',show=False,nonlinear=0.075)
+                        tab[0,1] = images.view(tot_image-cen_image,title='models of nbrs',show=False,nonlinear=0.075)
                         if coadd:
                             tab[0,2] = images.view(plot_seg(seg),title='seg map',show=False)
                         else:
                             tab[0,2] = images.view(plot_seg(meds.interpolate_coadd_seg(mindex_local,icut_cen)),title='seg map',show=False)
                         
-                        tab[1,0] = images.view(obs.image,title='corrected image',show=False)
+                        tab[1,0] = images.view(obs.image,title='corrected image',show=False,nonlinear=0.075)
                         msk = tot_image != 0
                         frac = numpy.zeros(tot_image.shape)
                         frac[msk] = cen_image[msk]/tot_image[msk]
@@ -1992,9 +2003,10 @@ class MedsFit(dict):
             else:
                 type='mb'
 
-            print("        %s linear pars:" % type)
-            print_pars(res['pars'],    front='        ')
-            print_pars(res['pars_err'],front='        ')
+            if self['print_pars']:
+                print("        %s linear pars:" % type)
+            self._print_pars(res['pars'],    front='        ')
+            self._print_pars(res['pars_err'],front='        ')
             if 'arate' in res:
                 print('        arate:',res['arate'],'chi2per:',res['chi2per'])
 
@@ -2474,12 +2486,12 @@ class MHMedsFitLM(MedsFit):
         step_sizes = 0.5*sigmas
 
         max_step = 0.5*self.priors[model].get_widths()
-        print_pars(max_step, front="        max_step:")
+        self._print_pars(max_step, front="        max_step:")
 
         for i in xrange(guess.size):
             step_sizes[i] = step_sizes[i].clip(max=max_step[i])
 
-        print_pars(step_sizes, front="        step sizes:")
+        self._print_pars(step_sizes, front="        step sizes:")
 
         fitter=MHSimple(mb_obs_list,
                         model,
@@ -2489,9 +2501,9 @@ class MHMedsFitLM(MedsFit):
                         random_state=self.random_state)
 
         mhpars=self['mh_pars']
-        print_pars(guess,front="    mh guess:")
+        self._print_pars(guess,front="    mh guess:")
         pos=fitter.run_mcmc(guess,mhpars['burnin'])
-        print_pars(guess,front="    mh start after burnin:")
+        self._print_pars(guess,front="    mh start after burnin:")
         pos=fitter.run_mcmc(pos,mhpars['nstep'])
 
         return fitter
@@ -2513,7 +2525,7 @@ class MHMedsFitLM(MedsFit):
         ntry=self['gal_lm_ntry']
         for i in xrange(ntry):
             guess=self.guesser()
-            print_pars(guess, front='            lm guess:')
+            self._print_pars(guess, front='            lm guess:')
 
             fitter=LMSimple(mb_obs_list,
                             model,
@@ -2657,11 +2669,11 @@ class MHMedsFitHybrid(MedsFit):
         min_steps[5:] = mhpars['min_step_sizes'][5]
         max_steps = fac*self.priors[model].get_widths()
 
-        print_pars(max_steps, front="        max_steps:")
+        self._print_pars(max_steps, front="        max_steps:")
 
         clip_element_wise(step_sizes, min_steps, max_steps)
 
-        print_pars(step_sizes, front="        step sizes:")
+        self._print_pars(step_sizes, front="        step sizes:")
 
         fitter=MHSimple(mb_obs_list,
                         model,
@@ -2670,7 +2682,7 @@ class MHMedsFitHybrid(MedsFit):
                         nu=self['nu'],
                         random_state=self.random_state)
 
-        print_pars(guess,front="        mh guess:   ")
+        self._print_pars(guess,front="        mh guess:   ")
         pos=fitter.run_mcmc(guess,mhpars['burnin'])
 
         n=int(mhpars['burnin']*0.1)
@@ -2700,694 +2712,17 @@ class MHMedsFitHybrid(MedsFit):
             fitter.set_step_sizes(step_sizes)
 
             pos=fitter.get_best_pars()
-            print_pars(pos,        front="            mh start after 1st burnin:")
-            print_pars(step_sizes, front="            new step sizes:")
+            self._print_pars(pos,        front="            mh start after 1st burnin:")
+            self._print_pars(step_sizes, front="            new step sizes:")
 
             pos=fitter.run_mcmc(pos,mhpars['burnin'])
 
         # in case we ended on a bad point
         pos=fitter.get_best_pars()
-        print_pars(pos,        front="            mh start after burnin:")
+        self._print_pars(pos,        front="            mh start after burnin:")
         pos=fitter.run_mcmc(pos,mhpars['nstep'])
 
         return fitter
-
-class MHMedsFitModelNbrs(MHMedsFitHybrid):
-    """
-    Models Nbrs
-    """
-
-    def _fit_all_models(self):
-        """
-        Fit psf flux and other models
-        """
-        
-        #default to true just in case
-        if 'fit_coadd_galaxy' not in self:
-            self['fit_coadd_galaxy'] = True
-        
-        mindex_local = self.mindex #index in current meds file
-        meds = self.meds_list[0]
-        number = meds['number'][mindex_local] #number for seg map, index+1 into entire meds file
-        mindex_global = number-1
-        
-        flags=0
-        # fit both coadd and se psf flux if exists
-        self._fit_psf_flux()
-
-        dindex=self.dindex
-        s2n=self.data['coadd_psf_flux'][dindex,:]/self.data['coadd_psf_flux_err'][dindex,:]
-        max_s2n=numpy.nanmax(s2n)
-
-        if max_s2n >= self['min_psf_s2n'] and len(self['fit_models']) > 0:
-            for model in self['fit_models']:
-                print('    fitting:',model)
-                
-                if self['fit_coadd_galaxy']:
-                    print('    coadd')
-                    self._run_model_fit(model, self['coadd_fitter_class'], mindex_global, coadd=True)
-
-                if self['fit_me_galaxy']:
-                    print('    multi-epoch')
-                    # fitter class should be mh...
-                    self._run_model_fit(model, self['fitter_class'], mindex_global, coadd=False)
-
-        else:
-            mess="    psf s/n too low: %s (%s)"
-            mess=mess % (max_s2n,self['min_psf_s2n'])
-            print(mess)
-            
-            flags |= LOW_PSF_FLUX
-
-        return flags
-
-    def _run_model_fit(self, model, fitter_type, mindex_global, coadd=False):
-        """
-        wrapper to run fit, copy pars, maybe make plots
-
-        sets .fitter or .coadd_fitter
-
-        this one does not currently use self['guess_type']
-        """
-        
-        nmod = Namer(model)        
-        if coadd:
-            n = Namer('coadd')
-            pars = self.model_data['model_fits'][n(nmod('pars_best'))][mindex_global]
-            pars_cov = self.model_data['model_fits'][n(nmod('pars_cov'))][mindex_global]
-            pars_err = numpy.array([numpy.sqrt(pars_cov[i,i]) for i in xrange(len(pars))])
-            self.guesser=FromFullParsGuesser(pars,pars_err)
-            mb_obs_list=self.sdata['coadd_mb_obs_list']
-        else:
-            pars = self.model_data['model_fits'][nmod('pars_best')][mindex_global]
-            pars_cov = self.model_data['model_fits'][nmod('pars_cov')][mindex_global]
-            pars_err = numpy.array([numpy.sqrt(pars_cov[i,i]) for i in xrange(len(pars))])
-            self.guesser=FromFullParsGuesser(pars,pars_err)
-            mb_obs_list=self.sdata['mb_obs_list']
-
-        fitter=self._fit_model(mb_obs_list,
-                               model,
-                               fitter_type=fitter_type)
-
-        self._copy_simple_pars(fitter, coadd=coadd)
-
-        self._print_res(fitter, coadd=coadd)
-
-        if self['make_plots']:
-            self._do_make_plots(fitter, model, coadd=coadd, fitter_type=fitter_type)
-
-        if coadd:
-            self.coadd_fitter=fitter
-        else:
-            self.fitter=fitter
-
-
-class MHMedsFitHybridIter(MHMedsFitHybrid):
-    """
-    This version uses MH for fitting, with guess/steps from
-    a coadd emcee run, which is seeded via iterating between 
-    a direct maximizer and emcee run on the coadd
-    """
-
-    def _fit_all_models(self):
-        """
-        Fit psf flux and other models
-        """
-
-        flags=0
-        # fit both coadd and se psf flux if exists
-        self._fit_psf_flux()
-
-        dindex=self.dindex
-        s2n=self.data['coadd_psf_flux'][dindex,:]/self.data['coadd_psf_flux_err'][dindex,:]
-        max_s2n=numpy.nanmax(s2n)
-        
-        if max_s2n >= self['min_psf_s2n'] and len(self['fit_models']) > 0:
-            for model in self['fit_models']:
-                print('    fitting:',model)
-                
-                if self['fit_coadd_galaxy']:
-                    print('    coadd iter fit')                
-                    self.coadd_guesser = \
-                        self._guess_params_iter(self.sdata['coadd_mb_obs_list'], 
-                                                model, 
-                                                self['coadd_iter'],
-                                                self._get_guesser('coadd_psf'))
-                    if self.coadd_guesser == None:
-                        self.coadd_guesser = self._get_guesser('coadd_psf')
-                    
-                    print('    coadd')                
-                    self._run_model_fit(model, self['coadd_fitter_class'],coadd=True)
-
-                if self['fit_me_galaxy']:
-                    if 'me_iter' in self:
-                        print('    multi-epoch iter fit')                
-                        self.me_guesser = \
-                            self._guess_params_iter(self.sdata['mb_obs_list'],
-                                                    model, 
-                                                    self['me_iter'], 
-                                                    self._get_guesser('me_psf'))
-                    else:
-                        self.me_guesser = None
-                    if self.me_guesser == None:
-                        self.me_guesser = self._get_guesser('me_psf')
-                        
-                    print('    multi-epoch')
-                    # fitter class should be mh...
-                    self._run_model_fit(model, self['fitter_class'], coadd=False)
-        else:
-            mess="    psf s/n too low: %s (%s)"
-            mess=mess % (max_s2n,self['min_psf_s2n'])
-            print(mess)
-            
-            flags |= LOW_PSF_FLUX
-
-        return flags
-
-    def _guess_params_iter(self, mb_obs_list, model, params, start):
-        fmt = "%10.6g "*(5+self['nband'])
-
-        print("        using method '%s' for minimizer" % params['min_method'])
-
-        for i in xrange(params['max']):
-            print('        iter % 3d of %d' % (i+1,params['max']))
-
-            if i == 0:
-                self.guesser = start
-
-            emceefit = self._fit_simple_emcee_guess(mb_obs_list, model, params)
-
-            emcee_pars = emceefit.get_best_pars()
-            bestlk = numpy.max(emceefit.get_lnprobs())
-            print('            emcee min: ',
-                  fmt % tuple(emcee_pars), 'loglike = %lf' % bestlk)
-
-            # making up errors, but it doesn't matter                    
-            self.guesser = FixedParsGuesser(emcee_pars,emcee_pars*0.1)
-
-            # first nelder mead
-            greedyfit1 = self._fit_simple_max(mb_obs_list, model, params)
-            res1=greedyfit1.get_result()
-
-            bestlk = greedyfit1.calc_lnprob(res1['pars'])
-            print('            nm min:    ',
-                  fmt % tuple(res1['pars']),'loglike = %lf' % bestlk)
-
-            # must ignore errors in nedler-mead
-            doemcee=True
-            #self.guesser = FixedParsGuesser(res1['pars'],emcee_pars*0.1)
-            self.guesser = FromFullParsGuesser(res1['pars'],emcee_pars*0.1)
-            #self.guesser = FromAlmostFullParsGuesser(res1['pars'],emcee_pars*0.1)
-
-            
-            greedyfit2 = self._fit_simple_lm(mb_obs_list, model, params)
-            res2=greedyfit2.get_result()
-
-            tname='lm'
-            if res2['flags'] == 0:
-                pars_check=numpy.all(numpy.abs(res2['pars']) < 1e9)
-                if pars_check:
-                    pars=res2['pars']
-                    self.guesser=FixedParsGuesser(pars,res2['pars_err'])
-                    doemcee=False
-
-                    bestlk = greedyfit2.calc_lnprob(pars)
-                    print('            lm min:    ',
-                          fmt % tuple(pars),'loglike = %lf' % bestlk)
-                    print("            nfev:",res2['nfev'])
-
-                else:
-                    print("bad lm pars")
-            else:
-                print("lm failed")
-
-            if doemcee:
-                print("        greedy failure, running emcee")
-                # just continue emcee where we left off.  is 400 about right?
-                self.guesser = FixedParsGuesser(emcee_pars,emcee_pars*0.1)
-                pos=emceefit.get_last_pos()
-                emceefit.run_mcmc(pos,400)
-                emceefit.calc_result()
-                res=emceefit.get_result()
-                pars=emceefit.get_best_pars()
-                self.guesser=FixedParsGuesser(pars,res['pars_err'])
-                tname='emcee'
-
-                bestlk = emceefit.calc_lnprob(pars)
-                print('            emcee2 min:',
-                      fmt % tuple(pars),'loglike = %lf' % bestlk)
-
-        
-        return self.guesser
-
-
-    def _run_model_fit(self, model, fitter_type, coadd=False):
-        """
-        wrapper to run fit, copy pars, maybe make plots
-
-        sets .fitter or .coadd_fitter
-
-        this one does not currently use self['guess_type']
-        """
-
-        if coadd:
-            self.guesser=self.coadd_guesser
-            mb_obs_list=self.sdata['coadd_mb_obs_list']
-        else:
-            self.guesser=self.me_guesser
-            mb_obs_list=self.sdata['mb_obs_list']
-
-        fitter=self._fit_model(mb_obs_list,
-                               model,
-                               fitter_type=fitter_type)
-
-        self._copy_simple_pars(fitter, coadd=coadd)
-
-        self._print_res(fitter, coadd=coadd)
-
-        if self['make_plots']:
-            self._do_make_plots(fitter, model, coadd=coadd, fitter_type=fitter_type)
-
-        if coadd:
-            self.coadd_fitter=fitter
-        else:
-            self.fitter=fitter
-
-    def _fit_simple_emcee_guess(self, mb_obs_list, model, params):
-        """
-        Fit one of the "simple" models, e.g. exp or dev
-
-        use flat g prior
-        """
-
-        from ngmix.fitting import MCMCSimple
-
-        # note flat on g!
-        prior=self.gflat_priors[model]
-
-        epars=params['emcee_pars']
-        guess=self.guesser(n=epars['nwalkers'], prior=prior)
-        #for olist in mb_obs_list:
-        #    print("    image filename:",olist[0].filename)
-        #    print("    psfex filename:",olist[0].psf.filename)
-
-        fitter=MCMCSimple(mb_obs_list,
-                          model,
-                          nu=self['nu'],
-                          prior=prior,
-                          nwalkers=epars['nwalkers'],
-                          mca_a=epars['a'],
-                          random_state=self.random_state)
-
-        pos=fitter.run_mcmc(guess,epars['burnin'])
-        pos=fitter.run_mcmc(pos,epars['nstep'])
-
-        return fitter
-
-    def _fit_simple_lm(self, mb_obs_list, model, params, use_prior=True):
-        """
-        Fit one of the "simple" models, e.g. exp or dev
-
-        use flat g prior
-        """
-
-        from ngmix.fitting import LMSimple
-
-        if use_prior:
-            #prior=self.priors[model]
-            prior=self.gflat_priors[model]
-        else:
-            prior=None
-
-        ntry=params['lm_ntry']
-        for i in xrange(ntry):
-            guess=self.guesser(prior=prior)
-            #print_pars(guess, front='            lm guess:')
-
-            fitter=LMSimple(mb_obs_list,
-                            model,
-                            prior=prior,
-                            lm_pars=params['lm_pars'])
-
-            fitter.run_lm(guess)
-            res=fitter.get_result()
-            if res['flags']==0:
-                break
-
-        res['ntry']=i+1
-        return fitter
-
-    def _fit_simple_max(self, mb_obs_list, model, params):
-        from ngmix.fitting import MaxSimple        
-
-        prior=self.gflat_priors[model]
-
-        guess=self.guesser(prior=prior)
-        fitter=MaxSimple(mb_obs_list,
-                         model,
-                         prior=prior,
-                         method=params['min_method'])
-        fitter.run_max(guess)
-        return fitter
-                            
-
-
-class GuesserBase(object):
-    def _fix_guess(self, guess, prior, ntry=4):
-        from ngmix.priors import LOWVAL
-
-        #guess[:,2]=-9999
-        n=guess.shape[0]
-        for j in xrange(n):
-            for itry in xrange(ntry):
-
-                try:
-                    lnp=prior.get_lnprob_scalar(guess[j,:])
-
-                    if lnp <= LOWVAL:
-                        dosample=True
-                    else:
-                        dosample=False
-                except GMixRangeError as err:
-                    dosample=True
-
-                if dosample:
-                    print_pars(guess[j,:], front="bad guess:")
-                    if itry < ntry:
-                        guess[j,:] = prior.sample()
-                    else:
-                        raise UtterFailure("could not find a good guess")
-                else:
-                    break
-
-
-class FromMCMCGuesser(GuesserBase):
-    """
-    get guesses from a set of trials
-    """
-    def __init__(self, trials, sigmas):
-        self.trials=trials
-        self.sigmas=sigmas
-        self.npars=trials.shape[1]
-
-        #self.lnprobs=lnprobs
-        #self.lnp_sort=lnprobs.argsort()
-
-    def __call__(self, n=None, get_sigmas=False, prior=None):
-        """
-        get a random sample from the best points
-        """
-        import random
-
-        if n is None:
-            is_scalar=True
-            n=1
-        else:
-            is_scalar=False
-
-        # choose randomly from best
-        #indices = self.lnp_sort[-n:]
-        #guess = self.trials[indices, :]
-
-        trials=self.trials
-        np = trials.shape[0]
-
-        rand_int = random.sample(xrange(np), n)
-        guess=trials[rand_int, :]
-
-        if prior is not None:
-            self._fix_guess(guess, prior)
-
-        w,=numpy.where(guess[:,4] <= 0.0)
-        if w.size > 0:
-            guess[w,4] = 0.05*srandu(w.size)
-
-        for i in xrange(5, self.npars):
-            w,=numpy.where(guess[:,i] <= 0.0)
-            if w.size > 0:
-                guess[w,i] = (1.0 + 0.1*srandu(w.size))
-
-        #print("guess from mcmc:")
-        #for i in xrange(n):
-        #    print_pars(guess[i,:], front="%d: " % i)
-
-        if is_scalar:
-            guess=guess[0,:]
-
-        if get_sigmas:
-            return guess, self.sigmas
-        else:
-            return guess
-
-class FromPSFGuesser(GuesserBase):
-    """
-    get full guesses from just T,fluxes associated with
-    psf
-
-    should make this take log values...
-    """
-    def __init__(self, T, fluxes, scaling='linear'):
-        self.T=T
-        self.fluxes=fluxes
-        self.scaling=scaling
-
-        self.log_T = numpy.log10(T)
-        self.log_fluxes = numpy.log10(fluxes)
-
-    def __call__(self, n=1, prior=None, **keys):
-        """
-        center, shape are just distributed around zero
-        """
-        fluxes=self.fluxes
-        nband=fluxes.size
-        np = 5+nband
-
-        guess=numpy.zeros( (n, np) )
-        guess[:,0] = 0.01*srandu(n)
-        guess[:,1] = 0.01*srandu(n)
-        guess[:,2] = 0.1*srandu(n)
-        guess[:,3] = 0.1*srandu(n)
-        #guess[:,4] = numpy.log10( self.T*(1.0 + 0.2*srandu(n)) )
-
-        if self.scaling=='linear':
-            if self.T <= 0.0:
-                guess[:,4] = 0.05*srandu(n)
-            else:
-                guess[:,4] = self.T*(1.0 + 0.1*srandu(n))
-
-            fluxes=self.fluxes
-            for band in xrange(nband):
-                if fluxes[band] <= 0.0:
-                    guess[:,5+band] = (1.0 + 0.1*srandu(n))
-                else:
-                    guess[:,5+band] = fluxes[band]*(1.0 + 0.1*srandu(n))
-
-        else:
-            guess[:,4] = self.log_T + 0.1*srandu(n)
-
-            for band in xrange(nband):
-                guess[:,5+band] = self.log_fluxes[band] + 0.1*srandu(n)
-
-        if prior is not None:
-            self._fix_guess(guess, prior)
-
-        if n==1:
-            guess=guess[0,:]
-        return guess
-
-class FixedParsGuesser(GuesserBase):
-    """
-    just return a copy of the input pars
-    """
-    def __init__(self, pars, pars_err):
-        self.pars=pars
-        self.pars_err=pars_err
-
-    def __call__(self, get_sigmas=False, prior=None):
-        """
-        center, shape are just distributed around zero
-        """
-
-        guess=self.pars.copy()
-        if get_sigmas:
-            return guess, self.pars_err
-        else:
-            return guess
-
-
-class FromParsGuesser(GuesserBase):
-    """
-    get full guesses from just T,fluxes associated with
-    psf
-    """
-    def __init__(self, pars, pars_err, scaling='linear'):
-        self.pars=pars
-        self.pars_err=pars_err
-        self.scaling=scaling
-
-    def __call__(self, n=None, get_sigmas=False, prior=None):
-        """
-        center, shape are just distributed around zero
-        """
-
-        if n is None:
-            n=1
-            is_scalar=True
-        else:
-            is_scalar=False
-
-        pars=self.pars
-        npars=pars.size
-
-        width = pars*0 + 0.1
-
-        guess=numpy.zeros( (n, npars) )
-
-        guess[:,0] = width[0]*srandu(n)
-        guess[:,1] = width[1]*srandu(n)
-
-        guess_shape=get_shape_guess(pars[2],pars[3],n,width[2:2+2])
-        guess[:,2]=guess_shape[:,0]
-        guess[:,3]=guess_shape[:,1]
-
-        for i in xrange(4,npars):
-            if self.scaling=='linear':
-                if pars[i] <= 0.0:
-                    guess[:,i] = width[i]*srandu(n)
-                else:
-                    guess[:,i] = pars[i]*(1.0 + width[i]*srandu(n))
-            else:
-                # we add to log pars!
-                guess[:,i] = pars[i] + width[i]*srandu(n)
-
-        if prior is not None:
-            self._fix_guess(guess, prior)
-
-        if is_scalar:
-            guess=guess[0,:]
-
-        if get_sigmas:
-            return guess, self.pars_err
-        else:
-            return guess
-
-
-class FromAlmostFullParsGuesser(GuesserBase):
-    """
-    get full guesses from just g1,g2,T,fluxes associated with
-    psf
-    """
-    def __init__(self, pars, pars_err, scaling='linear'):
-        self.pars=pars
-        self.pars_err=pars_err
-        self.scaling=scaling
-
-    def __call__(self, n=None, get_sigmas=False, prior=None):
-        """
-        center is just distributed around zero
-        """
-
-        if n is None:
-            n=1
-            is_scalar=True
-        else:
-            is_scalar=False
-
-        pars=self.pars
-        npars=pars.size
-
-        width = pars*0 + 0.1
-
-        guess=numpy.zeros( (n, npars) )
-
-        guess[:,0] = width[0]*srandu(n)
-        guess[:,1] = width[1]*srandu(n)
-
-        for j in xrange(n):
-            itr = 0
-            maxitr = 100
-            while itr < maxitr:
-                for i in xrange(2,npars):
-                    if self.scaling=='linear' and i >= 4:
-                        if pars[i] <= 0.0:
-                            guess[j,:] = width[i]*srandu(1)
-                        else:
-                            guess[j,i] = pars[i]*(1.0 + width[i]*srandu(1))
-                    else:
-                        # we add to log pars!
-                        guess[j,i] = pars[i] + width[i]*srandu(1)
-
-                if numpy.abs(guess[j,2]) < 1.0 \
-                        and numpy.abs(guess[j,3]) < 1.0 \
-                        and guess[j,2]*guess[j,2] + guess[j,3]*guess[j,3] < 1.0:
-                    break
-                itr += 1
-
-        if prior is not None:
-            self._fix_guess(guess, prior)
-
-        if is_scalar:
-            guess=guess[0,:]
-
-        if get_sigmas:
-            return guess, self.pars_err
-        else:
-            return guess
-
-
-class FromFullParsGuesser(GuesserBase):
-    """
-    get full guesses
-    """
-    def __init__(self, pars, pars_err, scaling='linear'):
-        self.pars=pars
-        self.pars_err=pars_err
-        self.scaling=scaling
-
-    def __call__(self, n=None, get_sigmas=False, prior=None):
-        if n is None:
-            n=1
-            is_scalar=True
-        else:
-            is_scalar=False
-
-        pars=self.pars
-        npars=pars.size
-
-        width = pars*0 + 0.1
-
-        guess=numpy.zeros( (n, npars) )
-
-        for j in xrange(n):
-            itr = 0
-            maxitr = 100
-            while itr < maxitr:
-                for i in xrange(npars):
-                    if self.scaling=='linear' and i >= 4:
-                        if pars[i] <= 0.0:
-                            guess[j,:] = width[i]*srandu(1)
-                        else:
-                            guess[j,i] = pars[i]*(1.0 + width[i]*srandu(1))
-                    else:
-                        # we add to log pars!
-                        guess[j,i] = pars[i] + width[i]*srandu(1)
-
-                if numpy.abs(guess[j,2]) < 1.0 \
-                        and numpy.abs(guess[j,3]) < 1.0 \
-                        and guess[j,2]*guess[j,2] + guess[j,3]*guess[j,3] < 1.0:
-                    break
-                itr += 1
-
-        if prior is not None:
-            self._fix_guess(guess, prior)
-
-        if is_scalar:
-            guess=guess[0,:]
-
-        if get_sigmas:
-            return guess, self.pars_err
-        else:
-            return guess
 
 _stat_names=['s2n_w',
              'chi2per',
@@ -3490,32 +2825,6 @@ def reject_outliers(imlist, wtlist, nsigma=5.0, A=0.3):
 
     return nreject
 
-def get_shape_guess(g1, g2, n, width):
-    """
-    Get guess, making sure in range
-    """
-
-    guess=numpy.zeros( (n, 2) )
-    shape=ngmix.Shape(g1, g2)
-
-    for i in xrange(n):
-
-        while True:
-            try:
-                g1_offset = width[0]*srandu()
-                g2_offset = width[1]*srandu()
-                shape_new=shape.copy()
-                shape_new.shear(g1_offset, g2_offset)
-                break
-            except GMixRangeError:
-                pass
-
-        guess[i,0] = shape_new.g1
-        guess[i,1] = shape_new.g2
-
-    return guess
-
-
 def get_coadd_cat_path(image_path):
     cat_path=image_path.replace('.fits.fz','').replace('.fits','')
 
@@ -3537,15 +2846,6 @@ def read_psfex_blacklist(fname):
         data=robj.read()
 
     return data
-
-class Namer(object):
-    def __init__(self, front=None):
-        self.front=front
-    def __call__(self, name):
-        if self.front is None or self.front=='':
-            return name
-        else:
-            return '%s_%s' % (self.front, name)
 
 def make_all_model_names(fit_models, fit_me_galaxy, fit_coadd_galaxy):
     """
