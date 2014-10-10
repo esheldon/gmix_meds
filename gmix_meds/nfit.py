@@ -19,7 +19,7 @@ from ngmix import GMixMaxIterEM, GMixRangeError, print_pars_ngmix
 from ngmix import Observation, ObsList, MultiBandObsList
 from ngmix import GMixModel, GMix
 
-from .lmfit import get_model_names
+from .util import Namer
 
 from util import *
 
@@ -1345,7 +1345,7 @@ class MedsFit(dict):
         res=fitter.get_result()
         data=self.data
 
-        n=get_model_names(name)
+        n=Namer(name)
         data[n['flags']][dindex,band] = res['flags']
         data[n['flux']][dindex,band] = res['flux']
         data[n['flux_err']][dindex,band] = res['flux_err']
