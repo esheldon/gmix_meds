@@ -140,6 +140,8 @@ class MedsFit(dict):
         else:
             self['model_neighbors']=False
 
+        self['print_pars']=self.get('print_pars',True)
+
     def _reset_mb_sums(self):
         from numpy import zeros
         nband=self['nband']
@@ -2004,7 +2006,7 @@ class MedsFit(dict):
                 type='mb'
 
             if self['print_pars']:
-                print("        %s linear pars:" % type)
+                print("        %s fit pars:" % type)
             self._print_pars(res['pars'],    front='        ')
             self._print_pars(res['pars_err'],front='        ')
             if 'arate' in res:

@@ -1,4 +1,7 @@
+from __future__ import print_function
+import numpy
 from .nfit import *
+from ngmix import print_pars
 
 class MHMedsFitHybridIter(MHMedsFitHybrid):
     """
@@ -93,14 +96,11 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
 
             # must ignore errors in nedler-mead
             doemcee=True
-            #self.guesser = FixedParsGuesser(res1['pars'],emcee_pars*0.1)
             self.guesser = FromFullParsGuesser(res1['pars'],emcee_pars*0.1)
-            #self.guesser = FromAlmostFullParsGuesser(res1['pars'],emcee_pars*0.1)
 
             greedyfit2 = self._fit_simple_lm(mb_obs_list, model, params)
             res2=greedyfit2.get_result()
 
-            tname='lm'
             if res2['flags'] == 0:
                 pars_check=numpy.all(numpy.abs(res2['pars']) < 1e9)
                 if pars_check:
@@ -120,15 +120,14 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
 
             if doemcee:
                 print("        greedy failure, running emcee")
-                # just continue emcee where we left off.  is 400 about right?
-                self.guesser = FixedParsGuesser(emcee_pars,emcee_pars*0.1)
+                # something went wrong, so just continue emcee
+                # where we left off.  is 400 about right?
                 pos=emceefit.get_last_pos()
                 emceefit.run_mcmc(pos,400)
                 emceefit.calc_result()
                 res=emceefit.get_result()
                 pars=emceefit.get_best_pars()
                 self.guesser=FixedParsGuesser(pars,res['pars_err'])
-                tname='emcee'
 
                 bestlk = emceefit.calc_lnprob(pars)
                 print('            emcee2 min:',
@@ -182,9 +181,6 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
 
         epars=params['emcee_pars']
         guess=self.guesser(n=epars['nwalkers'], prior=prior)
-        #for olist in mb_obs_list:
-        #    print("    image filename:",olist[0].filename)
-        #    print("    psfex filename:",olist[0].psf.filename)
 
         fitter=MCMCSimple(mb_obs_list,
                           model,
@@ -209,7 +205,6 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         from ngmix.fitting import LMSimple
 
         if use_prior:
-            #prior=self.priors[model]
             prior=self.gflat_priors[model]
         else:
             prior=None
@@ -217,7 +212,6 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         ntry=params['lm_ntry']
         for i in xrange(ntry):
             guess=self.guesser(prior=prior)
-            #self._print_pars(guess, front='            lm guess:')
 
             fitter=LMSimple(mb_obs_list,
                             model,

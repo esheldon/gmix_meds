@@ -1,3 +1,7 @@
+from __future__ import print_function
+import numpy
+
+from ngmix import srandu
 
 def clip_element_wise(arr, minvals, maxvals):
     """

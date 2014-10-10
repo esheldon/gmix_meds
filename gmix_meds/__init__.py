@@ -1,5 +1,7 @@
 from . import nfit
+from . import nfititer
 from . import nfitcoadd
+from . import nfitnbrs
 from .nfit import MedsFit
 
 from . import collate

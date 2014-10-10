@@ -113,9 +113,9 @@ def run_ngmix(meds_files,
 
     if conf['fitter_class']=='mh':
         if conf['coadd_model_guess'] == 'iter' or conf['me_model_guess'] == "iter":
-            meds_fitter=gmix_meds.nfit.MHMedsFitHybridIter
+            meds_fitter=gmix_meds.nfititer.MHMedsFitHybridIter
         elif model_data is not None:
-            meds_fitter=gmix_meds.nfit.MHMedsFitModelNbrs
+            meds_fitter=gmix_meds.nfitnbrs.MHMedsFitModelNbrs
         else:
             meds_fitter=gmix_meds.nfit.MHMedsFitHybrid
     elif conf['fitter_class']=='emcee':
