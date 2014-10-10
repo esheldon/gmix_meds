@@ -18,6 +18,9 @@ class UtterFailure(Exception):
 
 
 class Namer(object):
+    """
+    create strings with a specified front prefix
+    """
     def __init__(self, front=None):
         self.front=front
     def __call__(self, name):
@@ -30,6 +33,11 @@ from ngmix import print_pars
 
 class GuesserBase(object):
     def _fix_guess(self, guess, prior, ntry=4):
+        """
+        Fix a guess for out-of-bounds values according the the input prior
+
+        Bad guesses are replaced by a sample from the prior
+        """
         from ngmix.priors import LOWVAL
 
         #guess[:,2]=-9999
