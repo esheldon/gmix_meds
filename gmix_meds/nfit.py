@@ -15,7 +15,7 @@ import psfex
 import ngmix
 from ngmix import srandu
 from ngmix import Jacobian
-from ngmix import GMixMaxIterEM, GMixRangeError, print_pars_ngmix
+from ngmix import GMixMaxIterEM, GMixRangeError, print_pars
 from ngmix import Observation, ObsList, MultiBandObsList
 from ngmix import GMixModel, GMix
 
@@ -216,7 +216,7 @@ class MedsFit(dict):
 
     def _print_pars(self, pars, **kw):
         if self['print_params']:
-            print_pars_ngmix(pars,**kw)
+            print_pars(pars,**kw)
 
     def get_data(self):
         """
@@ -669,7 +669,7 @@ class MedsFit(dict):
                             #see if need good ME fit 
                             if 'require_me_goodfit' in self['nbrs_model']:
                                 if self['nbrs_model']['require_me_goodfit']:
-                                    if self._check_model_nbrs_flags(cid, nme, nmodel) == False
+                                    if self._check_model_nbrs_flags(cid, nme, nmodel) == False:
                                         continue
                             
                             ##################################################
