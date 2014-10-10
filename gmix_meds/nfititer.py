@@ -79,7 +79,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
             emceefit = self._fit_simple_emcee_guess(mb_obs_list, model, params)
 
             emcee_pars = emceefit.get_best_pars()
-            bestlk = numpy.max(emceefit.get_lnprobs())
+            bestlk = emceefit.get_best_lnprob()
             print('            emcee min: ',
                   fmt % tuple(emcee_pars), 'loglike = %lf' % bestlk)
 
@@ -129,7 +129,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                 pars=emceefit.get_best_pars()
                 self.guesser=FixedParsGuesser(pars,res['pars_err'])
 
-                bestlk = emceefit.calc_lnprob(pars)
+                bestlk = emceefit.get_best_lnprob()
                 print('            emcee2 min:',
                       fmt % tuple(pars),'loglike = %lf' % bestlk)
         
@@ -313,7 +313,7 @@ class MedsFitEmceeIter(MedsFit):
             emceefit = self._fit_simple_emcee_guess(mb_obs_list, model, params)
 
             emcee_pars = emceefit.get_best_pars()
-            bestlk = numpy.max(emceefit.get_lnprobs())
+            bestlk = emceefit.get_best_lnprob()
             print('            emcee min: ',
                   fmt % tuple(emcee_pars), 'loglike = %lf' % bestlk)
 

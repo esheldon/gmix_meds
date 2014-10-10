@@ -19,9 +19,7 @@ from ngmix import GMixMaxIterEM, GMixRangeError, print_pars
 from ngmix import Observation, ObsList, MultiBandObsList
 from ngmix import GMixModel, GMix
 
-from .util import Namer
-
-from util import *
+from .util import *
 
 # starting new values for these
 DEFVAL=-9999
@@ -219,6 +217,10 @@ class MedsFit(dict):
     def _print_pars(self, pars, **kw):
         if self['print_params']:
             print_pars(pars,**kw)
+    def _print_pars_and_logl(self, pars, logl, **kw):
+        if self['print_params']:
+            print_pars_and_logl(pars, logl, **kw)
+
 
     def get_data(self):
         """
@@ -2674,7 +2676,6 @@ class MHMedsFitHybrid(MedsFit):
         self._print_pars(max_steps, front="        max_steps:")
 
         clip_element_wise(step_sizes, min_steps, max_steps)
-
         self._print_pars(step_sizes, front="        step sizes:")
 
         fitter=MHSimple(mb_obs_list,
@@ -2684,45 +2685,51 @@ class MHMedsFitHybrid(MedsFit):
                         nu=self['nu'],
                         random_state=self.random_state)
 
-        self._print_pars(guess,front="        mh guess:   ")
+        self._print_pars(guess,front="        mh guess:            ")
+
+        # burnin
         pos=fitter.run_mcmc(guess,mhpars['burnin'])
+        best_pars=fitter.get_best_pars()
+        best_logl=fitter.get_best_lnprob()
+        self._print_pars_and_logl(best_pars, best_logl, front="        mh best burnin 1:")
 
-        n=int(mhpars['burnin']*0.1)
+        # nominal steps
+        pos=fitter.run_mcmc(guess,mhpars['nstep'])
+        best_pars=fitter.get_best_pars()
+        best_logl=fitter.get_best_lnprob()
+        self._print_pars_and_logl(best_pars, best_logl, front="        mh steps:        ")
 
-        acc=fitter.sampler.get_accepted()
-        arate = acc[-n:].sum()/(1.0*n)
-        print("        arate of last",n,"is",arate)
+        if mhpars['dotest']:
+            import mcmctester
+            for i in xrange(mhpars['ntest_max']):
 
-        if arate < 0.4 or arate > 0.6:
-            print("        recalculating step sizes")
-            # change step sizes and run another burnin
+                acc=fitter.sampler.get_accepted()
+                arate = fitter.get_arate()
+                bad_arate=(arate < 0.4 or arate > 0.6)
 
-            if False:
-                if arate < 0.01:
-                    fac=0.01/0.5
+                trials=fitter.get_trials()
+                tester=mcmctester.MCMCTester(trials)
+
+                check=tester()
+                if bad_arate or not check:
+                    if bad_arate:
+                        print("        bad arate last run:",arate)
+                        errors=trials.std(axis=0)
+                        step_sizes = errors*fac
+                        clip_element_wise(step_sizes, min_steps, max_steps)
+
+                        fitter.set_step_sizes(step_sizes)
+                        self._print_pars(step_sizes, front="        new step sizes:")
+                    if not check:
+                        print("        mcmc test failed")
+
+                    pos=fitter.run_mcmc(pos, mhpars['nstep'])
+                    best_pars=fitter.get_best_pars()
+                    best_logl=fitter.get_best_lnprob()
+                    self._print_pars_and_logl(best_pars, best_logl, 
+                                              front="        mh more steps:        ")
                 else:
-                    fac = arate/0.5
-
-                step_sizes *= fac
-            else:
-                trials = fitter.get_trials()
-                errors=trials[-n:, :].std(axis=0)
-                step_sizes = errors*fac
-
-            clip_element_wise(step_sizes, min_steps, max_steps)
-
-            fitter.set_step_sizes(step_sizes)
-
-            pos=fitter.get_best_pars()
-            self._print_pars(pos,        front="            mh start after 1st burnin:")
-            self._print_pars(step_sizes, front="            new step sizes:")
-
-            pos=fitter.run_mcmc(pos,mhpars['burnin'])
-
-        # in case we ended on a bad point
-        pos=fitter.get_best_pars()
-        self._print_pars(pos,        front="            mh start after burnin:")
-        pos=fitter.run_mcmc(pos,mhpars['nstep'])
+                    break
 
         return fitter
 

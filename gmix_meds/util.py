@@ -33,6 +33,22 @@ class Namer(object):
         else:
             return '%s_%s' % (self.front, name)
 
+def print_pars_and_logl(pars, logl, fmt='%10.6g', front=None):
+    """
+    print the parameters with a uniform width
+    """
+    from sys import stdout
+    if front is not None:
+        stdout.write(front)
+        stdout.write(' ')
+
+    allfmt = ' '.join( [fmt+' ']*len(pars) )
+    stdout.write(allfmt % tuple(pars))
+    stdout.write("logl: ")
+    stdout.write(fmt % logl)
+    stdout.write('\n')
+
+
 from ngmix import print_pars
 
 class GuesserBase(object):
