@@ -118,30 +118,6 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
             else:
                 print("lm failed")
 
-            '''
-            doemcee=True
-            tname='emcee'
-            if res['flags']==0:
-                # making up errors, but it doesn't matter                    
-                self.guesser = FixedParsGuesser(res['pars'],emcee_pars*0.1)
-
-                greedyfit = self._fit_simple_lm(mb_obs_list, model, params)
-                res=greedyfit.get_result()
-                if res['flags'] == 0:
-                    pars_check=numpy.all(numpy.abs(res['pars']) < 1e9)
-                    if pars_check:
-                        pars=res['pars']
-                        self.guesser=FixedParsGuesser(pars,res['pars_err'])
-                        tname='lm'
-                        doemcee=False
-                    else:
-                        print("bad pars")
-                else:
-                    print("lm failed")
-            else:
-                print("nelder-mead failed:")
-                print(res)
-            '''
             if doemcee:
                 print("        greedy failure, running emcee")
                 # just continue emcee where we left off.  is 400 about right?
@@ -157,41 +133,8 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                 bestlk = emceefit.calc_lnprob(pars)
                 print('            emcee2 min:',
                       fmt % tuple(pars),'loglike = %lf' % bestlk)
-
-            '''
-            if params['min_method'] == 'lm':
-                greedyfit = self._fit_simple_lm(mb_obs_list, model, params)
-            else:
-                greedyfit = self._fit_simple_max(mb_obs_list, model, params)
-
-            if res['flags'] != 0:
-                # this should never happen
-                print("        greedy failure, running emcee")
-                emceefit.run_mcmc(emcee_pars,400)
-                emceefit.calc_result()
-                res=emceefit.get_result()
-                tname='emcee'
-            else:
-                tname='greedy'
-
-            pars = res['pars']
-            if 'pars_err' in res:
-                pars_err = res['pars_err']
-            else:
-                pars_err = numpy.abs(pars)*0.05
-
-            '''
-
-            #self.guesser = FromAlmostFullParsGuesser(pars,pars_err)
         
         return self.guesser
-        '''
-        # our prior on flux goes up to 1.0e9
-        if numpy.all(numpy.abs(pars) < 1e9):
-            return self.guesser
-        else:
-            return None
-        ''' 
 
     def _run_model_fit(self, model, fitter_type, coadd=False):
         """
