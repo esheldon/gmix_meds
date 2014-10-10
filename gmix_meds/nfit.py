@@ -2699,38 +2699,60 @@ class MHMedsFitHybrid(MedsFit):
         best_logl=fitter.get_best_lnprob()
         self._print_pars_and_logl(best_pars, best_logl, front="        mh steps:        ")
 
+        trials=fitter.get_trials()
+        #plot_autocorr(trials,width=1000,height=1000,show=True)
+
         if mhpars['dotest']:
-            import mcmctester
+            #import mcmctester
+            #import acor
+            import biggles
+            import emcee
+            from numpy import array
+            did_rerun=False
             for i in xrange(mhpars['ntest_max']):
 
                 acc=fitter.sampler.get_accepted()
                 arate = fitter.get_arate()
                 bad_arate=(arate < 0.4 or arate > 0.6)
 
-                trials=fitter.get_trials()
-                tester=mcmctester.MCMCTester(trials)
+                #tester=mcmctester.MCMCTester(trials)
+                #check=tester()
+                # this is actually 2*Tau/nstep, which is a good measure, want to be < 0.1
+                taufrac=fitter.get_tau()
 
-                check=tester()
+                print("        taufrac:",taufrac)
+                check = (taufrac < 0.1)
+
                 if bad_arate or not check:
+                    did_rerun=True
                     if bad_arate:
-                        print("        bad arate last run:",arate)
+                        print("            bad arate last run:",arate)
                         errors=trials.std(axis=0)
                         step_sizes = errors*fac
                         clip_element_wise(step_sizes, min_steps, max_steps)
 
                         fitter.set_step_sizes(step_sizes)
-                        self._print_pars(step_sizes, front="        new step sizes:")
+                        self._print_pars(step_sizes, front="            new step sizes:")
                     if not check:
-                        print("        mcmc test failed")
+                        print("            mcmc test failed")
 
                     pos=fitter.run_mcmc(pos, mhpars['nstep'])
                     best_pars=fitter.get_best_pars()
                     best_logl=fitter.get_best_lnprob()
                     self._print_pars_and_logl(best_pars, best_logl, 
                                               front="        mh more steps:        ")
+
+                    trials=fitter.get_trials()
+                    #plot_autocorr(trials,width=1000,height=1000,show=True)
                 else:
                     break
 
+        if self['make_plots']:
+            plt=plot_autocorr(trials)
+            plt.title='%06d-%s' % (self.mindex,model)
+            fname='%06d-%s-autocorr.png' % (self.mindex,model)
+            print("        ", fname)
+            plt.write_img(1000,1000,fname)
         return fitter
 
 

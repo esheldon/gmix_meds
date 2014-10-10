@@ -422,3 +422,28 @@ def get_shape_guess(g1, g2, n, width):
     return guess
 
 
+def plot_autocorr(trials, window=100, show=False, **kw):
+    import biggles
+    import emcee
+
+    arr=biggles.FramedArray(trials.shape[1], 1)
+    arr.uniform_limits=True
+
+    func=emcee.autocorr.function(trials)
+    tau2 = emcee.autocorr.integrated_time(trials, window=window)
+
+    xvals=numpy.arange(func.shape[0])
+    zc=biggles.Curve( [0,func.shape[0]-1],[0,0] )
+
+    for i in xrange(trials.shape[1]):
+        pts=biggles.Curve(xvals,func[:,i],color='blue')
+        
+        lab=biggles.PlotLabel(0.9,0.9,
+                              r'$%s tau\times 2: %s$' % (i,tau2[i]),
+                              halign='right')
+        arr[i,0].add(pts,zc,lab)
+
+    if show:
+        arr.show(**kw)
+
+    return arr
