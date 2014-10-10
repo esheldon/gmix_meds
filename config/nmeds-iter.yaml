@@ -82,7 +82,7 @@ emcee_pars:
 mh_pars:
     burnin: 4000
     nstep: 4000
-    min_step_sizes: [1.0e-6,1.0e-6,1.0e-6,1.0e-6,1.0e-4,1.0e-3]
+    min_step_sizes: [1.0e-6,1.0e-6,1.0e-6,1.0e-6,1.0e-5,1.0e-3]
 
 psf_em_pars:
     ngauss: 3
