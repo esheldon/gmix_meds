@@ -240,4 +240,135 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         return fitter
                             
 
+class MedsFitEmceeIter(MedsFit):
+    """
+    Guesses from a greeder optimizer, emcee for the chain
+    """
+
+    def _fit_all_models(self):
+        """
+        Fit psf flux and other models
+        """
+
+        flags=0
+        # fit both coadd and se psf flux if exists
+        self._fit_psf_flux()
+
+        dindex=self.dindex
+        s2n=self.data['psf_flux'][dindex,:]/self.data['psf_flux_err'][dindex,:]
+        max_s2n=numpy.nanmax(s2n)
+        
+        if max_s2n >= self['min_psf_s2n'] and len(self['fit_models']) > 0:
+            for model in self['fit_models']:
+                print('    fitting:',model)
+
+                # sets self.guesser
+                self._guess_params_iter(self.sdata['mb_obs_list'],
+                                        model, 
+                                        self['me_iter'], 
+                                        self._get_guesser('me_psf'))
+                
+                self._run_model_fit(model)
+        else:
+            mess="    psf s/n too low: %s (%s)"
+            mess=mess % (max_s2n,self['min_psf_s2n'])
+            print(mess)
+            
+            flags |= LOW_PSF_FLUX
+
+        return flags
+
+    def _run_model_fit(self, model):
+        """
+        wrapper to run fit, copy pars, maybe make plots
+
+        sets .fitter
+        """
+
+        mb_obs_list=self.sdata['mb_obs_list']
+
+        fitter=self._fit_model(mb_obs_list, model)
+
+        self._copy_simple_pars(fitter)
+
+        self._print_res(fitter)
+
+        if self['make_plots']:
+            self._do_make_plots(fitter, model)
+
+        self.fitter=fitter
+
+
+    def _guess_params_iter(self, mb_obs_list, model, params, start):
+        fmt = "%10.6g "*(5+self['nband'])
+
+        print("        using method '%s' for minimizer" % params['min_method'])
+
+        for i in xrange(params['max']):
+            print('        iter % 3d of %d' % (i+1,params['max']))
+
+            if i == 0:
+                self.guesser = start
+
+            emceefit = self._fit_simple_emcee_guess(mb_obs_list, model, params)
+
+            emcee_pars = emceefit.get_best_pars()
+            bestlk = numpy.max(emceefit.get_lnprobs())
+            print('            emcee min: ',
+                  fmt % tuple(emcee_pars), 'loglike = %lf' % bestlk)
+
+            # making up errors, but it doesn't matter                    
+            self.guesser = FixedParsGuesser(emcee_pars,emcee_pars*0.1)
+
+            # first nelder mead
+            greedyfit = self._fit_simple_max(mb_obs_list, model, params)
+            res=greedyfit.get_result()
+
+            bestlk = greedyfit.calc_lnprob(res['pars'])
+            print('            nm min:    ',
+                  fmt % tuple(res['pars']),'loglike = %lf' % bestlk)
+
+            self.guesser = FromFullParsGuesser(res['pars'],emcee_pars*0.1)
+
+    def _fit_simple_emcee_guess(self, mb_obs_list, model, params):
+        """
+        Fit one of the "simple" models, e.g. exp or dev
+
+        use flat g prior
+        """
+
+        from ngmix.fitting import MCMCSimple
+
+        # note flat on g!
+        prior=self.gflat_priors[model]
+
+        epars=params['emcee_pars']
+        guess=self.guesser(n=epars['nwalkers'], prior=prior)
+
+        fitter=MCMCSimple(mb_obs_list,
+                          model,
+                          nu=self['nu'],
+                          prior=prior,
+                          nwalkers=epars['nwalkers'],
+                          mca_a=epars['a'],
+                          random_state=self.random_state)
+
+        pos=fitter.run_mcmc(guess,epars['burnin'])
+        pos=fitter.run_mcmc(pos,epars['nstep'])
+
+        return fitter
+
+    def _fit_simple_max(self, mb_obs_list, model, params):
+        from ngmix.fitting import MaxSimple        
+
+        prior=self.gflat_priors[model]
+
+        guess=self.guesser(prior=prior)
+        fitter=MaxSimple(mb_obs_list,
+                         model,
+                         prior=prior,
+                         method=params['min_method'])
+        fitter.run_max(guess)
+        return fitter
+ 
 

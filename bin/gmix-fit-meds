@@ -111,15 +111,20 @@ def run_ngmix(meds_files,
         priors['T_priors'] = get_T_priors_ngmix(conf)
         priors['counts_priors'] = get_counts_priors_ngmix(conf)
 
+    cmguess=conf.get('coadd_model_guess',None)
+    meguess=conf.get('me_model_guess',None)
     if conf['fitter_class']=='mh':
-        if conf['coadd_model_guess'] == 'iter' or conf['me_model_guess'] == "iter":
+        if cmguess == 'iter' or meguess == "iter":
             meds_fitter=gmix_meds.nfititer.MHMedsFitHybridIter
         elif model_data is not None:
             meds_fitter=gmix_meds.nfitnbrs.MHMedsFitModelNbrs
         else:
             meds_fitter=gmix_meds.nfit.MHMedsFitHybrid
     elif conf['fitter_class']=='emcee':
-        meds_fitter=gmix_meds.nfit.MedsFit
+        if cmguess == 'iter' or meguess == "iter":
+            meds_fitter=gmix_meds.nfititer.MedsFitEmceeIter
+        else:
+            meds_fitter=gmix_meds.nfit.MedsFit
     elif conf['fitter_class']=="coadd-only":
         meds_fitter=gmix_meds.nfitcoadd.MedsFitCoadd
     else:
