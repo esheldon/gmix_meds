@@ -48,7 +48,7 @@ me_iter:
         maxfev: 500
 
 emcee_pars:
-    a: 2.0
+    a: 1.8
     nwalkers: 20
     burnin: 400
     nstep: 200

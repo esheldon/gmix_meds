@@ -1,28 +1,25 @@
 fitter: "ngmix"
-fitter_class: "mh"
-fit_me_galaxy: True
+fitter_class: "emcee-only"
 
-# if using emcee, might be coadd_gauss
-# if using mh, might be coadd_gauss_best
 coadd_model_guess: "coadd_psf"
+me_model_guess: "me_psf"
 
-# for mh might be coadd_mcmc_best
-# for emcee might be coadd_mcmc
-me_model_guess: "coadd_mcmc_best"
+fit_me_galaxy: True
+fit_coadd_galaxy: False
+
+check_image_flags: True
+
+use_psf_rerun: False
 
 nu: 0.0
 
-max_box_size: 192
+max_box_size: 96
 
-# using same as 008 here.  maybe more steps fewer walkers better in a way
-# since they are independent
-emcee_a: 2.0
-emcee_nwalkers: 80
-emcee_burnin: 800
-emcee_nstep: 800
-
-mh_burnin: 5000
-mh_nstep: 5000
+emcee_pars:
+    a: 1.8
+    nwalkers: 40
+    burnin: 400
+    nstep: 400
 
 psf_em_pars:
     ngauss: 3
@@ -32,7 +29,7 @@ psf_em_pars:
 
 # at least one band must have s/n > this or
 # we won't fit the slow mcmc 
-min_psf_s2n: 4
+min_psf_s2n: 0
 
 #region: "seg_and_sky"
 region: "cweight-nearest"
@@ -40,8 +37,10 @@ region: "cweight-nearest"
 # in arcsec
 psf_offset_max: 0.25
 
-# in addition to gauss fit on coadd and a psf flux
-fit_models: ['exp']
+# in addition to a psf flux
+fit_models: 
+    - 'exp'
+#    - 'dev'
 
 do_shear: True
 
@@ -49,15 +48,25 @@ use_cen_prior: True
 cen_width: 0.27
 
 # from fitting to all cosmos galaxies in galsim data
-g_prior_types: ["cosmos-sersic"]
+g_prior_types: 
+    - "cosmos-sersic"
+#    - "cosmos-sersic"
 
+T_prior_types:
+    - "TwoSidedErf"
+#    - "TwoSidedErf"
 
-# 1.0e+06 is about 700 arcsec, 2600 pixels
-T_prior_types: ["TwoSidedErf"]
-T_prior_pars: [ [-0.07, 0.03, 1.0e+06, 1.0e+05] ]
+T_prior_pars:
+    - [-0.07, 0.03, 1.0e+06, 1.0e+05]
+#    - [-0.07, 0.03, 1.0e+06, 1.0e+05]
 
-counts_prior_types: ["TwoSidedErf"]
-counts_prior_pars: [ [-1.0, 0.1, 1.0e+09, 0.25e+08] ]
+counts_prior_types:
+    - "TwoSidedErf"
+#    - "TwoSidedErf"
+
+counts_prior_pars:
+    - [-1.0, 0.1, 1.0e+09, 0.25e+08]
+#    - [-1.0, 0.1, 1.0e+09, 0.25e+08]
 
 # this means repeat the above for each band
 counts_prior_repeat: True

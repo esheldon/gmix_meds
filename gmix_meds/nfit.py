@@ -2726,6 +2726,61 @@ class MHMedsFitHybrid(MedsFit):
 
         return fitter
 
+
+
+class MedsFitEmceeOnly(MedsFit):
+    """
+    simplest form
+    """
+
+    def _fit_all_models(self):
+        """
+        Fit psf flux and other models
+        """
+
+        flags=0
+        # fit both coadd and se psf flux if exists
+        self._fit_psf_flux()
+
+        dindex=self.dindex
+        s2n=self.data['psf_flux'][dindex,:]/self.data['psf_flux_err'][dindex,:]
+        max_s2n=numpy.nanmax(s2n)
+        
+        if max_s2n >= self['min_psf_s2n'] and len(self['fit_models']) > 0:
+            self.guesser=self._get_guesser('me_psf')
+            for model in self['fit_models']:
+                print('    fitting:',model)
+                self._run_model_fit(model)
+        else:
+            mess="    psf s/n too low: %s (%s)"
+            mess=mess % (max_s2n,self['min_psf_s2n'])
+            print(mess)
+            
+            flags |= LOW_PSF_FLUX
+
+        return flags
+
+    def _run_model_fit(self, model):
+        """
+        wrapper to run fit, copy pars, maybe make plots
+
+        sets .fitter
+        """
+
+        mb_obs_list=self.sdata['mb_obs_list']
+
+        fitter=self._fit_model(mb_obs_list, model)
+
+        self._copy_simple_pars(fitter)
+
+        self._print_res(fitter)
+
+        if self['make_plots']:
+            self._do_make_plots(fitter, model)
+
+        self.fitter=fitter
+
+
 _stat_names=['s2n_w',
              'chi2per',
              'dof']
