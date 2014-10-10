@@ -3,7 +3,6 @@ from . import nfitcoadd
 from .nfit import MedsFit
 
 from . import lmfit
-from . import mcfit
 from . import lmfit_mb
 
 from . import collate
