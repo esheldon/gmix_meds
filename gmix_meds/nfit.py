@@ -1346,11 +1346,11 @@ class MedsFit(dict):
         data=self.data
 
         n=Namer(name)
-        data[n['flags']][dindex,band] = res['flags']
-        data[n['flux']][dindex,band] = res['flux']
-        data[n['flux_err']][dindex,band] = res['flux_err']
-        data[n['chi2per']][dindex,band] = res['chi2per']
-        data[n['dof']][dindex,band] = res['dof']
+        data[n('flags')][dindex,band] = res['flags']
+        data[n('flux')][dindex,band] = res['flux']
+        data[n('flux_err')][dindex,band] = res['flux_err']
+        data[n('chi2per')][dindex,band] = res['chi2per']
+        data[n('dof')][dindex,band] = res['dof']
         print("        %s flux(%s): %g +/- %g" % (name,band,res['flux'],res['flux_err']))
 
 
