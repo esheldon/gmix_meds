@@ -164,6 +164,13 @@ class Files(dict):
         """
         return self.get_file_dir('collated')
 
+    def get_oracle_dir(self):
+        """
+        collated directory
+        """
+        return self.get_file_dir('collated','oracle')
+
+ 
     def get_collated_file(self, sub_dir=None, extra=None):
         """
         output directory file name
@@ -497,6 +504,10 @@ exit $exit_status
 
     return text
 
+_load_script="""
+
+
+"""
 
 class StagedOutFile(object):
     """
@@ -657,6 +668,7 @@ class MakerBase(dict):
         self._write_collate_wq()
         self._write_collate_wq(verify=True)
         self._write_oracle_wq()
+        self._write_oracle_loaders()
 
     def _write_master_script(self):
         """
@@ -729,6 +741,40 @@ class MakerBase(dict):
         with open(wq_file,'w') as fobj:
             fobj.write(text)
 
+
+    def _write_oracle_loaders(self):
+        """
+        Write scripts to run all the oracle loading
+        """
+        odir=self._files.get_oracle_dir()
+        if not os.path.exists(odir):
+            os.makedirs(odir)
+
+        load_file=os.path.join(odir, 'load-all.sh')
+        load_epochs_file=os.path.join(odir, 'load-all-epochs.sh')
+
+        print("writing:",load_file)
+        with open(load_file,'w') as fobj:
+
+            fobj.write("""
+echo -n "password: "
+read -s password
+echo
+for f in $(ls *.ctl | grep -v epochs | sort); do
+    echo $f
+    time run-sqlldr $f esheldon $password 10000
+done\n""")
+
+        print("writing:",load_epochs_file)
+        with open(load_epochs_file,'w') as fobj:
+            fobj.write("""
+echo -n "password: "
+read -s password
+echo
+for f in $(ls *.ctl | grep epochs | sort); do
+    echo $f
+    time run-sqlldr $f esheldon $pass 10000
+done\n""")
 
     def _load_config(self):
         conf=read_yaml(self['config_file'])
