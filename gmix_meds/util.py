@@ -1,7 +1,11 @@
+from __future__ import print_function
+import numpy
+
+from ngmix import srandu
 
 def clip_element_wise(arr, minvals, maxvals):
     """
-    min vals are 5 element, maxvals is all
+    Clip each element of an array separately
     """
     for i in xrange(arr.size):
         arr[i] = arr[i].clip(min=minvals[i],max=maxvals[i])
@@ -18,6 +22,9 @@ class UtterFailure(Exception):
 
 
 class Namer(object):
+    """
+    create strings with a specified front prefix
+    """
     def __init__(self, front=None):
         self.front=front
     def __call__(self, name):
@@ -26,10 +33,31 @@ class Namer(object):
         else:
             return '%s_%s' % (self.front, name)
 
+def print_pars_and_logl(pars, logl, fmt='%10.6g', front=None):
+    """
+    print the parameters with a uniform width
+    """
+    from sys import stdout
+    if front is not None:
+        stdout.write(front)
+        stdout.write(' ')
+
+    allfmt = ' '.join( [fmt+' ']*len(pars) )
+    stdout.write(allfmt % tuple(pars))
+    stdout.write("logl: ")
+    stdout.write(fmt % logl)
+    stdout.write('\n')
+
+
 from ngmix import print_pars
 
 class GuesserBase(object):
     def _fix_guess(self, guess, prior, ntry=4):
+        """
+        Fix a guess for out-of-bounds values according the the input prior
+
+        Bad guesses are replaced by a sample from the prior
+        """
         from ngmix.priors import LOWVAL
 
         #guess[:,2]=-9999
@@ -277,7 +305,31 @@ class FromAlmostFullParsGuesser(GuesserBase):
 
         guess=numpy.zeros( (n, npars) )
 
-        guess[:f prior is not None:
+
+        guess[:,0] = width[0]*srandu(n)
+        guess[:,1] = width[1]*srandu(n)
+
+        for j in xrange(n):
+            itr = 0
+            maxitr = 100
+            while itr < maxitr:
+                for i in xrange(2,npars):
+                    if self.scaling=='linear' and i >= 4:
+                        if pars[i] <= 0.0:
+                            guess[j,:] = width[i]*srandu(1)
+                        else:
+                            guess[j,i] = pars[i]*(1.0 + width[i]*srandu(1))
+                    else:
+                        # we add to log pars!
+                        guess[j,i] = pars[i] + width[i]*srandu(1)
+
+                if numpy.abs(guess[j,2]) < 1.0 \
+                        and numpy.abs(guess[j,3]) < 1.0 \
+                        and guess[j,2]*guess[j,2] + guess[j,3]*guess[j,3] < 1.0:
+                    break
+                itr += 1
+
+        if prior is not None:
             self._fix_guess(guess, prior)
 
         if is_scalar:
@@ -370,3 +422,28 @@ def get_shape_guess(g1, g2, n, width):
     return guess
 
 
+def plot_autocorr(trials, window=100, show=False, **kw):
+    import biggles
+    import emcee
+
+    arr=biggles.FramedArray(trials.shape[1], 1)
+    arr.uniform_limits=True
+
+    func=emcee.autocorr.function(trials)
+    tau2 = emcee.autocorr.integrated_time(trials, window=window)
+
+    xvals=numpy.arange(func.shape[0])
+    zc=biggles.Curve( [0,func.shape[0]-1],[0,0] )
+
+    for i in xrange(trials.shape[1]):
+        pts=biggles.Curve(xvals,func[:,i],color='blue')
+        
+        lab=biggles.PlotLabel(0.9,0.9,
+                              r'$%s tau\times 2: %s$' % (i,tau2[i]),
+                              halign='right')
+        arr[i,0].add(pts,zc,lab)
+
+    if show:
+        arr.show(**kw)
+
+    return arr

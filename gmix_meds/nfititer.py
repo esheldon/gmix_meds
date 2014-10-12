@@ -1,4 +1,7 @@
+from __future__ import print_function
+import numpy
 from .nfit import *
+from ngmix import print_pars
 
 class MHMedsFitHybridIter(MHMedsFitHybrid):
     """
@@ -76,7 +79,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
             emceefit = self._fit_simple_emcee_guess(mb_obs_list, model, params)
 
             emcee_pars = emceefit.get_best_pars()
-            bestlk = numpy.max(emceefit.get_lnprobs())
+            bestlk = emceefit.get_best_lnprob()
             print('            emcee min: ',
                   fmt % tuple(emcee_pars), 'loglike = %lf' % bestlk)
 
@@ -93,14 +96,11 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
 
             # must ignore errors in nedler-mead
             doemcee=True
-            #self.guesser = FixedParsGuesser(res1['pars'],emcee_pars*0.1)
             self.guesser = FromFullParsGuesser(res1['pars'],emcee_pars*0.1)
-            #self.guesser = FromAlmostFullParsGuesser(res1['pars'],emcee_pars*0.1)
 
             greedyfit2 = self._fit_simple_lm(mb_obs_list, model, params)
             res2=greedyfit2.get_result()
 
-            tname='lm'
             if res2['flags'] == 0:
                 pars_check=numpy.all(numpy.abs(res2['pars']) < 1e9)
                 if pars_check:
@@ -118,80 +118,22 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
             else:
                 print("lm failed")
 
-            '''
-            doemcee=True
-            tname='emcee'
-            if res['flags']==0:
-                # making up errors, but it doesn't matter                    
-                self.guesser = FixedParsGuesser(res['pars'],emcee_pars*0.1)
-
-                greedyfit = self._fit_simple_lm(mb_obs_list, model, params)
-                res=greedyfit.get_result()
-                if res['flags'] == 0:
-                    pars_check=numpy.all(numpy.abs(res['pars']) < 1e9)
-                    if pars_check:
-                        pars=res['pars']
-                        self.guesser=FixedParsGuesser(pars,res['pars_err'])
-                        tname='lm'
-                        doemcee=False
-                    else:
-                        print("bad pars")
-                else:
-                    print("lm failed")
-            else:
-                print("nelder-mead failed:")
-                print(res)
-            '''
             if doemcee:
                 print("        greedy failure, running emcee")
-                # just continue emcee where we left off.  is 400 about right?
-                self.guesser = FixedParsGuesser(emcee_pars,emcee_pars*0.1)
+                # something went wrong, so just continue emcee
+                # where we left off.  is 400 about right?
                 pos=emceefit.get_last_pos()
                 emceefit.run_mcmc(pos,400)
                 emceefit.calc_result()
                 res=emceefit.get_result()
                 pars=emceefit.get_best_pars()
                 self.guesser=FixedParsGuesser(pars,res['pars_err'])
-                tname='emcee'
 
-                bestlk = emceefit.calc_lnprob(pars)
+                bestlk = emceefit.get_best_lnprob()
                 print('            emcee2 min:',
                       fmt % tuple(pars),'loglike = %lf' % bestlk)
-
-            '''
-            if params['min_method'] == 'lm':
-                greedyfit = self._fit_simple_lm(mb_obs_list, model, params)
-            else:
-                greedyfit = self._fit_simple_max(mb_obs_list, model, params)
-
-            if res['flags'] != 0:
-                # this should never happen
-                print("        greedy failure, running emcee")
-                emceefit.run_mcmc(emcee_pars,400)
-                emceefit.calc_result()
-                res=emceefit.get_result()
-                tname='emcee'
-            else:
-                tname='greedy'
-
-            pars = res['pars']
-            if 'pars_err' in res:
-                pars_err = res['pars_err']
-            else:
-                pars_err = numpy.abs(pars)*0.05
-
-            '''
-
-            #self.guesser = FromAlmostFullParsGuesser(pars,pars_err)
         
         return self.guesser
-        '''
-        # our prior on flux goes up to 1.0e9
-        if numpy.all(numpy.abs(pars) < 1e9):
-            return self.guesser
-        else:
-            return None
-        ''' 
 
     def _run_model_fit(self, model, fitter_type, coadd=False):
         """
@@ -239,9 +181,6 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
 
         epars=params['emcee_pars']
         guess=self.guesser(n=epars['nwalkers'], prior=prior)
-        #for olist in mb_obs_list:
-        #    print("    image filename:",olist[0].filename)
-        #    print("    psfex filename:",olist[0].psf.filename)
 
         fitter=MCMCSimple(mb_obs_list,
                           model,
@@ -266,7 +205,6 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         from ngmix.fitting import LMSimple
 
         if use_prior:
-            #prior=self.priors[model]
             prior=self.gflat_priors[model]
         else:
             prior=None
@@ -274,7 +212,6 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         ntry=params['lm_ntry']
         for i in xrange(ntry):
             guess=self.guesser(prior=prior)
-            #self._print_pars(guess, front='            lm guess:')
 
             fitter=LMSimple(mb_obs_list,
                             model,
@@ -303,4 +240,135 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         return fitter
                             
 
+class MedsFitEmceeIter(MedsFit):
+    """
+    Guesses from a greeder optimizer, emcee for the chain
+    """
+
+    def _fit_all_models(self):
+        """
+        Fit psf flux and other models
+        """
+
+        flags=0
+        # fit both coadd and se psf flux if exists
+        self._fit_psf_flux()
+
+        dindex=self.dindex
+        s2n=self.data['psf_flux'][dindex,:]/self.data['psf_flux_err'][dindex,:]
+        max_s2n=numpy.nanmax(s2n)
+        
+        if max_s2n >= self['min_psf_s2n'] and len(self['fit_models']) > 0:
+            for model in self['fit_models']:
+                print('    fitting:',model)
+
+                # sets self.guesser
+                self._guess_params_iter(self.sdata['mb_obs_list'],
+                                        model, 
+                                        self['me_iter'], 
+                                        self._get_guesser('me_psf'))
+                
+                self._run_model_fit(model)
+        else:
+            mess="    psf s/n too low: %s (%s)"
+            mess=mess % (max_s2n,self['min_psf_s2n'])
+            print(mess)
+            
+            flags |= LOW_PSF_FLUX
+
+        return flags
+
+    def _run_model_fit(self, model):
+        """
+        wrapper to run fit, copy pars, maybe make plots
+
+        sets .fitter
+        """
+
+        mb_obs_list=self.sdata['mb_obs_list']
+
+        fitter=self._fit_model(mb_obs_list, model)
+
+        self._copy_simple_pars(fitter)
+
+        self._print_res(fitter)
+
+        if self['make_plots']:
+            self._do_make_plots(fitter, model)
+
+        self.fitter=fitter
+
+
+    def _guess_params_iter(self, mb_obs_list, model, params, start):
+        fmt = "%10.6g "*(5+self['nband'])
+
+        print("        using method '%s' for minimizer" % params['min_method'])
+
+        for i in xrange(params['max']):
+            print('        iter % 3d of %d' % (i+1,params['max']))
+
+            if i == 0:
+                self.guesser = start
+
+            emceefit = self._fit_simple_emcee_guess(mb_obs_list, model, params)
+
+            emcee_pars = emceefit.get_best_pars()
+            bestlk = emceefit.get_best_lnprob()
+            print('            emcee min: ',
+                  fmt % tuple(emcee_pars), 'loglike = %lf' % bestlk)
+
+            # making up errors, but it doesn't matter                    
+            self.guesser = FixedParsGuesser(emcee_pars,emcee_pars*0.1)
+
+            # first nelder mead
+            greedyfit = self._fit_simple_max(mb_obs_list, model, params)
+            res=greedyfit.get_result()
+
+            bestlk = greedyfit.calc_lnprob(res['pars'])
+            print('            nm min:    ',
+                  fmt % tuple(res['pars']),'loglike = %lf' % bestlk)
+
+            self.guesser = FromFullParsGuesser(res['pars'],emcee_pars*0.1)
+
+    def _fit_simple_emcee_guess(self, mb_obs_list, model, params):
+        """
+        Fit one of the "simple" models, e.g. exp or dev
+
+        use flat g prior
+        """
+
+        from ngmix.fitting import MCMCSimple
+
+        # note flat on g!
+        prior=self.gflat_priors[model]
+
+        epars=params['emcee_pars']
+        guess=self.guesser(n=epars['nwalkers'], prior=prior)
+
+        fitter=MCMCSimple(mb_obs_list,
+                          model,
+                          nu=self['nu'],
+                          prior=prior,
+                          nwalkers=epars['nwalkers'],
+                          mca_a=epars['a'],
+                          random_state=self.random_state)
+
+        pos=fitter.run_mcmc(guess,epars['burnin'])
+        pos=fitter.run_mcmc(pos,epars['nstep'])
+
+        return fitter
+
+    def _fit_simple_max(self, mb_obs_list, model, params):
+        from ngmix.fitting import MaxSimple        
+
+        prior=self.gflat_priors[model]
+
+        guess=self.guesser(prior=prior)
+        fitter=MaxSimple(mb_obs_list,
+                         model,
+                         prior=prior,
+                         method=params['min_method'])
+        fitter.run_max(guess)
+        return fitter
+ 
 

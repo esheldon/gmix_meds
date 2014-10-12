@@ -258,12 +258,12 @@ class MedsFitCoadd(MedsFit):
         res=fitter.get_result()
         data=self.data
 
-        n=get_model_names(name)
-        data[n['flags']][dindex,band] = res['flags']
-        data[n['flux']][dindex,band] = res['flux']
-        data[n['flux_err']][dindex,band] = res['flux_err']
-        data[n['chi2per']][dindex,band] = res['chi2per']
-        data[n['dof']][dindex,band] = res['dof']
+        n=Namer(name)
+        data[n('flags')][dindex,band] = res['flags']
+        data[n('flux')][dindex,band] = res['flux']
+        data[n('flux_err')][dindex,band] = res['flux_err']
+        data[n('chi2per')][dindex,band] = res['chi2per']
+        data[n('dof')][dindex,band] = res['dof']
         print("        %s flux(%s): %g +/- %g" % (name,band,res['flux'],res['flux_err']))
 
     def _get_multi_band_observations(self, mindex):
@@ -428,12 +428,12 @@ class MedsFitCoadd(MedsFit):
         # coadd fit with em 1 gauss
         # the psf flux fits are done for each band separately
         for name in ['psf']:
-            n=get_model_names(name)
-            dt += [(n['flags'],   'i4',bshape),
-                   (n['flux'],    'f8',bshape),
-                   (n['flux_err'],'f8',bshape),
-                   (n['chi2per'],'f8',bshape),
-                   (n['dof'],'f8',bshape)]
+            n=Namer(name)
+            dt += [(n('flags'),   'i4',bshape),
+                   (n('flux'),    'f8',bshape),
+                   (n('flux_err'),'f8',bshape),
+                   (n('chi2per'),'f8',bshape),
+                   (n('dof'),'f8',bshape)]
 
         if nband==1:
             cov_shape=(nband,)
@@ -443,33 +443,33 @@ class MedsFitCoadd(MedsFit):
         models=self['fit_models']
         for model in models:
 
-            n=get_model_names(model)
+            n=Namer(model)
 
             np=simple_npars
 
-            dt+=[(n['flags'],'i4'),
-                 (n['pars'],'f8',np),
-                 (n['pars_cov'],'f8',(np,np)),
-                 (n['logpars'],'f8',np),
-                 (n['logpars_cov'],'f8',(np,np)),
-                 (n['flux'],'f8',bshape),
-                 (n['flux_cov'],'f8',cov_shape),
-                 (n['g'],'f8',2),
-                 (n['g_cov'],'f8',(2,2)),
+            dt+=[(n('flags'),'i4'),
+                 (n('pars'),'f8',np),
+                 (n('pars_cov'),'f8',(np,np)),
+                 (n('logpars'),'f8',np),
+                 (n('logpars_cov'),'f8',(np,np)),
+                 (n('flux'),'f8',bshape),
+                 (n('flux_cov'),'f8',cov_shape),
+                 (n('g'),'f8',2),
+                 (n('g_cov'),'f8',(2,2)),
                 
-                 (n['s2n_w'],'f8'),
-                 (n['chi2per'],'f8'),
-                 (n['dof'],'f8'),
-                 (n['aic'],'f8'),
-                 (n['bic'],'f8'),
-                 (n['arate'],'f8'),
-                 (n['tau'],'f8'),
+                 (n('s2n_w'),'f8'),
+                 (n('chi2per'),'f8'),
+                 (n('dof'),'f8'),
+                 (n('aic'),'f8'),
+                 (n('bic'),'f8'),
+                 (n('arate'),'f8'),
+                 (n('tau'),'f8'),
                 ]
             if self['do_shear']:
-                dt += [(n['g_sens'], 'f8', 2),
-                       (n['P'], 'f8'),
-                       (n['Q'], 'f8', 2),
-                       (n['R'], 'f8', (2,2))]
+                dt += [(n('g_sens'), 'f8', 2),
+                       (n('P'), 'f8'),
+                       (n('Q'), 'f8', 2),
+                       (n('R'), 'f8', (2,2))]
 
         return dt
 
@@ -483,36 +483,36 @@ class MedsFitCoadd(MedsFit):
         data=numpy.zeros(num, dtype=dt)
 
         for name in ['psf']:
-            n=get_model_names(name)
-            data[n['flags']] = NO_ATTEMPT
-            data[n['flux']] = DEFVAL
-            data[n['flux_err']] = PDEFVAL
-            data[n['chi2per']] = PDEFVAL
+            n=Namer(name)
+            data[n('flags')] = NO_ATTEMPT
+            data[n('flux')] = DEFVAL
+            data[n('flux_err')] = PDEFVAL
+            data[n('chi2per')] = PDEFVAL
 
         for model in self['fit_models']:
-            n=get_model_names(model)
+            n=Namer(model)
 
-            data[n['flags']] = NO_ATTEMPT
+            data[n('flags')] = NO_ATTEMPT
 
-            data[n['pars']] = DEFVAL
-            data[n['pars_cov']] = PDEFVAL
-            data[n['flux']] = DEFVAL
-            data[n['flux_cov']] = PDEFVAL
-            data[n['g']] = DEFVAL
-            data[n['g_cov']] = PDEFVAL
+            data[n('pars')] = DEFVAL
+            data[n('pars_cov')] = PDEFVAL
+            data[n('flux')] = DEFVAL
+            data[n('flux_cov')] = PDEFVAL
+            data[n('g')] = DEFVAL
+            data[n('g_cov')] = PDEFVAL
 
-            data[n['s2n_w']] = DEFVAL
-            data[n['chi2per']] = PDEFVAL
-            data[n['aic']] = BIG_PDEFVAL
-            data[n['bic']] = BIG_PDEFVAL
+            data[n('s2n_w')] = DEFVAL
+            data[n('chi2per')] = PDEFVAL
+            data[n('aic')] = BIG_PDEFVAL
+            data[n('bic')] = BIG_PDEFVAL
 
-            data[n['tau']] = PDEFVAL
+            data[n('tau')] = PDEFVAL
 
             if self['do_shear']:
-                data[n['g_sens']] = DEFVAL
-                data[n['P']] = DEFVAL
-                data[n['Q']] = DEFVAL
-                data[n['R']] = DEFVAL
+                data[n('g_sens')] = DEFVAL
+                data[n('P')] = DEFVAL
+                data[n('Q')] = DEFVAL
+                data[n('R')] = DEFVAL
 
      
         self.data=data

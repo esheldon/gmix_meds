@@ -15,13 +15,11 @@ import psfex
 import ngmix
 from ngmix import srandu
 from ngmix import Jacobian
-from ngmix import GMixMaxIterEM, GMixRangeError, print_pars_ngmix
+from ngmix import GMixMaxIterEM, GMixRangeError, print_pars
 from ngmix import Observation, ObsList, MultiBandObsList
 from ngmix import GMixModel, GMix
 
-from .lmfit import get_model_names
-
-from util import *
+from .util import *
 
 # starting new values for these
 DEFVAL=-9999
@@ -140,6 +138,8 @@ class MedsFit(dict):
         else:
             self['model_neighbors']=False
 
+        self['print_pars']=self.get('print_pars',True)
+
     def _reset_mb_sums(self):
         from numpy import zeros
         nband=self['nband']
@@ -216,7 +216,11 @@ class MedsFit(dict):
 
     def _print_pars(self, pars, **kw):
         if self['print_params']:
-            print_pars_ngmix(pars,**kw)
+            print_pars(pars,**kw)
+    def _print_pars_and_logl(self, pars, logl, **kw):
+        if self['print_params']:
+            print_pars_and_logl(pars, logl, **kw)
+
 
     def get_data(self):
         """
@@ -669,7 +673,7 @@ class MedsFit(dict):
                             #see if need good ME fit 
                             if 'require_me_goodfit' in self['nbrs_model']:
                                 if self['nbrs_model']['require_me_goodfit']:
-                                    if self._check_model_nbrs_flags(cid, nme, nmodel) == False
+                                    if self._check_model_nbrs_flags(cid, nme, nmodel) == False:
                                         continue
                             
                             ##################################################
@@ -1345,12 +1349,12 @@ class MedsFit(dict):
         res=fitter.get_result()
         data=self.data
 
-        n=get_model_names(name)
-        data[n['flags']][dindex,band] = res['flags']
-        data[n['flux']][dindex,band] = res['flux']
-        data[n['flux_err']][dindex,band] = res['flux_err']
-        data[n['chi2per']][dindex,band] = res['chi2per']
-        data[n['dof']][dindex,band] = res['dof']
+        n=Namer(name)
+        data[n('flags')][dindex,band] = res['flags']
+        data[n('flux')][dindex,band] = res['flux']
+        data[n('flux_err')][dindex,band] = res['flux_err']
+        data[n('chi2per')][dindex,band] = res['chi2per']
+        data[n('dof')][dindex,band] = res['dof']
         print("        %s flux(%s): %g +/- %g" % (name,band,res['flux'],res['flux_err']))
 
 
@@ -1832,7 +1836,7 @@ class MedsFit(dict):
                                      "sizes: %d/%d" % (nobj_tot,nobj))
             self.meds_list.append(medsi)
             self.meds_meta_list.append(medsi_meta)
-            self.all_image_flags.append( image_info['image_flags'].copy() )
+            self.all_image_flags.append( image_info['image_flags'].astype('i8') )
 
         self.nobj_tot = self.meds_list[0].size
 
@@ -1889,7 +1893,8 @@ class MedsFit(dict):
 
             for i in xrange(blacklist_raw.size):
                 key='%s-%02d' % (blacklist_raw['expname'][i], blacklist_raw['ccd'][i])
-                blacklist[key] = blacklist_raw['flags'][i]
+                # convert to int in case we end up going larger than 4 bytes
+                blacklist[key] = int(blacklist_raw['flags'][i])
 
             self._psfex_blacklist_raw=blacklist_raw
             self._psfex_blacklist=blacklist
@@ -1923,7 +1928,7 @@ class MedsFit(dict):
         if self['use_psf_rerun'] and 'coadd' not in psfpath:
             psfparts=psfpath.split('/')
             psfparts[-6] = 'EXTRA' # replace 'OPS'
-            psfparts[-3] = 'psfex-rerun' # replace 'red'
+            psfparts[-3] = 'psfex-rerun/%s' % self['psf_rerun_version'] # replace 'red'
 
             psfpath='/'.join(psfparts)
 
@@ -1938,6 +1943,7 @@ class MedsFit(dict):
             # we only worry about certain flags
             checkflags=self['psf_flags2check']
             if (flagsall & checkflags) != 0:
+                print("    psf flags:",flagsall)
                 flags = checkflags
                 print(psfpath,flags)
 
@@ -2004,11 +2010,11 @@ class MedsFit(dict):
                 type='mb'
 
             if self['print_pars']:
-                print("        %s linear pars:" % type)
+                print("        %s fit pars:" % type)
             self._print_pars(res['pars'],    front='        ')
             self._print_pars(res['pars_err'],front='        ')
             if 'arate' in res:
-                print('        arate:',res['arate'])
+                print('        arate:',res['arate'],'chi2per:',res['chi2per'])
 
     def _setup_checkpoints(self):
         """
@@ -2672,7 +2678,6 @@ class MHMedsFitHybrid(MedsFit):
         self._print_pars(max_steps, front="        max_steps:")
 
         clip_element_wise(step_sizes, min_steps, max_steps)
-
         self._print_pars(step_sizes, front="        step sizes:")
 
         fitter=MHSimple(mb_obs_list,
@@ -2682,47 +2687,130 @@ class MHMedsFitHybrid(MedsFit):
                         nu=self['nu'],
                         random_state=self.random_state)
 
-        self._print_pars(guess,front="        mh guess:   ")
+        self._print_pars(guess,front="        mh guess:            ")
+
+        # burnin
         pos=fitter.run_mcmc(guess,mhpars['burnin'])
+        best_pars=fitter.get_best_pars()
+        best_logl=fitter.get_best_lnprob()
+        self._print_pars_and_logl(best_pars, best_logl, front="        mh best burnin 1:")
 
-        n=int(mhpars['burnin']*0.1)
+        # nominal steps
+        pos=fitter.run_mcmc(guess,mhpars['nstep'])
+        best_pars=fitter.get_best_pars()
+        best_logl=fitter.get_best_lnprob()
+        self._print_pars_and_logl(best_pars, best_logl, front="        mh steps:        ")
 
-        acc=fitter.sampler.get_accepted()
-        arate = acc[-n:].sum()/(1.0*n)
-        print("        arate of last",n,"is",arate)
+        trials=fitter.get_trials()
+        #plot_autocorr(trials,width=1000,height=1000,show=True)
 
-        if arate < 0.4 or arate > 0.6:
-            print("        recalculating step sizes")
-            # change step sizes and run another burnin
+        if mhpars['dotest']:
+            #import mcmctester
+            #import acor
+            import biggles
+            import emcee
+            from numpy import array
+            did_rerun=False
+            for i in xrange(mhpars['ntest_max']):
 
-            if False:
-                if arate < 0.01:
-                    fac=0.01/0.5
+                acc=fitter.sampler.get_accepted()
+                arate = fitter.get_arate()
+                bad_arate=(arate < 0.4 or arate > 0.6)
+
+                #tester=mcmctester.MCMCTester(trials)
+                #check=tester()
+                # this is actually 2*Tau/nstep, which is a good measure, want to be < 0.1
+                taufrac=fitter.get_tau()
+
+                print("        taufrac:",taufrac)
+                check = (taufrac < 0.1)
+
+                if bad_arate or not check:
+                    did_rerun=True
+                    if bad_arate:
+                        print("            bad arate last run:",arate)
+                        errors=trials.std(axis=0)
+                        step_sizes = errors*fac
+                        clip_element_wise(step_sizes, min_steps, max_steps)
+
+                        fitter.set_step_sizes(step_sizes)
+                        self._print_pars(step_sizes, front="            new step sizes:")
+                    if not check:
+                        print("            mcmc test failed")
+
+                    pos=fitter.run_mcmc(pos, mhpars['nstep'])
+                    best_pars=fitter.get_best_pars()
+                    best_logl=fitter.get_best_lnprob()
+                    self._print_pars_and_logl(best_pars, best_logl, 
+                                              front="        mh more steps:        ")
+
+                    trials=fitter.get_trials()
+                    #plot_autocorr(trials,width=1000,height=1000,show=True)
                 else:
-                    fac = arate/0.5
+                    break
 
-                step_sizes *= fac
-            else:
-                trials = fitter.get_trials()
-                errors=trials[-n:, :].std(axis=0)
-                step_sizes = errors*fac
-
-            clip_element_wise(step_sizes, min_steps, max_steps)
-
-            fitter.set_step_sizes(step_sizes)
-
-            pos=fitter.get_best_pars()
-            self._print_pars(pos,        front="            mh start after 1st burnin:")
-            self._print_pars(step_sizes, front="            new step sizes:")
-
-            pos=fitter.run_mcmc(pos,mhpars['burnin'])
-
-        # in case we ended on a bad point
-        pos=fitter.get_best_pars()
-        self._print_pars(pos,        front="            mh start after burnin:")
-        pos=fitter.run_mcmc(pos,mhpars['nstep'])
-
+        if self['make_plots']:
+            plt=plot_autocorr(trials)
+            plt.title='%06d-%s' % (self.mindex,model)
+            fname='%06d-%s-autocorr.png' % (self.mindex,model)
+            print("        ", fname)
+            plt.write_img(1000,1000,fname)
         return fitter
+
+
+
+class MedsFitEmceeOnly(MedsFit):
+    """
+    simplest form
+    """
+
+    def _fit_all_models(self):
+        """
+        Fit psf flux and other models
+        """
+
+        flags=0
+        # fit both coadd and se psf flux if exists
+        self._fit_psf_flux()
+
+        dindex=self.dindex
+        s2n=self.data['psf_flux'][dindex,:]/self.data['psf_flux_err'][dindex,:]
+        max_s2n=numpy.nanmax(s2n)
+        
+        if max_s2n >= self['min_psf_s2n'] and len(self['fit_models']) > 0:
+            self.guesser=self._get_guesser('me_psf')
+            for model in self['fit_models']:
+                print('    fitting:',model)
+                self._run_model_fit(model)
+        else:
+            mess="    psf s/n too low: %s (%s)"
+            mess=mess % (max_s2n,self['min_psf_s2n'])
+            print(mess)
+            
+            flags |= LOW_PSF_FLUX
+
+        return flags
+
+    def _run_model_fit(self, model):
+        """
+        wrapper to run fit, copy pars, maybe make plots
+
+        sets .fitter
+        """
+
+        mb_obs_list=self.sdata['mb_obs_list']
+
+        fitter=self._fit_model(mb_obs_list, model)
+
+        self._copy_simple_pars(fitter)
+
+        self._print_res(fitter)
+
+        if self['make_plots']:
+            self._do_make_plots(fitter, model)
+
+        self.fitter=fitter
+
 
 _stat_names=['s2n_w',
              'chi2per',

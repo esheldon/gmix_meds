@@ -81,137 +81,6 @@ def make_ngmix_meta(conf, meds_meta_list, meds_files):
     return meta
 
 
-def make_lm_meta(conf, meds_meta_list, meds_files):
-
-    dt = meds_meta_list[0].dtype.descr
-
-    config_file=conf['config_file']
-
-    clen=len(config_file)
-    flen=max( [len(mf) for mf in meds_files] )
-    mlen=len(conf['psf_model'])
-    rlen=len(conf['region'])
-
-    dt += [('gmix_meds_config','S%d' % clen),
-           ('meds_file','S%d' % flen),
-           ('psf_ntry','i2'),
-           ('obj_ntry','i2'),
-           ('psf_model','S%d' % mlen),
-           ('psf_offset_max','f8'),
-           ('region','S%d' % rlen)]
-
-    nband=len(meds_meta_list)
-    meta=numpy.zeros(nband, dtype=dt)
-
-    #mlist=[]
-    for band in xrange(nband):
-
-        meta=numpy.zeros(1, dtype=dt)
-        meds_file=meds_files[band]
-        meds_meta=meds_meta_list[band]
-        mf=meds_files[band]
-
-        mnames=meta.dtype.names
-        for name in meds_meta.dtype.names:
-            if name in mnames:
-                meta[name][band] = meds_meta[name][0]
-
-        #eu.numpy_util.copy_fields(meds_meta, meta)
-
-        meta['gmix_meds_config'][band] = config_file
-        meta['meds_file'][band] = meds_file
-        meta['psf_ntry'][band] = conf['psf_ntry']
-        meta['obj_ntry'][band] = conf['obj_ntry']
-        meta['psf_model'][band] = conf['psf_model']
-        meta['psf_offset_max'][band] = conf['psf_offset_max']
-        meta['region'][band] = conf['region']
-        #mlist.append(meta)
-
-    #meta=eu.numpy_util.combine_arrlist(mlist)
-    return meta
-
-def make_mcmc_meta(conf, meds_meta, meds_file):
-
-    raise ValueError("fix for multi-band")
-
-    dt = meds_meta.dtype.descr
-
-    config_file=conf['config_file']
-    clen=len(config_file)
-    flen=len(meds_file)
-    mlen=len(conf['psf_model'])
-    rlen=len(conf['region'])
-
-    gtlen = len(conf['gprior_type'])
-
-    dt += [('gmix_meds_config','S%d' % clen),
-           ('meds_file','S%d' % flen),
-           ('psf_ntry','i2'),
-
-           ('nwalkers','i2'),
-           ('burnin','i2'),
-           ('nstep','i2'),
-           ('mca_a','f8'),
-
-           ('do_pqr','i2'),
-
-           ('psf_model','S%d' % mlen),
-
-           ('gprior_type','S%d' % gtlen),
-
-           ('psf_offset_max','f8'),
-           ('region','S%d' % rlen)]
-
-    meta=numpy.zeros(1, dtype=dt)
-    for n in meds_meta.dtype.names:
-        meta[n] = meds_meta[n]
-
-    meta['gmix_meds_config'] = config_file
-    meta['meds_file'] = meds_file
-
-    meta['psf_ntry'] = conf['psf_ntry']
-
-    meta['nwalkers'] = conf['nwalkers']
-    meta['burnin'] = conf['burnin']
-    meta['nstep'] = conf['nstep']
-    meta['mca_a'] = conf['mca_a']
-
-    if conf['do_pqr']:
-        meta['do_pqr']=1
-    else:
-        meta['do_pqr']=0
-
-    meta['gprior_type'] = conf['gprior_type']
-
-    meta['psf_model'] = conf['psf_model']
-    meta['psf_offset_max'] = conf['psf_offset_max']
-    meta['region'] = conf['region']
-
-    return meta
-
-
-def run_lm(meds_files, conf, checkpoint_data=None):
-    gprior=get_g_prior(conf)
-    conf['gprior'] = gprior
-
-    if len(meds_files)==1:
-        gm=gmix_meds.MedsFit(conf,
-                             meds_files[0],
-                             checkpoint_data=checkpoint_data)
-        gm.do_fits()
-        data=gm.get_data()
-        meds_meta=[gm.get_meds_meta()]
-    else:
-        gm=gmix_meds.MedsFitMB(meds_files,
-                               checkpoint_data=checkpoint_data,
-                               **conf)
-        gm.do_fits()
-        data=gm.get_data()
-        meds_meta=gm.get_meds_meta_list()
-
-    meta=make_lm_meta(conf, meds_meta, meds_files)
-
-    return data, meta
 
 def run_ngmix(meds_files,
               meds_files_full,
@@ -242,15 +111,22 @@ def run_ngmix(meds_files,
         priors['T_priors'] = get_T_priors_ngmix(conf)
         priors['counts_priors'] = get_counts_priors_ngmix(conf)
 
+    cmguess=conf.get('coadd_model_guess',None)
+    meguess=conf.get('me_model_guess',None)
     if conf['fitter_class']=='mh':
-        if conf['coadd_model_guess'] == 'iter' or conf['me_model_guess'] == "iter":
-            meds_fitter=gmix_meds.nfit.MHMedsFitHybridIter
+        if cmguess == 'iter' or meguess == "iter":
+            meds_fitter=gmix_meds.nfititer.MHMedsFitHybridIter
         elif model_data is not None:
-            meds_fitter=gmix_meds.nfit.MHMedsFitModelNbrs
+            meds_fitter=gmix_meds.nfitnbrs.MHMedsFitModelNbrs
         else:
             meds_fitter=gmix_meds.nfit.MHMedsFitHybrid
     elif conf['fitter_class']=='emcee':
-        meds_fitter=gmix_meds.nfit.MedsFit
+        if cmguess == 'iter' or meguess == "iter":
+            meds_fitter=gmix_meds.nfititer.MedsFitEmceeIter
+        else:
+            meds_fitter=gmix_meds.nfit.MedsFit
+    elif conf['fitter_class']=='emcee-only':
+        meds_fitter=gmix_meds.nfit.MedsFitEmceeOnly
     elif conf['fitter_class']=="coadd-only":
         meds_fitter=gmix_meds.nfitcoadd.MedsFitCoadd
     else:
@@ -362,40 +238,6 @@ def get_cen_prior_ngmix(conf):
     else:
         return None
 
-def get_g_prior(conf):
-    import gmix_image
-    if 'g_prior_type' in conf:
-        gprior_type=conf['g_prior_type']
-    elif 'gprior_type' in conf:
-        gprior_type=conf['gprior_type']
-    else:
-        gprior_type=None
-
-    if gprior_type is None or gprior_type=='None':
-        return None
-    elif gprior_type =='flat':
-        return gmix_image.priors.GPriorFlat()
-    elif gprior_type=='exp':
-        pars=conf['gprior_pars']
-        return gmix_image.priors.GPriorExp(pars)
-    else:
-        raise ValueError("implement gprior '%s'")
-
-def run_mcmc(meds_files, conf):
-    gprior=get_g_prior(conf)
-
-    if len(meds_files)==1:
-        gm=gmix_meds.MedsMCMC(meds_files[0], gprior, **conf)
-    else:
-        raise ValueError("implement mb for mcmc")
-
-    gm.do_fits()
-
-    data=gm.get_data()
-    meds_meta=gm.get_meds_meta()
-    meta=make_mcmc_meta(conf, meds_meta, meds_files[0])
-
-    return data, meta
 
 def get_sub_fname(fname, rng, work_dir):
     rng_string = '%s-%s' % (rng[0], rng[1])

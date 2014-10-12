@@ -1,10 +1,8 @@
 from . import nfit
+from . import nfititer
 from . import nfitcoadd
+from . import nfitnbrs
 from .nfit import MedsFit
-
-from . import lmfit
-from . import mcfit
-from . import lmfit_mb
 
 from . import collate
 from . import qa

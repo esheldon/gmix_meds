@@ -80,8 +80,10 @@ emcee_pars:
     nstep: 800
 
 mh_pars:
-    burnin: 4000
-    nstep: 4000
+    dotest: True
+    ntest_max: 4
+    burnin: 1000
+    nstep: 1000
     min_step_sizes: [1.0e-6,1.0e-6,1.0e-6,1.0e-6,1.0e-5,1.0e-3]
 
 psf_em_pars:

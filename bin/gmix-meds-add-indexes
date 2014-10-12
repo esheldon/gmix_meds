@@ -1,0 +1,26 @@
+#!/usr/bin/env python
+"""
+    %prog [options] run
+"""
+from __future__ import print_function
+import sys
+import gmix_meds
+
+from optparse import OptionParser
+parser = OptionParser(__doc__)
+
+parser.add_option('--epochs',action='store_true',
+                  help="add indexes for epochs")
+
+def main():
+    options, args = parser.parse_args(sys.argv[1:])
+    if len(args) < 1:
+        parser.print_help()
+        sys.exit(45)
+
+    run=args[0]
+
+    table_name=run
+    gmix_meds.dbload.add_indexes(table_name, epochs=options.epochs)
+
+main()

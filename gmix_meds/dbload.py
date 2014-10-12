@@ -179,7 +179,8 @@ class OracleInputMaker(object):
         self.rc=files.read_default_runconfig(self.run)
         self.config=files.read_default_config(self.rc['config'])
         self.model_names=nfit.make_all_model_names(self.config['fit_models'],
-                                                   self.config['fit_me_galaxy'])
+                                                   self.config['fit_me_galaxy'],
+                                                   self.config['fit_coadd_galaxy'])
 
 
         if self.blind:
@@ -222,6 +223,15 @@ class OracleInputMaker(object):
 
         self.primary_key='coadd_objects_id'
 
+def get_one_row(table_name):
+    import desdb
+    with desdb.Connection() as conn:
+        query="select * from {table_name} where rownum <= 1"
+        query=query.format(table_name=table_name)
+        data=conn.quick(query, array=True)
+
+    return data
+
 def add_indexes(table_name, epochs=False):
     """
     Add indexes to the appropriate columns
@@ -240,6 +250,8 @@ def add_indexes(table_name, epochs=False):
     curs = conn.cursor()
 
     if not epochs:
+        data=get_one_row(table_name)
+        index_cols=match_data_names(data, index_cols)
         for col in index_cols:
             index_name='{table_name}{col}idx'.format(table_name=table_name,
                                                        col=col)
@@ -254,6 +266,8 @@ def add_indexes(table_name, epochs=False):
             curs.execute(query)
 
     else:
+        data=get_one_row(epochs_table_name)
+        epoch_index_cols=match_data_names(data, epoch_index_cols)
         for col in epoch_index_cols:
             index_name='{table_name}{col}idx'.format(table_name=epochs_table_name_short,
                                                      col=col)
@@ -326,64 +340,42 @@ def get_band_cols():
 
     return colnames
 
-def get_index_cols(has_me=True):
+def get_index_cols():
     """
     keywords refer to galaxy models
     """
     cols = [
-            #'tilename',
-            #'coadd_object_number',
-            #'flags',
+            'tilename',
+            'coadd_object_number',
+            'flags',
 
-            #-'coadd_psf_flags_g',
-            #-'coadd_psf_flags_r',
-            #-'coadd_psf_flags_i',
-            #-'coadd_psf_flags_z',
 
-            # forgot to make psf mag for coadd
-            #-'coadd_psf_mag_g',
-            #-'coadd_psf_mag_r',
-            #-'coadd_psf_mag_i',
-            #-'coadd_psf_mag_z',
-
-            #-'psf_flags_g',
-            #-'psf_flags_r',
-            #-'psf_flags_i',
-            #-'psf_flags_z',
-            #-'psf_mag_g',
-            #-'psf_mag_r',
-            #-'psf_mag_i',
-            #-'psf_mag_z',
-
-            #'coadd_exp_flags',
-            #-'coadd_exp_chi2per',
+            'coadd_exp_flags',
+            'coadd_exp_chi2per',
             #-'coadd_exp_mag_g',
             #-'coadd_exp_mag_r',
             #-'coadd_exp_mag_i',
             #-'coadd_exp_mag_z',
-            #'coadd_exp_s2n_w',
-            #'coadd_exp_T_s2n',
+            'coadd_exp_s2n_w',
+            'coadd_exp_T_s2n',
             #-'coadd_exp_e_1',
             #-'coadd_exp_e_2',
-            #'coadd_exp_arate',
+            'coadd_exp_arate',
 
-            #'coadd_dev_flags',
-            #-'coadd_dev_chi2per',
+            'coadd_dev_flags',
+            'coadd_dev_chi2per',
             #-'coadd_dev_mag_g',
             #-'coadd_dev_mag_r',
             #-'coadd_dev_mag_i',
             #-'coadd_dev_mag_z',
-            #'coadd_dev_s2n_w',
-            #'coadd_dev_T_s2n',
+            'coadd_dev_s2n_w',
+            'coadd_dev_T_s2n',
             #-'coadd_dev_e_1',
             #-'coadd_dev_e_2',
-            #'coadd_dev_arate',
-        ]
+            'coadd_dev_arate',
 
-    if has_me:
-        cols += [
             'exp_flags',
-            #-'exp_chi2per',
+            'exp_chi2per',
             #-'exp_mag_g',
             #-'exp_mag_r',
             #-'exp_mag_i',
@@ -394,18 +386,19 @@ def get_index_cols(has_me=True):
             #-'exp_e_2',
             'exp_arate',
 
-            #'dev_flags',
-            #-'dev_chi2per',
+            'dev_flags',
+            'dev_chi2per',
             #-'dev_mag_g',
             #-'dev_mag_r',
             #-'dev_mag_i',
             #-'dev_mag_z',
-            #'dev_s2n_w',
-            #'dev_T_s2n',
+            'dev_s2n_w',
+            'dev_T_s2n',
             #-'dev_e_1',
             #-'dev_e_2',
-            #'dev_arate',
+            'dev_arate',
         ]
+
     return cols
 
 def get_epoch_index_cols():
@@ -415,6 +408,16 @@ def get_epoch_index_cols():
             'band',
             'band_num',
             'psf_fit_flags']
+
+def match_data_names(data, cols):
+    dnames=[n.lower() for n in data.dtype.names]
+
+    keep_cols=[]
+    for col in cols:
+        if col.lower() in dnames:
+            keep_cols.append(col)
+    return keep_cols
+
 
 _TILE_BLACKLIST=['DES0503-6414', 'DES0557-6122']
 def get_tilenames(run):

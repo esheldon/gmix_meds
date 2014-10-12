@@ -1,6 +1,9 @@
 fitter: "ngmix"
-fitter_class: "mh"
-coadd_fitter_class: "emcee"
+fitter_class: "emcee"
+
+coadd_model_guess: "iter"
+me_model_guess: "iter"
+
 fit_me_galaxy: True
 fit_coadd_galaxy: False
 
@@ -8,7 +11,6 @@ check_image_flags: True
 
 use_psf_rerun: False
 
-coadd_model_guess: "iter"
 me_model_guess: "iter"
 
 nu: 0.0
@@ -20,29 +22,8 @@ nbrs_model:
     pars: "pars_best"
     require_me_goodfit: True
 
-#max_box_size: 96
+max_box_size: 96
 
-coadd_iter: 
-    max: 1
-
-    emcee_pars:
-        a: 2.0
-        nwalkers: 50
-        burnin: 10
-        nstep: 40
-
-    min_method: 'Nelder-Mead'
-
-    # nelder-mead pars
-    nm_pars:
-        tol: 1.0e-6
-
-    # levenberg marquardt pars
-    lm_ntry: 5
-    lm_pars:
-        ftol: 1.0e-6
-        xtol: 1.0e-3
-        maxfev: 500
 
 me_iter: 
     max: 1
@@ -66,25 +47,11 @@ me_iter:
         xtol: 1.0e-3
         maxfev: 500
 
-#coadd_em_pars:
-#    ngauss: 10
-#    ntry: 20
-#    maxiter: 10000
-#    tol: 5.0e-6
-#    cen_limit: 0.25
-
 emcee_pars:
-    a: 2.0
-    nwalkers: 80
-    burnin: 800
-    nstep: 800
-
-mh_pars:
-    dotest: True
-    ntest_max: 4
-    burnin: 1000
-    nstep: 1000
-    min_step_sizes: [1.0e-6,1.0e-6,1.0e-6,1.0e-6,1.0e-5,1.0e-3]
+    a: 1.8
+    nwalkers: 20
+    burnin: 400
+    nstep: 200
 
 psf_em_pars:
     ngauss: 3
