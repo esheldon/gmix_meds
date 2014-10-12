@@ -1836,7 +1836,7 @@ class MedsFit(dict):
                                      "sizes: %d/%d" % (nobj_tot,nobj))
             self.meds_list.append(medsi)
             self.meds_meta_list.append(medsi_meta)
-            self.all_image_flags.append( image_info['image_flags'].copy() )
+            self.all_image_flags.append( image_info['image_flags'].astype('i8') )
 
         self.nobj_tot = self.meds_list[0].size
 
@@ -1893,7 +1893,8 @@ class MedsFit(dict):
 
             for i in xrange(blacklist_raw.size):
                 key='%s-%02d' % (blacklist_raw['expname'][i], blacklist_raw['ccd'][i])
-                blacklist[key] = blacklist_raw['flags'][i]
+                # convert to int in case we end up going larger than 4 bytes
+                blacklist[key] = int(blacklist_raw['flags'][i])
 
             self._psfex_blacklist_raw=blacklist_raw
             self._psfex_blacklist=blacklist
@@ -1927,7 +1928,7 @@ class MedsFit(dict):
         if self['use_psf_rerun'] and 'coadd' not in psfpath:
             psfparts=psfpath.split('/')
             psfparts[-6] = 'EXTRA' # replace 'OPS'
-            psfparts[-3] = 'psfex-rerun' # replace 'red'
+            psfparts[-3] = 'psfex-rerun/%s' % self['psf_rerun_version'] # replace 'red'
 
             psfpath='/'.join(psfparts)
 
@@ -1942,6 +1943,7 @@ class MedsFit(dict):
             # we only worry about certain flags
             checkflags=self['psf_flags2check']
             if (flagsall & checkflags) != 0:
+                print("    psf flags:",flagsall)
                 flags = checkflags
                 print(psfpath,flags)
 
