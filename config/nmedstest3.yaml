@@ -1,25 +1,92 @@
 fitter: "ngmix"
-#fitter_class: "coadd-only"
 fitter_class: "mh"
 coadd_fitter_class: "emcee"
 fit_me_galaxy: True
+fit_coadd_galaxy: False
 
 check_image_flags: True
 
-use_psf_rerun: False
-#psfex_blacklist: "/astro/astronfs02/esheldon/psfex-rerun/psfex_blacklist"
-psfex_blacklist: "/astro/astronfs02/esheldon/psfex-rerun/psfex_blacklist_20140920.dat"
+# use these flags for the SE images, rather than the ones in the MEDS files
+replacement_flags: "/astro/astronfs02/esheldon/astrorerun/sva1_astrom_run1.0.1-badflag+id_stats_flagged_sheldon.fit"
+
+use_psf_rerun: True
+psf_rerun_version: "v3"
+psfex_blacklist: "/astro/astronfs02/esheldon/psfex-rerun/psfex-sv-v3.txt"
 
 # this should combine all the flags of interest
-psf_flags2check: 1
+#2**0 = 1 = No stars found
+#2**1 = 2 = Too few stars found (<50)
+#2**2 = 4 = Too many stars found (>500)
+#2**3 = 8 = Too high FWHM (>1.8 arcsec)
+#2**4 = 16 = Error encountered somewhere along the line in making the PSFEx files.
 
+# 2**0 + 2**1 + 2**4
+psf_flags2check: 19
 
-coadd_model_guess: "coadd_psf"
-me_model_guess: "coadd_mcmc_best"
+coadd_model_guess: "iter"
+me_model_guess: "iter"
 
 nu: 0.0
 
-max_box_size: 192
+nbrs_model:
+    model: "exp"
+    method: "subtract"
+    flags: "flags"
+    pars: "pars_best"
+    require_me_goodfit: True
+
+#max_box_size: 96
+
+coadd_iter: 
+    max: 1
+
+    emcee_pars:
+        a: 2.0
+        nwalkers: 50
+        burnin: 10
+        nstep: 40
+
+    min_method: 'Nelder-Mead'
+
+    # nelder-mead pars
+    nm_pars:
+        tol: 1.0e-6
+
+    # levenberg marquardt pars
+    lm_ntry: 5
+    lm_pars:
+        ftol: 1.0e-6
+        xtol: 1.0e-3
+        maxfev: 500
+
+me_iter: 
+    max: 1
+    
+    emcee_pars:
+        a: 2.0
+        nwalkers: 50
+        burnin: 10
+        nstep: 40
+
+    min_method: 'Nelder-Mead'
+
+    # nelder-mead pars
+    nm_pars:
+        tol: 1.0e-6
+
+    # levenberg marquardt pars
+    lm_ntry: 5
+    lm_pars:
+        ftol: 1.0e-6
+        xtol: 1.0e-3
+        maxfev: 500
+
+#coadd_em_pars:
+#    ngauss: 10
+#    ntry: 20
+#    maxiter: 10000
+#    tol: 5.0e-6
+#    cen_limit: 0.25
 
 emcee_pars:
     a: 2.0
@@ -28,9 +95,11 @@ emcee_pars:
     nstep: 800
 
 mh_pars:
-    burnin: 5000
-    nstep: 5000
-    min_step_sizes: [0.0001,0.0001,0.001,0.001,0.0001,0.001]
+    dotest: True
+    ntest_max: 4
+    burnin: 1000
+    nstep: 1000
+    min_step_sizes: [1.0e-6,1.0e-6,1.0e-6,1.0e-6,1.0e-5,1.0e-3]
 
 psf_em_pars:
     ngauss: 3
@@ -40,7 +109,7 @@ psf_em_pars:
 
 # at least one band must have s/n > this or
 # we won't fit the slow mcmc 
-min_psf_s2n: 4
+min_psf_s2n: 0
 
 #region: "seg_and_sky"
 region: "cweight-nearest"
@@ -48,26 +117,36 @@ region: "cweight-nearest"
 # in arcsec
 psf_offset_max: 0.25
 
-# in addition to gauss fit on coadd and a psf flux
-fit_models: ['exp']
+# in addition to a psf flux
+fit_models: 
+    - 'exp'
+#    - 'dev'
 
-# for now only
 do_shear: True
 
 use_cen_prior: True
 cen_width: 0.27
 
 # from fitting to all cosmos galaxies in galsim data
-#g_prior_types: ["flat"]
-g_prior_types: ["cosmos-sersic"]
+g_prior_types: 
+    - "cosmos-sersic"
+#    - "cosmos-sersic"
 
+T_prior_types:
+    - "TwoSidedErf"
+#    - "TwoSidedErf"
 
-# 1.0e+06 is about 700 arcsec, 2600 pixels
-T_prior_types: ["TwoSidedErf"]
-T_prior_pars: [ [-0.07, 0.03, 1.0e+06, 1.0e+05] ]
+T_prior_pars:
+    - [-0.07, 0.03, 1.0e+06, 1.0e+05]
+#    - [-0.07, 0.03, 1.0e+06, 1.0e+05]
 
-counts_prior_types: ["TwoSidedErf"]
-counts_prior_pars: [ [-1.0, 0.1, 1.0e+09, 0.25e+08] ]
+counts_prior_types:
+    - "TwoSidedErf"
+#    - "TwoSidedErf"
+
+counts_prior_pars:
+    - [-1.0, 0.1, 1.0e+09, 0.25e+08]
+#    - [-1.0, 0.1, 1.0e+09, 0.25e+08]
 
 # this means repeat the above for each band
 counts_prior_repeat: True

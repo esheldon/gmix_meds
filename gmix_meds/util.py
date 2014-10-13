@@ -1,5 +1,6 @@
 from __future__ import print_function
 import numpy
+import fitsio
 
 from ngmix import srandu
 
@@ -447,3 +448,26 @@ def plot_autocorr(trials, window=100, show=False, **kw):
         arr.show(**kw)
 
     return arr
+
+class AstromFlags(object):
+    """
+    replacement astrometry flags
+    """
+    def __init__(self, filename):
+        print("Reading flags:",filename)
+        self.data=fitsio.read(filename,lower=True)
+
+    def get_flags(self, image_ids):
+        """
+        match based on image id
+        """
+        import esutil as eu
+
+        # default is flagged, to indicated not found
+        flags=numpy.ones(image_ids.size,dtype='i8')
+        minput, mastro = eu.numpy_util.match(image_ids, self.data['imageid'])
+
+        if minput.size > 0:
+            flags[minput] = self.data['astrom_flag'][mastro]
+
+        return flags

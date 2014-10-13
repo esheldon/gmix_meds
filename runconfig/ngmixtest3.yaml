@@ -15,7 +15,7 @@ bands:     ["g","r","i","z"]
 # in here
 medsconf: "013"
 
-nper: 10
+nper: 20
 
 # this is the gmix_meds config file
-config: "nmedstest2"
+config: "nmedstest3"
