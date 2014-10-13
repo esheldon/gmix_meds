@@ -1848,7 +1848,8 @@ class MedsFit(dict):
             self.meds_meta_list.append(medsi_meta)
             image_flags=image_info['image_flags'].astype('i8')
             if self['replacement_flags'] is not None and image_flags.size > 1:
-                image_flags[1:] = self._get_replacement_flags(image_info['image_id'][1:])
+                image_flags[1:] = \
+                    self._get_replacement_flags(image_info['image_id'][1:])
 
             self.all_image_flags.append(image_flags)
 
