@@ -1,4 +1,4 @@
-run: "ngmixtest4"
+run: "ngmixcosmos01"
 run_type: "mcmc"
 
 # testbeds are defined in deswl/desmeds/testbed
@@ -14,7 +14,7 @@ bands:     ["g","r","i","z"]
 # in here
 medsconf: "013"
 
-nper: 20
+nper: 10
 
 # same as current nmedstest.yaml but limit cosmos to "full depth equivalent"
-config: "nmedstest4"
+config: "nmedscosmos01"

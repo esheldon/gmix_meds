@@ -504,15 +504,15 @@ class MedsFit(dict):
         image_flags=self._get_image_flags(band, mindex)
         w,=numpy.where(image_flags==0)
 
-        # need coadd and at lease one SE image
-        if w.size < 2:
-            print('< 2 with no image flags')
-            flags |= IMAGE_FLAGS
-
         # informative only
         if w.size != image_flags.size:
             print("    for band %d removed %d/%d images due to "
                   "flags" % (band, ncutout-w.size, ncutout))
+
+        # need coadd and at lease one SE image
+        if w.size < 2:
+            print('    < 2 with no image flags')
+            flags |= IMAGE_FLAGS
 
         return flags
 
