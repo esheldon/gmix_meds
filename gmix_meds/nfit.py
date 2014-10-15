@@ -140,6 +140,8 @@ class MedsFit(dict):
 
         self['print_pars']=self.get('print_pars',True)
 
+        self['replacement_flags']=self.get('replacement_flags',None)
+
     def _reset_mb_sums(self):
         from numpy import zeros
         nband=self['nband']
@@ -502,15 +504,15 @@ class MedsFit(dict):
         image_flags=self._get_image_flags(band, mindex)
         w,=numpy.where(image_flags==0)
 
-        # need coadd and at lease one SE image
-        if w.size < 2:
-            print('< 2 with no image flags')
-            flags |= IMAGE_FLAGS
-
         # informative only
         if w.size != image_flags.size:
             print("    for band %d removed %d/%d images due to "
                   "flags" % (band, ncutout-w.size, ncutout))
+
+        # need coadd and at lease one SE image
+        if w.size < 2:
+            print('    < 2 with no image flags')
+            flags |= IMAGE_FLAGS
 
         return flags
 
@@ -1812,6 +1814,14 @@ class MedsFit(dict):
 
         return image_flags
 
+    def _get_replacement_flags(self, image_ids):
+        from .util import AstromFlags
+        if not hasattr(self,'_replacement_flags'):
+            fname=self['replacement_flags']
+            self._replacement_flags=AstromFlags(fname)
+        
+        return self._replacement_flags.get_flags(image_ids)
+
     def _load_meds_files(self):
         """
         Load all listed meds files
@@ -1836,7 +1846,12 @@ class MedsFit(dict):
                                      "sizes: %d/%d" % (nobj_tot,nobj))
             self.meds_list.append(medsi)
             self.meds_meta_list.append(medsi_meta)
-            self.all_image_flags.append( image_info['image_flags'].astype('i8') )
+            image_flags=image_info['image_flags'].astype('i8')
+            if self['replacement_flags'] is not None and image_flags.size > 1:
+                image_flags[1:] = \
+                    self._get_replacement_flags(image_info['image_id'][1:])
+
+            self.all_image_flags.append(image_flags)
 
         self.nobj_tot = self.meds_list[0].size
 

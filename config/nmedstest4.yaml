@@ -1,3 +1,4 @@
+
 fitter: "ngmix"
 fitter_class: "mh"
 coadd_fitter_class: "emcee"
@@ -6,22 +7,14 @@ fit_coadd_galaxy: False
 
 check_image_flags: True
 
-# use these flags for the SE images, rather than the ones in the MEDS files
-replacement_flags: "/astro/astronfs02/esheldon/astrorerun/sva1_astrom_run1.0.1-badflag+id_stats_flagged_sheldon.fit"
+# this replaces all flags in the meds files. If an image isn't in here we will
+# not use it.  this one cuts out all fields except deep fields and limits to
+# full depth equivalent
+
+replacement_flags: "/astro/astronfs02/esheldon/astrorerun/sva1_astrom_run1.0.1-deep+id_stats_flagged_sheldon.fit"
+
 
 use_psf_rerun: False
-#psf_rerun_version: "v3"
-#psfex_blacklist: "/astro/astronfs02/esheldon/psfex-rerun/psfex-sv-v3.txt"
-
-# this should combine all the flags of interest
-#2**0 = 1 = No stars found
-#2**1 = 2 = Too few stars found (<50)
-#2**2 = 4 = Too many stars found (>500)
-#2**3 = 8 = Too high FWHM (>1.8 arcsec)
-#2**4 = 16 = Error encountered somewhere along the line in making the PSFEx files.
-
-# 2**0 + 2**1 + 2**4
-psf_flags2check: 19
 
 coadd_model_guess: "iter"
 me_model_guess: "iter"

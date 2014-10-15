@@ -504,11 +504,6 @@ exit $exit_status
 
     return text
 
-_load_script="""
-
-
-"""
-
 class StagedOutFile(object):
     """
     A class to represent a staged file
@@ -761,9 +756,9 @@ echo -n "password: "
 read -s password
 echo
 for f in $(ls *.ctl | grep -v epochs | sort); do
-    echo $f
+    echo "loading $f"
     time run-sqlldr $f esheldon $password 10000
-done\n""")
+done &> load-all.log\n""")
 
         print("writing:",load_epochs_file)
         with open(load_epochs_file,'w') as fobj:
@@ -772,9 +767,9 @@ echo -n "password: "
 read -s password
 echo
 for f in $(ls *.ctl | grep epochs | sort); do
-    echo $f
+    echo "loading $f"
     time run-sqlldr $f esheldon $pass 10000
-done\n""")
+done &> load-all-epochs.log\n""")
 
     def _load_config(self):
         conf=read_yaml(self['config_file'])

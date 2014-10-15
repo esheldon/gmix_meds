@@ -1,9 +1,8 @@
-run: "ngmixtest3"
+run: "ngmixcosmos01"
 run_type: "mcmc"
 
 # testbeds are defined in deswl/desmeds/testbed
-dataset: "testbed"
-testbed: {"name":"sva1", "release":"SVA1_COADD_SPTE"}
+dataset: "SVA1_COADD_COSMOS"
 
 # must exist in tiles
 withbands: ["g","r","i","z"]
@@ -15,7 +14,7 @@ bands:     ["g","r","i","z"]
 # in here
 medsconf: "013"
 
-nper: 20
+nper: 10
 
-# this is the gmix_meds config file
-config: "nmedstest3"
+# same as current nmedstest.yaml but limit cosmos to "full depth equivalent"
+config: "nmedscosmos01"
