@@ -467,6 +467,15 @@ class AstromFlags(object):
         flags=numpy.ones(image_ids.size,dtype='i8')
         minput, mastro = eu.numpy_util.match(image_ids, self.data['imageid'])
 
+        nmiss=image_ids.size - minput.size 
+        if nmiss > 0:
+            print("        %d/%d did not "
+                  "match astrom flags" % (nmiss,image_ids.size))
+        else:
+            print("    all matched")
+
+
+
         if minput.size > 0:
             flags[minput] = self.data['astrom_flag'][mastro]
 
