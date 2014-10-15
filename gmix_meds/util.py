@@ -8,12 +8,8 @@ def clip_element_wise(arr, minvals, maxvals):
     """
     Clip each element of an array separately
     """
-    if len(arr.shape) == 1:
-        for i in xrange(arr.size):
-            arr[i] = arr[i].clip(min=minvals[i],max=maxvals[i])
-    else:
-        pass
-
+    for i in xrange(arr.size):
+        arr[i] = arr[i].clip(min=minvals[i],max=maxvals[i])
 
 class UtterFailure(Exception):
     """
