@@ -68,7 +68,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
     def _guess_params_iter(self, mb_obs_list, model, params, start):
         fmt = "%10.6g "*(5+self['nband'])
 
-        print("        using method '%s' for minimizer" % params['min_method'])
+        print("        doing iterative init")
 
         for i in xrange(params['max']):
             print('        iter % 3d of %d' % (i+1,params['max']))
@@ -80,9 +80,12 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
 
             emcee_pars = emceefit.get_best_pars()
             bestlk = emceefit.get_best_lnprob()
-            print('            emcee min: ',
-                  fmt % tuple(emcee_pars), 'loglike = %lf' % bestlk)
-
+            if self['print_params']:
+                print('            emcee max: ',
+                      fmt % tuple(emcee_pars), 'loglike = %lf' % bestlk)
+            else:
+                print('            emcee max loglike: %lf' % bestlk)
+                
             # making up errors, but it doesn't matter                    
             self.guesser = FixedParsGuesser(emcee_pars,emcee_pars*0.1)
 
@@ -91,8 +94,11 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
             res1=greedyfit1.get_result()
 
             bestlk = greedyfit1.calc_lnprob(res1['pars'])
-            print('            nm min:    ',
-                  fmt % tuple(res1['pars']),'loglike = %lf' % bestlk)
+            if self['print_params']:
+                print('            nm max:    ',
+                      fmt % tuple(res1['pars']),'loglike = %lf' % bestlk)
+            else:
+                print('            nm max loglike: %lf' % bestlk)
 
             # must ignore errors in nedler-mead
             doemcee=True
@@ -105,12 +111,16 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                 pars_check=numpy.all(numpy.abs(res2['pars']) < 1e9)
                 if pars_check:
                     pars=res2['pars']
-                    self.guesser=FixedParsGuesser(pars,res2['pars_err'])
+                    #self.guesser=FixedParsGuesser(pars,res2['pars_err'])
+                    self.guesser=FixedParsCovGuesser(pars,res2['pars_cov'])
                     doemcee=False
 
                     bestlk = greedyfit2.calc_lnprob(pars)
-                    print('            lm min:    ',
-                          fmt % tuple(pars),'loglike = %lf' % bestlk)
+                    if self['print_params']:
+                        print('            lm max:    ',
+                              fmt % tuple(pars),'loglike = %lf' % bestlk)
+                    else:
+                        print('            lm max loglike: %lf' % bestlk)
                     print("            nfev:",res2['nfev'])
 
                 else:
@@ -127,11 +137,15 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                 emceefit.calc_result()
                 res=emceefit.get_result()
                 pars=emceefit.get_best_pars()
-                self.guesser=FixedParsGuesser(pars,res['pars_err'])
+                #self.guesser=FixedParsGuesser(pars,res['pars_err'])
+                self.guesser=FixedParsCovGuesser(pars,res['pars_cov'])
 
                 bestlk = emceefit.get_best_lnprob()
-                print('            emcee2 min:',
-                      fmt % tuple(pars),'loglike = %lf' % bestlk)
+                if self['print_params']:
+                    print('            emcee2 min:',
+                          fmt % tuple(pars),'loglike = %lf' % bestlk)
+                else:
+                    print('            emcee2 min loglike: %lf' % bestlk)
         
         return self.guesser
 

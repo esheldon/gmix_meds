@@ -2681,9 +2681,12 @@ class MHMedsFitHybrid(MedsFit):
         prior=self.gflat_priors[model]
 
         guess,sigmas=self.guesser(get_sigmas=True, prior=prior)
-
-        step_sizes = fac*sigmas
-
+        
+        if len(sigmas.shape) == 1:
+            step_sizes = fac*sigmas
+        else:
+            step_sizes = fac*fac*sigmas
+        
         # this is 5-element, use 5th for all fluxes
         min_steps = numpy.zeros(5+self['nband'])
         min_steps[0:5] = mhpars['min_step_sizes'][0:5]
@@ -2691,8 +2694,26 @@ class MHMedsFitHybrid(MedsFit):
         max_steps = fac*self.priors[model].get_widths()
 
         self._print_pars(max_steps, front="        max_steps:")
-
-        clip_element_wise(step_sizes, min_steps, max_steps)
+        
+        def clip_steps(step_sizes,min_steps,max_steps):
+            if len(step_sizes.shape) == 1:
+                clip_element_wise(step_sizes, min_steps, max_steps)
+            else:
+                dsigma = numpy.sqrt(numpy.diag(step_sizes))
+                corr = step_sizes.copy()
+                for i in xrange(step_sizes.shape[0]):
+                    for j in xrange(step_sizes.shape[1]):
+                        corr[i,j] /= dsigma[i]
+                        corr[i,j] /= dsigma[j]
+                clip_element_wise(dsigma, min_steps, max_steps)
+                for i in xrange(step_sizes.shape[0]):
+                    for j in xrange(step_sizes.shape[1]):
+                        corr[i,j] *= dsigma[i]
+                        corr[i,j] *= dsigma[j]
+                step_sizes = corr.copy()
+            return step_sizes
+        
+        step_sizes = clip_steps(step_sizes,min_steps,max_steps)
         self._print_pars(step_sizes, front="        step sizes:")
 
         fitter=MHSimple(mb_obs_list,
@@ -2744,9 +2765,11 @@ class MHMedsFitHybrid(MedsFit):
                     did_rerun=True
                     if bad_arate:
                         print("            bad arate last run:",arate)
-                        errors=trials.std(axis=0)
-                        step_sizes = errors*fac
-                        clip_element_wise(step_sizes, min_steps, max_steps)
+                        if len(step_sizes.shape) == 1 :
+                            step_sizes=trials.std(axis=0)*fac
+                        else:
+                            step_sizes=numpy.cov(trials.T)*fac*fac
+                        step_sizes = clip_steps(step_sizes,min_steps,max_steps)
 
                         fitter.set_step_sizes(step_sizes)
                         self._print_pars(step_sizes, front="            new step sizes:")
