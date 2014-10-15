@@ -11,7 +11,7 @@ check_image_flags: True
 # not use it.  this one cuts out all fields except deep fields and limits to
 # full depth equivalent
 
-replacement_flags: "/astro/astronfs02/esheldon/astrorerun/sva1_astrom_run1.0.1-badflag+id_stats_flagged_sheldon.fit"
+#replacement_flags: "/astro/astronfs02/esheldon/astrorerun/sva1_astrom_run1.0.1-badflag+id_stats_flagged_sheldon.fit"
 
 
 use_psf_rerun: False
