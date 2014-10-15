@@ -8,8 +8,11 @@ def clip_element_wise(arr, minvals, maxvals):
     """
     Clip each element of an array separately
     """
-    for i in xrange(arr.size):
-        arr[i] = arr[i].clip(min=minvals[i],max=maxvals[i])
+    if len(arr.shape) == 1:
+        for i in xrange(arr.size):
+            arr[i] = arr[i].clip(min=minvals[i],max=maxvals[i])
+    else:
+        pass
 
 
 class UtterFailure(Exception):
@@ -200,6 +203,24 @@ class FromPSFGuesser(GuesserBase):
             guess=guess[0,:]
         return guess
 
+class FixedParsCovGuesser(GuesserBase):
+    """
+    just return a copy of the input pars
+    """
+    def __init__(self, pars, pars_cov):
+        self.pars=pars
+        self.pars_cov=pars_cov
+
+    def __call__(self, get_sigmas=False, prior=None):
+        """
+        center, shape are just distributed around zero
+        """
+
+        guess=self.pars.copy()
+        if get_sigmas:
+            return guess, self.pars_cov
+        else:
+            return guess
 
 class FixedParsGuesser(GuesserBase):
     """
