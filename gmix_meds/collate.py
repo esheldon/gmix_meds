@@ -60,8 +60,8 @@ class Concat(object):
 
         self.config = files.read_yaml(config_file)
 
-        self._files=files.Files(run, root_dir=root_dir)
-
+        self.set_files(run, root_dir)
+        
         self.make_collated_dir()
         self.set_collated_file()
 
@@ -521,6 +521,9 @@ class Concat(object):
         data, epoch_data, meta=self.read_data(chunk_file, split)
         return data, epoch_data, meta
 
+    def set_files(self, run, root_dir):
+        self._files=files.Files(run, root_dir=root_dir)
+    
 
 def get_tile_key(tilename,band):
     key='%s-%s' % (tilename,band)
