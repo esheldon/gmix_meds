@@ -191,7 +191,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         from ngmix.fitting import MCMCSimple
 
         # note flat on g!
-        prior=self.gflat_priors[model]
+        prior=self['model_pars'][model]['gflat_prior']
 
         epars=params['emcee_pars']
         guess=self.guesser(n=epars['nwalkers'], prior=prior)
@@ -219,7 +219,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         from ngmix.fitting import LMSimple
 
         if use_prior:
-            prior=self.gflat_priors[model]
+            prior=self['model_pars'][model]['gflat_prior']
         else:
             prior=None
 
@@ -243,7 +243,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
     def _fit_simple_max(self, mb_obs_list, model, params):
         from ngmix.fitting import MaxSimple        
 
-        prior=self.gflat_priors[model]
+        prior=self['model_pars'][model]['gflat_prior']
 
         guess=self.guesser(prior=prior)
         fitter=MaxSimple(mb_obs_list,
@@ -354,7 +354,7 @@ class MedsFitEmceeIter(MedsFit):
         from ngmix.fitting import MCMCSimple
 
         # note flat on g!
-        prior=self.gflat_priors[model]
+        prior=self['model_pars'][model]['gflat_prior']
 
         epars=params['emcee_pars']
         guess=self.guesser(n=epars['nwalkers'], prior=prior)
@@ -375,7 +375,7 @@ class MedsFitEmceeIter(MedsFit):
     def _fit_simple_max(self, mb_obs_list, model, params):
         from ngmix.fitting import MaxSimple        
 
-        prior=self.gflat_priors[model]
+        prior=self['model_pars'][model]['gflat_prior']
 
         guess=self.guesser(prior=prior)
         fitter=MaxSimple(mb_obs_list,
