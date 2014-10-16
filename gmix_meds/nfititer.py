@@ -82,7 +82,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
             bestlk = emceefit.get_best_lnprob()
             if self['print_params']:
                 print('            emcee max: ',
-                      fmt % tuple(emcee_pars), 'loglike = %lf' % bestlk)
+                      fmt % tuple(emcee_pars), 'logl:   %lf' % bestlk)
             else:
                 print('            emcee max loglike: %lf' % bestlk)
                 
@@ -96,7 +96,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
             bestlk = greedyfit1.calc_lnprob(res1['pars'])
             if self['print_params']:
                 print('            nm max:    ',
-                      fmt % tuple(res1['pars']),'loglike = %lf' % bestlk)
+                      fmt % tuple(res1['pars']),'logl:    %lf' % bestlk)
             else:
                 print('            nm max loglike: %lf' % bestlk)
 
@@ -118,7 +118,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                     bestlk = greedyfit2.calc_lnprob(pars)
                     if self['print_params']:
                         print('            lm max:    ',
-                              fmt % tuple(pars),'loglike = %lf' % bestlk)
+                              fmt % tuple(pars),'logl:    %lf' % bestlk)
                     else:
                         print('            lm max loglike: %lf' % bestlk)
                     print("            nfev:",res2['nfev'])
@@ -143,7 +143,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                 bestlk = emceefit.get_best_lnprob()
                 if self['print_params']:
                     print('            emcee2 min:',
-                          fmt % tuple(pars),'loglike = %lf' % bestlk)
+                          fmt % tuple(pars),'logl:    %lf' % bestlk)
                 else:
                     print('            emcee2 min loglike: %lf' % bestlk)
         

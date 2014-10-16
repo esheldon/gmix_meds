@@ -2717,7 +2717,7 @@ class MHMedsFitHybrid(MedsFit):
                     step_sizes = dsigma.copy()
                     self._print_pars(step_sizes, front="        step sizes:")
                 else:
-                    self._print_pars(numpy.sqrt(numpy.diag(step_sizes)), front="        step sizes:")
+                    self._print_pars(numpy.sqrt(numpy.diag(step_sizes)), front="        step sizes diag cov:")
             return step_sizes
         
         step_sizes = clip_steps(step_sizes,min_steps,max_steps)
@@ -2730,7 +2730,7 @@ class MHMedsFitHybrid(MedsFit):
                         nu=self['nu'],
                         random_state=self.random_state)
 
-        self._print_pars(guess,front="        mh guess:            ")
+        self._print_pars(guess,front="        mh guess:      ")
 
         # burnin
         pos=fitter.run_mcmc(guess,mhpars['burnin'])
