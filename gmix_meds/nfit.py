@@ -2698,6 +2698,7 @@ class MHMedsFitHybrid(MedsFit):
         def clip_steps(step_sizes,min_steps,max_steps):
             if len(step_sizes.shape) == 1:
                 clip_element_wise(step_sizes, min_steps, max_steps)
+                self._print_pars(step_sizes, front="        step sizes:")
             else:
                 dsigma = numpy.sqrt(numpy.diag(step_sizes))
                 corr = step_sizes.copy()
@@ -2711,10 +2712,16 @@ class MHMedsFitHybrid(MedsFit):
                         corr[i,j] *= dsigma[i]
                         corr[i,j] *= dsigma[j]
                 step_sizes = corr.copy()
+                
+                if numpy.any(numpy.linalg.eigvals(step_sizes) <= 0):
+                    step_sizes = dsigma.copy()
+                    self._print_pars(step_sizes, front="        step sizes:")
+                else:
+                    self._print_pars(numpy.sqrt(numpy.diag(step_sizes)), front="        step sizes:")
             return step_sizes
         
         step_sizes = clip_steps(step_sizes,min_steps,max_steps)
-        self._print_pars(step_sizes, front="        step sizes:")
+        
 
         fitter=MHSimple(mb_obs_list,
                         model,
@@ -2729,13 +2736,13 @@ class MHMedsFitHybrid(MedsFit):
         pos=fitter.run_mcmc(guess,mhpars['burnin'])
         best_pars=fitter.get_best_pars()
         best_logl=fitter.get_best_lnprob()
-        self._print_pars_and_logl(best_pars, best_logl, front="        mh best burnin 1:")
+        self._print_pars_and_logl(best_pars, best_logl, front="        mh best burnin:")
 
         # nominal steps
         pos=fitter.run_mcmc(guess,mhpars['nstep'])
         best_pars=fitter.get_best_pars()
         best_logl=fitter.get_best_lnprob()
-        self._print_pars_and_logl(best_pars, best_logl, front="        mh steps:        ")
+        self._print_pars_and_logl(best_pars, best_logl, front="        mh best:       ")
 
         trials=fitter.get_trials()
         #plot_autocorr(trials,width=1000,height=1000,show=True)
@@ -2772,7 +2779,6 @@ class MHMedsFitHybrid(MedsFit):
                         step_sizes = clip_steps(step_sizes,min_steps,max_steps)
 
                         fitter.set_step_sizes(step_sizes)
-                        self._print_pars(step_sizes, front="            new step sizes:")
                     if not check:
                         print("            mcmc test failed")
 
