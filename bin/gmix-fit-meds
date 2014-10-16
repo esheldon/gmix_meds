@@ -106,10 +106,13 @@ def run_ngmix(meds_files,
                                                                                g_prior_during=False,
                                                                                with_TF_bounds=with_TF_bounds)
     else:
-        priors['g_priors'] = get_g_priors_ngmix(conf)
-        priors['cen_prior'] = get_cen_prior_ngmix(conf)
-        priors['T_priors'] = get_T_priors_ngmix(conf)
-        priors['counts_priors'] = get_counts_priors_ngmix(conf)
+        model_pars=conf['model_pars']
+
+        for model,params in model_pars.iteritems():
+            set_cen_prior(params)
+            set_g_prior(params)
+            set_T_prior(params)
+            set_counts_prior(params)
 
     cmguess=conf.get('coadd_model_guess',None)
     meguess=conf.get('me_model_guess',None)
@@ -149,95 +152,73 @@ def run_ngmix(meds_files,
 
     return data, epoch_data, meta
 
-def get_T_priors_ngmix(conf):
+def set_T_prior(params):
     import ngmix
 
-    T_prior_types=conf['T_prior_types']
+    typ=params['T_prior_type']
+    if typ == 'flat':
+        pars=params['T_prior_pars']
+        params['T_prior']=ngmix.priors.FlatPrior(pars[0], pars[1])
 
-    T_priors=[]
-    for i,typ in enumerate(T_prior_types):
-        if typ == 'flat':
-            pars=conf['T_prior_pars'][i]
-            T_prior=ngmix.priors.FlatPrior(pars[0], pars[1])
+    elif typ=='TwoSidedErf':
+        pars=params['T_prior_pars']
+        params['T_prior']=ngmix.priors.TwoSidedErf(*pars)
 
-        elif typ=='TwoSidedErf':
-            pars=conf['T_prior_pars'][i]
-            T_prior=ngmix.priors.TwoSidedErf(*pars)
-
-        elif typ =='lognormal':
-            pars=conf['T_prior_pars'][i]
-            T_prior=ngmix.priors.LogNormal(pars[0], pars[1])
-        elif typ=="cosmos_exp":
-            T_prior=ngmix.priors.TPriorCosmosExp()
-        elif typ=="cosmos_dev":
-            T_prior=ngmix.priors.TPriorCosmosDev()
-        else:
-            raise ValueError("bad T prior type: %s" % T_prior_type)
-
-        T_priors.append(T_prior)
-
-    return T_priors
-
-def get_counts_priors_ngmix(conf):
-    import ngmix
-
-    counts_prior_types=conf['counts_prior_types']
-
-    counts_priors=[]
-    for i,typ in enumerate(counts_prior_types):
-        if typ == 'flat':
-            pars=conf['counts_prior_pars'][i]
-            counts_prior=ngmix.priors.FlatPrior(pars[0], pars[1])
-
-        elif typ=='TwoSidedErf':
-            pars=conf['counts_prior_pars'][i]
-            counts_prior=ngmix.priors.TwoSidedErf(*pars)
-
-
-        else:
-            raise ValueError("bad counts prior type: %s" % counts_prior_type)
-
-        counts_priors.append(counts_prior)
-
-    return counts_priors
-
-
-def get_g_priors_ngmix(conf):
-    import ngmix
-    g_prior_types=conf['g_prior_types']
-
-    g_priors=[]
-    for i,typ in enumerate(g_prior_types):
-        if typ =='exp':
-            pars=conf['g_prior_pars'][i]
-            parr=numpy.array(pars,dtype='f8')
-            g_prior = ngmix.priors.GPriorM(parr)
-        elif typ=='cosmos-sersic':
-            g_prior = ngmix.priors.make_gprior_cosmos_sersic(type='erf')
-        elif typ=='cosmos-exp':
-            g_prior = ngmix.priors.make_gprior_cosmos_exp()
-        elif typ=='cosmos-dev':
-            g_prior = ngmix.priors.make_gprior_cosmos_dev()
-        elif typ =='ba':
-            sigma=conf['g_prior_pars'][i]
-            g_prior = ngmix.priors.GPriorBA(sigma)
-        elif typ=='flat':
-            g_prior=ngmix.priors.ZDisk2D(1.0)
-        else:
-            raise ValueError("implement gprior '%s'")
-        g_priors.append(g_prior)
-
-    return g_priors
-
-def get_cen_prior_ngmix(conf):
-    import ngmix
-    use_cen_prior=conf.get('use_cen_prior',False)
-    if use_cen_prior:
-        width=conf.get('cen_width',1.0)
-        return ngmix.priors.CenPrior(0.0, 0.0, width,width)
+    elif typ =='lognormal':
+        pars=params['T_prior_pars']
+        params['T_prior']=ngmix.priors.LogNormal(pars[0], pars[1])
+    elif typ=="cosmos_exp":
+        params['T_prior']=ngmix.priors.TPriorCosmosExp()
+    elif typ=="cosmos_dev":
+        params['T_prior']=ngmix.priors.TPriorCosmosDev()
     else:
-        return None
+        raise ValueError("bad T prior type: %s" % T_prior_type)
 
+def set_counts_prior(params):
+    import ngmix
+
+    typ=params['counts_prior_type']
+    if typ == 'flat':
+        pars=params['counts_prior_pars']
+        params['counts_prior']=ngmix.priors.FlatPrior(pars[0], pars[1])
+
+    elif typ=='TwoSidedErf':
+        pars=params['counts_prior_pars']
+        params['counts_prior']=ngmix.priors.TwoSidedErf(*pars)
+
+    else:
+        raise ValueError("bad counts prior type: %s" % counts_prior_type)
+
+
+def set_g_prior(params):
+    import ngmix
+
+    typ=params['g_prior_type']
+
+    if typ =='exp':
+        parr=numpy.array(params['g_prior_pars'],dtype='f8')
+        g_prior = ngmix.priors.GPriorM(parr)
+    elif typ=='cosmos-sersic':
+        g_prior = ngmix.priors.make_gprior_cosmos_sersic(type='erf')
+    elif typ=='cosmos-exp':
+        g_prior = ngmix.priors.make_gprior_cosmos_exp()
+    elif typ=='cosmos-dev':
+        g_prior = ngmix.priors.make_gprior_cosmos_dev()
+    elif typ =='ba':
+        sigma=params['g_prior_pars']
+        g_prior = ngmix.priors.GPriorBA(sigma)
+    elif typ=='flat':
+        g_prior=ngmix.priors.ZDisk2D(1.0)
+    else:
+        raise ValueError("implement gprior '%s'")
+    params['g_prior']=g_prior
+
+def set_cen_prior(params):
+    import ngmix
+
+    width=params['cen_prior_pars'][0]
+    p=ngmix.priors.CenPrior(0.0, 0.0, width, width)
+    params['cen_prior'] = p
 
 def get_sub_fname(fname, rng, work_dir):
     rng_string = '%s-%s' % (rng[0], rng[1])

@@ -87,14 +87,13 @@ class MedsFit(dict):
         self['nband']=len(self.meds_files)
         self.iband = range(self['nband'])
 
-        self._unpack_priors(priors)
-
         self.obj_range=obj_range
         self.model_data=model_data
         self.checkpoint_file=checkpoint_file
         self.checkpoint_data=checkpoint_data
 
         self._set_some_defaults()
+        self._unpack_priors(priors)
 
         # load meds files and image flags array
         self._load_meds_files()
@@ -115,6 +114,8 @@ class MedsFit(dict):
             self._make_epoch_struct()
 
     def _set_some_defaults(self):
+        self['fit_models'] = list( self['model_pars'].keys() )
+
         self['psf_offset_max']=self.get('psf_offset_max',PSF_OFFSET_MAX)
         self['region']=self.get('region','cweight-nearest')
         self['max_box_size']=self.get('max_box_size',2048)
@@ -149,7 +150,6 @@ class MedsFit(dict):
         self.coadd_npix               = 0.0
         self.coadd_wsum               = 0.0
         self.coadd_wrelsum            = 0.0
-        #self.coadd_psfrec_counts_wsum = zeros(nband,dtype='f8')
         self.coadd_psfrec_T_wsum      = 0.0
         self.coadd_psfrec_g1_wsum     = 0.0
         self.coadd_psfrec_g2_wsum     = 0.0
@@ -169,52 +169,34 @@ class MedsFit(dict):
         from ngmix.joint_prior import PriorSimpleSep
         from ngmix.priors import ZDisk2D
 
-        priors={}
-        gflat_priors={}
-
-        cen_prior=priors_in['cen_prior']
-
         counts_prior_repeat=self.get('counts_prior_repeat',False)
-
         g_prior_flat=ZDisk2D(1.0)
 
-        g_priors=priors_in['g_priors']
-        T_priors=priors_in['T_priors']
-        counts_priors=priors_in['counts_priors']
+        model_pars=self['model_pars']
 
-        models = self['fit_models']
-        nmod=len(models)
+        for model, params in model_pars.iteritems():
 
-        nprior=len(g_priors)
-        if nprior != nmod:
-            raise ValueError("len(models)=%d but got len(priors)=%d" % (nmod,nprior))
-
-        for i in xrange(nmod):
-            model=self['fit_models'][i]
             print("loading prior for:",model)
 
-            cp = counts_priors[i]
+            cp = params['counts_prior']
             if counts_prior_repeat:
                 cp = [cp]*self['nband']
 
             print("    full")
-            prior = PriorSimpleSep(cen_prior,
-                                   g_priors[i],
-                                   T_priors[i],
+            prior = PriorSimpleSep(params['cen_prior'],
+                                   params['g_prior'],
+                                   params['T_prior'],
                                    cp)
 
             # for the exploration, for which we do not apply g prior during
             print("    gflat")
-            gflat_prior = PriorSimpleSep(cen_prior,
+            gflat_prior = PriorSimpleSep(params['cen_prior'],
                                          g_prior_flat,
-                                         T_priors[i],
+                                         params['T_prior'],
                                          cp)
 
-            priors[model]=prior
-            gflat_priors[model]=gflat_prior
-
-        self.priors=priors
-        self.gflat_priors=gflat_priors
+            params['prior'] = prior
+            params['gflat_prior'] = gflat_prior
 
     def _print_pars(self, pars, **kw):
         if self['print_params']:
@@ -434,7 +416,7 @@ class MedsFit(dict):
         from ngmix.fitting import MCMCSimple
 
         # note flat on g!
-        prior=self.gflat_priors[model]
+        prior=self['model_pars'][model]['gflat_prior']
 
         epars=self['emcee_pars']
         guess=self.guesser(n=epars['nwalkers'], prior=prior)
@@ -1589,7 +1571,7 @@ class MedsFit(dict):
         # trials in default scaling, should not matter
         trials=fitter.get_trials()
 
-        g_prior=self.priors[model].g_prior
+        g_prior=self['model_pars'][model]['g_prior']
         weights = g_prior.get_prob_array2d(trials[:,2], trials[:,3])
         fitter.calc_result(weights=weights)
 
@@ -1607,7 +1589,7 @@ class MedsFit(dict):
         trials=fitter.get_trials()
         g=trials[:,2:2+2]
 
-        g_prior=self.priors[model].g_prior
+        g_prior=self['model_pars'][model]['g_prior']
 
         ls=ngmix.lensfit.LensfitSensitivity(g, g_prior)
         res['g_sens'] = ls.get_g_sens()
@@ -1731,7 +1713,9 @@ class MedsFit(dict):
             try:
                 pdict=fitter.make_plots(title=title,
                                         weights=fitter.weights)
-
+                
+                pdict['trials'].aspect_ratio=1.5
+                pdict['wtrials'].aspect_ratio=1.5
 
                 trials_png='%06d-%s-trials-%s.png' % (mindex,type,model)
                 wtrials_png='%06d-%s-wtrials-%s.png' % (mindex,type,model)
@@ -2659,6 +2643,36 @@ class MHMedsFitHybrid(MedsFit):
 
         return fitter
 
+    def clip_steps(self, step_sizes,min_steps,max_steps):
+        """
+        clip the steps to a desired range.  Can work with
+        either diagonals or cov
+        """
+        from numpy import sqrt, diag
+        if len(step_sizes.shape) == 1:
+            clip_element_wise(step_sizes, min_steps, max_steps)
+            self._print_pars(step_sizes, front="        step sizes:")
+        else:
+            dsigma = sqrt(diag(step_sizes))
+            corr = step_sizes.copy()
+            for i in xrange(step_sizes.shape[0]):
+                for j in xrange(step_sizes.shape[1]):
+                    corr[i,j] /= dsigma[i]
+                    corr[i,j] /= dsigma[j]
+            clip_element_wise(dsigma, min_steps, max_steps)
+            for i in xrange(step_sizes.shape[0]):
+                for j in xrange(step_sizes.shape[1]):
+                    corr[i,j] *= dsigma[i]
+                    corr[i,j] *= dsigma[j]
+            step_sizes = corr.copy()
+            
+            if numpy.any(numpy.linalg.eigvals(step_sizes) <= 0):
+                step_sizes = dsigma.copy()
+                self._print_pars(step_sizes, front="        step sizes:")
+            else:
+                self._print_pars(sqrt(diag(step_sizes)),
+                                 front="        step sizes diag cov:")
+        return step_sizes
 
     def _fit_simple_mh(self, mb_obs_list, model):
         """
@@ -2673,12 +2687,11 @@ class MHMedsFitHybrid(MedsFit):
         from ngmix.fitting import MHSimple
         from .util import clip_element_wise
 
-        fac=0.4
-
         mhpars=self['mh_pars']
+        fac=mhpars['step_factor']
 
         # note flat on g!
-        prior=self.gflat_priors[model]
+        prior=self['model_pars'][model]['gflat_prior']
 
         guess,sigmas=self.guesser(get_sigmas=True, prior=prior)
         
@@ -2691,37 +2704,12 @@ class MHMedsFitHybrid(MedsFit):
         min_steps = numpy.zeros(5+self['nband'])
         min_steps[0:5] = mhpars['min_step_sizes'][0:5]
         min_steps[5:] = mhpars['min_step_sizes'][5]
-        max_steps = fac*self.priors[model].get_widths()
+        max_steps = fac*self['model_pars'][model]['prior'].get_widths()
 
         self._print_pars(max_steps, front="        max_steps:")
         
-        def clip_steps(step_sizes,min_steps,max_steps):
-            if len(step_sizes.shape) == 1:
-                clip_element_wise(step_sizes, min_steps, max_steps)
-                self._print_pars(step_sizes, front="        step sizes:")
-            else:
-                dsigma = numpy.sqrt(numpy.diag(step_sizes))
-                corr = step_sizes.copy()
-                for i in xrange(step_sizes.shape[0]):
-                    for j in xrange(step_sizes.shape[1]):
-                        corr[i,j] /= dsigma[i]
-                        corr[i,j] /= dsigma[j]
-                clip_element_wise(dsigma, min_steps, max_steps)
-                for i in xrange(step_sizes.shape[0]):
-                    for j in xrange(step_sizes.shape[1]):
-                        corr[i,j] *= dsigma[i]
-                        corr[i,j] *= dsigma[j]
-                step_sizes = corr.copy()
-                
-                if numpy.any(numpy.linalg.eigvals(step_sizes) <= 0):
-                    step_sizes = dsigma.copy()
-                    self._print_pars(step_sizes, front="        step sizes:")
-                else:
-                    self._print_pars(numpy.sqrt(numpy.diag(step_sizes)), front="        step sizes diag cov:")
-            return step_sizes
         
-        step_sizes = clip_steps(step_sizes,min_steps,max_steps)
-        
+        step_sizes = self.clip_steps(step_sizes,min_steps,max_steps)
 
         fitter=MHSimple(mb_obs_list,
                         model,
@@ -2736,47 +2724,42 @@ class MHMedsFitHybrid(MedsFit):
         pos=fitter.run_mcmc(guess,mhpars['burnin'])
         best_pars=fitter.get_best_pars()
         best_logl=fitter.get_best_lnprob()
-        self._print_pars_and_logl(best_pars, best_logl, front="        mh best burnin:")
+        self._print_pars_and_logl(best_pars, best_logl,
+                                  front="        mh best burnin:")
 
         # nominal steps
         pos=fitter.run_mcmc(guess,mhpars['nstep'])
         best_pars=fitter.get_best_pars()
         best_logl=fitter.get_best_lnprob()
-        self._print_pars_and_logl(best_pars, best_logl, front="        mh best:       ")
+        self._print_pars_and_logl(best_pars, best_logl,
+                                  front="        mh best:       ")
 
         trials=fitter.get_trials()
-        #plot_autocorr(trials,width=1000,height=1000,show=True)
 
         if mhpars['dotest']:
-            #import mcmctester
-            #import acor
-            import biggles
-            import emcee
-            from numpy import array
-            did_rerun=False
             for i in xrange(mhpars['ntest_max']):
 
                 acc=fitter.sampler.get_accepted()
                 arate = fitter.get_arate()
                 bad_arate=(arate < 0.4 or arate > 0.6)
 
-                #tester=mcmctester.MCMCTester(trials)
-                #check=tester()
-                # this is actually 2*Tau/nstep, which is a good measure, want to be < 0.1
+                # this is actually 2*Tau/nstep, which is a good measure, want
+                # to be < 0.1
                 taufrac=fitter.get_tau()
 
                 print("        taufrac:",taufrac)
                 check = (taufrac < 0.1)
 
                 if bad_arate or not check:
-                    did_rerun=True
                     if bad_arate:
                         print("            bad arate last run:",arate)
                         if len(step_sizes.shape) == 1 :
                             step_sizes=trials.std(axis=0)*fac
                         else:
                             step_sizes=numpy.cov(trials.T)*fac*fac
-                        step_sizes = clip_steps(step_sizes,min_steps,max_steps)
+                        step_sizes = self.clip_steps(step_sizes,
+                                                     min_steps,
+                                                     max_steps)
 
                         fitter.set_step_sizes(step_sizes)
                     if not check:
@@ -2786,10 +2769,9 @@ class MHMedsFitHybrid(MedsFit):
                     best_pars=fitter.get_best_pars()
                     best_logl=fitter.get_best_lnprob()
                     self._print_pars_and_logl(best_pars, best_logl, 
-                                              front="        mh more steps:        ")
+                                front="        mh more steps:        ")
 
                     trials=fitter.get_trials()
-                    #plot_autocorr(trials,width=1000,height=1000,show=True)
                 else:
                     break
 
