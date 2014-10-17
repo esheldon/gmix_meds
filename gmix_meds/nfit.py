@@ -2666,12 +2666,20 @@ class MHMedsFitHybrid(MedsFit):
                     corr[i,j] *= dsigma[j]
             step_sizes = corr.copy()
             
-            if numpy.any(numpy.linalg.eigvals(step_sizes) <= 0):
+            use_diag_steps = False
+            if numpy.all(numpy.isfinite(step_sizes)):
+                if numpy.any(numpy.linalg.eigvals(step_sizes) <= 0):
+                    use_diag_steps = True
+            else:
+                use_diag_steps = True
+                
+            if use_diag_steps:
                 step_sizes = dsigma.copy()
                 self._print_pars(step_sizes, front="        step sizes:")
             else:
                 self._print_pars(sqrt(diag(step_sizes)),
                                  front="        step sizes diag cov:")
+                
         return step_sizes
 
     def _fit_simple_mh(self, mb_obs_list, model):
