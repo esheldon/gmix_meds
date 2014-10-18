@@ -2643,35 +2643,53 @@ class MHMedsFitHybrid(MedsFit):
 
         return fitter
 
-    def clip_steps(self, step_sizes,min_steps,max_steps):
+    def _clip_steps(self, step_sizes, min_steps, max_steps):
         """
         clip the steps to a desired range.  Can work with
         either diagonals or cov
         """
         from numpy import sqrt, diag
+        from numpy.linalg import LinAlgError
         if len(step_sizes.shape) == 1:
             clip_element_wise(step_sizes, min_steps, max_steps)
             self._print_pars(step_sizes, front="        step sizes:")
         else:
+            # correlation matrix
             dsigma = sqrt(diag(step_sizes))
             corr = step_sizes.copy()
             for i in xrange(step_sizes.shape[0]):
                 for j in xrange(step_sizes.shape[1]):
                     corr[i,j] /= dsigma[i]
                     corr[i,j] /= dsigma[j]
+            
+            # clip the diagonals
             clip_element_wise(dsigma, min_steps, max_steps)
+
+            # remake the covariance matrix
             for i in xrange(step_sizes.shape[0]):
                 for j in xrange(step_sizes.shape[1]):
                     corr[i,j] *= dsigma[i]
                     corr[i,j] *= dsigma[j]
+
             step_sizes = corr.copy()
-            
-            if numpy.any(numpy.linalg.eigvals(step_sizes) <= 0):
+
+            # make sure the matrix is well behavied
+            used_diag=False
+            try:
+                eigvals=numpy.linalg.eigvals(step_sizes)
+                if numpy.any(eigvals <= 0):
+                    step_sizes = dsigma.copy()
+                    used_diag=True
+            except LinAlgError:
                 step_sizes = dsigma.copy()
+                used_diag=True
+
+            if used_diag:
                 self._print_pars(step_sizes, front="        step sizes:")
             else:
                 self._print_pars(sqrt(diag(step_sizes)),
                                  front="        step sizes diag cov:")
+
         return step_sizes
 
     def _fit_simple_mh(self, mb_obs_list, model):
@@ -2709,7 +2727,7 @@ class MHMedsFitHybrid(MedsFit):
         self._print_pars(max_steps, front="        max_steps:")
         
         
-        step_sizes = self.clip_steps(step_sizes,min_steps,max_steps)
+        step_sizes = self._clip_steps(step_sizes,min_steps,max_steps)
 
         fitter=MHSimple(mb_obs_list,
                         model,
@@ -2757,7 +2775,7 @@ class MHMedsFitHybrid(MedsFit):
                             step_sizes=trials.std(axis=0)*fac
                         else:
                             step_sizes=numpy.cov(trials.T)*fac*fac
-                        step_sizes = self.clip_steps(step_sizes,
+                        step_sizes = self._clip_steps(step_sizes,
                                                      min_steps,
                                                      max_steps)
 
