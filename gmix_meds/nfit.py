@@ -2683,9 +2683,6 @@ class MHMedsFitHybrid(MedsFit):
                 
             if use_diag_steps:
                 step_sizes = dsigma.copy()
-                used_diag=True
-
-            if used_diag:
                 self._print_pars(step_sizes, front="        step sizes:")
             else:
                 self._print_pars(sqrt(diag(step_sizes)),
