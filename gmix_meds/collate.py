@@ -1,5 +1,6 @@
 from __future__ import print_function
 import os
+import sys
 import numpy
 import fitsio
 import json
@@ -104,6 +105,7 @@ class Concat(object):
         for i,split in enumerate(self.chunk_list):
 
             print('\t%d/%d ' %(i+1,nchunk), end='')
+            sys.stdout.flush()
             try:
                 data, epoch_data, meta = self.read_chunk(split)
 

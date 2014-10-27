@@ -939,7 +939,8 @@ def get_temp_dir():
     if '_CONDOR_SCRATCH_DIR' in os.environ:
         return os.environ['_CONDOR_SCRATCH_DIR']
     else:
-        return os.environ['TMPDIR']
+        import tempfile
+        return tempfile.mkdtemp()
 
 
 def read_yaml(config_path):
