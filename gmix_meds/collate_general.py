@@ -60,7 +60,7 @@ class ConcatGeneral(Concat):
             extra=''
             
         self.collated_file = os.path.join(self.out_dir, "%s_%s%s.fits" % (self.run,self.out_file,extra))
-        self.tmpdir=files.get_temp_dir()
+        self.tmpdir=None #files.get_temp_dir()
 
     def read_chunk(self, split):
         """

@@ -49,19 +49,19 @@ def main():
     if bands is not None:
         bands=bands.split(',')
     
-    tc=gmix_meds.collate.ConcatGeneral(run,
-                                       config_file,
-                                       meds_files,
-                                       bands=bands,
-                                       nper=None,
-                                       sub_dir=None,
-                                       blind=blind,
-                                       clobber=options.clobber,
-                                       skip_errors=options.skip_errors,
-                                       chunk_file=chunk_file,
-                                       out_dir=out_dir,
-                                       out_file=out_file)
-
+    tc=gmix_meds.collate_general.ConcatGeneral(run,
+                                               config_file,
+                                               meds_files,
+                                               bands=bands,
+                                               nper=None,
+                                               sub_dir=None,
+                                               blind=blind,
+                                               clobber=options.clobber,
+                                               skip_errors=options.skip_errors,
+                                               chunk_file=chunk_file,
+                                               out_dir=out_dir,
+                                               out_file=out_file)
+    
     if options.verify:
         tc.verify()
     else:
