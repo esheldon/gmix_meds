@@ -305,6 +305,10 @@ def get_chunks(ntot, nper):
     indices=numpy.arange(ntot)
     nchunk=ntot/nper
 
+    nleft=ntot % nper
+    if nleft > 1:
+        nchunk += 1
+
     chunk_list=[]
 
     for i in xrange(nchunk):

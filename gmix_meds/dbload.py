@@ -178,6 +178,9 @@ class OracleInputMaker(object):
 
         self.rc=files.read_default_runconfig(self.run)
         self.config=files.read_default_config(self.rc['config'])
+
+        self.config['fit_models']=list(self.config['model_pars'].keys())
+
         self.model_names=nfit.make_all_model_names(self.config['fit_models'],
                                                    self.config['fit_me_galaxy'],
                                                    self.config['fit_coadd_galaxy'])

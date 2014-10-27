@@ -59,6 +59,7 @@ class Concat(object):
         self.skip_errors=skip_errors
 
         self.config = files.read_yaml(config_file)
+        self.config['fit_models']=list(self.config['model_pars'].keys())
 
         self.set_files(run, root_dir)
         
