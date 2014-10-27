@@ -207,7 +207,7 @@ class Concat(object):
     def get_models(self, data):
         models=[]
 
-        model_names = self.config['fit_models']
+        model_names = self.config['model_pars'].keys()
         model_names = ['coadd_%s' % mod for mod in model_names] + model_names
 
         model_names = ['coadd_gauss'] + model_names
