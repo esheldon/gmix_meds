@@ -146,7 +146,10 @@ class MCMCTester(object):
             
     def __call__(self,jmax=None,rmax=1e-2,jstarmin=20.0):
         return self.test_chain(jmax=jmax,rmax=rmax,jstarmin=jstarmin)
-        
+    
+    """
+    removing this for now since it is not used
+    and stray imports bloat executables at NERSC
     def plot(self):
         import matplotlib.pyplot as plt
         for i in xrange(self.Nd):
@@ -163,7 +166,8 @@ class MCMCTester(object):
             plt.ylim(1e-5,1e3)
             plt.minorticks_on()
             plt.show()
-            
+    """
+    
     def __repr__(self):
         #print results
         base = "MCMCTester(chain(Nsamples=%d, Nparameters=%d))" % (self.Ns,self.Nd)

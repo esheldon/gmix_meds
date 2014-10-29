@@ -545,10 +545,12 @@ class MedsFit(dict):
 
         if self['model_neighbors']:
             print("    modelling neighbors:")
-            print("        doing coadd:")
-            self._model_neighbors(coadd_mb_obs_list, coadd=True)
-            print("        doing SE:")
-            self._model_neighbors(mb_obs_list)
+            if self['fit_coadd_galaxy']:
+                print("        doing coadd:")
+                self._model_neighbors(coadd_mb_obs_list, coadd=True)
+            if self['fit_me_galaxy']:
+                print("        doing SE:")
+                self._model_neighbors(mb_obs_list)
 
         return coadd_mb_obs_list, mb_obs_list, n_im
 
@@ -2649,7 +2651,6 @@ class MHMedsFitHybrid(MedsFit):
         either diagonals or cov
         """
         from numpy import sqrt, diag
-        from numpy.linalg import LinAlgError
         if len(step_sizes.shape) == 1:
             clip_element_wise(step_sizes, min_steps, max_steps)
             self._print_pars(step_sizes, front="        step sizes:")
@@ -2673,23 +2674,22 @@ class MHMedsFitHybrid(MedsFit):
 
             step_sizes = corr.copy()
 
-            # make sure the matrix is well behavied
-            used_diag=False
-            try:
+            # make sure the matrix is well behavied            
+            use_diag_steps = False
+            if numpy.all(numpy.isfinite(step_sizes)):
                 eigvals=numpy.linalg.eigvals(step_sizes)
                 if numpy.any(eigvals <= 0):
-                    step_sizes = dsigma.copy()
-                    used_diag=True
-            except LinAlgError:
+                    use_diag_steps = True
+            else:
+                use_diag_steps = True
+                
+            if use_diag_steps:
                 step_sizes = dsigma.copy()
-                used_diag=True
-
-            if used_diag:
                 self._print_pars(step_sizes, front="        step sizes:")
             else:
                 self._print_pars(sqrt(diag(step_sizes)),
                                  front="        step sizes diag cov:")
-
+                
         return step_sizes
 
     def _fit_simple_mh(self, mb_obs_list, model):

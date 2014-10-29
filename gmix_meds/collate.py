@@ -1,5 +1,6 @@
 from __future__ import print_function
 import os
+import sys
 import numpy
 import fitsio
 import json
@@ -61,8 +62,8 @@ class Concat(object):
         self.config = files.read_yaml(config_file)
         self.config['fit_models']=list(self.config['model_pars'].keys())
 
-        self._files=files.Files(run, root_dir=root_dir)
-
+        self.set_files(run, root_dir)
+        
         self.make_collated_dir()
         self.set_collated_file()
 
@@ -104,6 +105,7 @@ class Concat(object):
         for i,split in enumerate(self.chunk_list):
 
             print('\t%d/%d ' %(i+1,nchunk), end='')
+            sys.stdout.flush()
             try:
                 data, epoch_data, meta = self.read_chunk(split)
 
@@ -207,7 +209,7 @@ class Concat(object):
     def get_models(self, data):
         models=[]
 
-        model_names = self.config['fit_models']
+        model_names = self.config['model_pars'].keys()
         model_names = ['coadd_%s' % mod for mod in model_names] + model_names
 
         model_names = ['coadd_gauss'] + model_names
@@ -522,6 +524,9 @@ class Concat(object):
         data, epoch_data, meta=self.read_data(chunk_file, split)
         return data, epoch_data, meta
 
+    def set_files(self, run, root_dir):
+        self._files=files.Files(run, root_dir=root_dir)
+    
 
 def get_tile_key(tilename,band):
     key='%s-%s' % (tilename,band)

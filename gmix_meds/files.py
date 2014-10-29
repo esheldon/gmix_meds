@@ -936,11 +936,12 @@ class WQMaker(MakerBase):
             fobj.write(text)
 
 def get_temp_dir():
-    if '_CONDOR_SCRATCH_DIR' in os.environ:
-        return os.environ['_CONDOR_SCRATCH_DIR']
-    else:
-        return os.environ['TMPDIR']
-
+    tmpdir=os.environ.get('_CONDOR_SCRATCH_DIR',None)
+    if tmpdir is None:
+        tmpdir=os.environ.get('TMPDIR',None)
+        if tmpdir is None:
+            import tempfile
+            return tempfile.mkdtemp()
 
 def read_yaml(config_path):
     """
