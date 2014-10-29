@@ -545,10 +545,12 @@ class MedsFit(dict):
 
         if self['model_neighbors']:
             print("    modelling neighbors:")
-            print("        doing coadd:")
-            self._model_neighbors(coadd_mb_obs_list, coadd=True)
-            print("        doing SE:")
-            self._model_neighbors(mb_obs_list)
+            if self['fit_coadd_galaxy']:
+                print("        doing coadd:")
+                self._model_neighbors(coadd_mb_obs_list, coadd=True)
+            if self['fit_me_galaxy']:
+                print("        doing SE:")
+                self._model_neighbors(mb_obs_list)
 
         return coadd_mb_obs_list, mb_obs_list, n_im
 
