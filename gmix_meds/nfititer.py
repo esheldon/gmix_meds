@@ -68,6 +68,9 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
     def _guess_params_iter(self, mb_obs_list, model, params, start):
         fmt = "%10.6g "*(5+self['nband'])
 
+        skip_emcee = params.get('skip_emcee',False)
+        skip_nm = params.get('skip_nm',False)
+
         print("        doing iterative init")
 
         for i in xrange(params['max']):
@@ -76,33 +79,35 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
             if i == 0:
                 self.guesser = start
 
-            emceefit = self._fit_simple_emcee_guess(mb_obs_list, model, params)
+            if not skip_emcee:
+                emceefit = self._fit_simple_emcee_guess(mb_obs_list, model, params)
 
-            emcee_pars = emceefit.get_best_pars()
-            bestlk = emceefit.get_best_lnprob()
-            if self['print_params']:
-                print('            emcee max: ',
-                      fmt % tuple(emcee_pars), 'logl:   %lf' % bestlk)
-            else:
-                print('            emcee max loglike: %lf' % bestlk)
+                emcee_pars = emceefit.get_best_pars()
+                bestlk = emceefit.get_best_lnprob()
+                if self['print_params']:
+                    print('            emcee max: ',
+                          fmt % tuple(emcee_pars), 'logl:   %lf' % bestlk)
+                else:
+                    print('            emcee max loglike: %lf' % bestlk)
                 
-            # making up errors, but it doesn't matter                    
-            self.guesser = FixedParsGuesser(emcee_pars,emcee_pars*0.1)
+                # making up errors, but it doesn't matter                    
+                self.guesser = FixedParsGuesser(emcee_pars,emcee_pars*0.1)
 
-            # first nelder mead
-            greedyfit1 = self._fit_simple_max(mb_obs_list, model, params)
-            res1=greedyfit1.get_result()
-
-            bestlk = greedyfit1.calc_lnprob(res1['pars'])
-            if self['print_params']:
-                print('            nm max:    ',
-                      fmt % tuple(res1['pars']),'logl:    %lf' % bestlk)
-            else:
-                print('            nm max loglike: %lf' % bestlk)
-
-            # must ignore errors in nedler-mead
-            doemcee=True
-            self.guesser = FromFullParsGuesser(res1['pars'],emcee_pars*0.1)
+            if not skip_nm:
+                # first nelder mead
+                greedyfit1 = self._fit_simple_max(mb_obs_list, model, params)
+                res1=greedyfit1.get_result()
+                
+                bestlk = greedyfit1.calc_lnprob(res1['pars'])
+                if self['print_params']:
+                    print('            nm max:    ',
+                          fmt % tuple(res1['pars']),'logl:    %lf' % bestlk)
+                else:
+                    print('            nm max loglike: %lf' % bestlk)
+            
+                # must ignore errors in nedler-mead
+                doemcee=True
+                self.guesser = FromFullParsGuesser(res1['pars'],res1['pars']*0.1)
 
             greedyfit2 = self._fit_simple_lm(mb_obs_list, model, params)
             res2=greedyfit2.get_result()
