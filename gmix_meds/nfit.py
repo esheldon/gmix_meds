@@ -248,8 +248,11 @@ class MedsFit(dict):
 
             mindex = self.index_list[dindex]
             print('index: %d:%d' % (mindex,last), )
+            ti = time.time()
             self.fit_obj(dindex)
-
+            ti = time.time()-ti
+            print('    time:',ti)
+            
             tm=time.time()-t0
 
             self._try_checkpoint(tm) # only at certain intervals
@@ -282,7 +285,7 @@ class MedsFit(dict):
         self.data['number'][dindex] = self.meds_list[0]['number'][mindex]
         self.data['box_size'][dindex] = \
                 self.meds_list[0]['box_size'][mindex]
-        print('coadd_objects_id: %ld' % self.data['id'][dindex])
+        print('    coadd_objects_id: %ld' % self.data['id'][dindex])
 
         flags = self._obj_check(mindex)
         if flags != 0:
