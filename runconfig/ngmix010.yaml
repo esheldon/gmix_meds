@@ -1,0 +1,21 @@
+run: "ngmix010"
+run_type: "mcmc"
+
+# testbeds are defined in deswl/desmeds/testbed
+dataset:
+  - "SVA1_COADD_SPTE"
+
+# must exist in tiles
+withbands: ["g","r","i","z"]
+
+# what we will process
+bands:     ["g","r","i","z"]
+
+# if a testbed, we will only use a subset of the tiles
+# in here
+medsconf: "013"
+
+nper: 10
+
+# new psfs
+config: "nmeds013"
