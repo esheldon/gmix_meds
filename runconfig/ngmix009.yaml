@@ -17,5 +17,4 @@ medsconf: "013"
 
 nper: 10
 
-# flat g prior
 config: "nmeds012"
