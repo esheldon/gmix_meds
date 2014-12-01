@@ -19,7 +19,7 @@ class ConcatError(Exception):
 
 
 # need to fix up the images instead of this
-from .constants import PIXSCALE2
+from .constants import PIXSCALE2, SHAPENOISE2
 
 class Concat(object):
     """
@@ -255,6 +255,15 @@ class Concat(object):
         do_T=False
         for ft in models:
 
+            # turn on when we fix sign
+            '''
+            weight_name='%s_weight' % ft
+            sens_ind = names.index('%s_g_cov' % ft)
+            wtf = (weight_name, 'f8')
+            dt.insert(sens_ind+1, wtf)
+            names.insert(sens_ind+1, weight_name)
+            '''
+
             s2n_name='%s_flux_s2n' % ft
             flux_ind = names.index('%s_flux' % ft)
             dt.insert(flux_ind+1, (s2n_name, 'f8', nbands) )
@@ -265,14 +274,13 @@ class Concat(object):
             dt.insert(flux_ind+2, magf)
             names.insert(flux_ind+2, mag_name)
 
-            
+           
             pars_best_name='%s_pars_best' % ft
             if pars_best_name in names:
                 mag_name='%s_mag_best' % ft
                 magf = (mag_name, 'f8', nbands)
                 dt.insert(flux_ind+3, magf)
                 names.insert(flux_ind+3, mag_name)
-
 
             Tn = '%s_T' % ft
             Ten = '%s_err' % Tn
@@ -309,6 +317,10 @@ class Concat(object):
         
         if do_T:
             self.add_T_info(data, models)
+
+        # turn this on when we fix sign
+        #self.add_weight(data, models)
+
         return data
 
     def add_T_info(self, data, models):
@@ -336,7 +348,19 @@ class Concat(object):
                 data[Ts2n][w] = data[Tn][w]/data[Ten][w]
 
 
+    def add_weight(self, data, models):
+        """
+        Add weight for each model
+        """
+        for ft in models:
+            weight_name = '%s_weight'
 
+            cov_name='%s_g_cov'
+
+            c=data[cov_name]
+            weight=1.0/(2.*SHAPENOISE2 + c[:,0,0] + 2*c[:,0,1] + c[:,1,1])
+
+            data[weight_name] = weight
 
     def calc_mag_and_flux_stuff(self, data, meta, model, band):
         """
