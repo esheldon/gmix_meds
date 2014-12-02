@@ -152,6 +152,10 @@ class FromPSFGuesser(GuesserBase):
     """
     def __init__(self, T, fluxes, scaling='linear'):
         self.T=T
+
+        if numpy.isscalar(fluxes):
+            fluxes=numpy.array(fluxes, dtype='f8', ndmin=1)
+
         self.fluxes=fluxes
         self.scaling=scaling
 
