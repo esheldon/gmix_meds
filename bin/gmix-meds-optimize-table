@@ -1,0 +1,38 @@
+#!/usr/bin/env python
+"""
+    %prog [options] table
+
+"""
+from __future__ import print_function
+import os
+import argparse
+import desdb
+
+parser = argparse.ArgumentParser(description=__doc__)
+
+parser.add_argument('table_name',help="table to optimize")
+parser.add_argument('--owner',help="table owner, default is the username")
+
+def get_query(table_name, owner):
+
+    if owner is None:
+        owner=os.environ['USER']
+
+    query="""
+    begin 
+    dbms_stats.gather_table_stats(ownname=>'{owner}',tabname=>'{table_name}',CASCADE=>TRUE,degree=>4);
+    end;
+    """.format(owner=owner.upper(),
+               table_name=table_name.upper())
+    return query
+
+def main():
+    args = parser.parse_args()
+
+    conn=desdb.Connection()
+
+    query=get_query(args.table_name, args.owner)
+    print(query)
+    conn.quick(query)
+
+main()
