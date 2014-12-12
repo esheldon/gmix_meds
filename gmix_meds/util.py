@@ -230,7 +230,7 @@ class FixedParsGuesser(GuesserBase):
         self.pars=pars
         self.pars_err=pars_err
 
-    def __call__(self, get_sigmas=False, prior=None):
+    def __call__(self, get_sigmas=False, prior=None, **keys):
         """
         center, shape are just distributed around zero
         """
