@@ -53,7 +53,10 @@ EM_MAX_TRY=3
 EM_MAX_ITER=100
 
 # shift psf flags past astrometry flags, which end at 9
-PSFEX_FLAGS_SHIFT = 9
+#PSFEX_FLAGS_SHIFT = 9
+
+IMAGE_FLAGS_SET=2**0
+PSF_FLAGS_SET=2**1
 
 _CHECKPOINTS_DEFAULT_MINUTES=[0,30,60,110]
 
@@ -1778,7 +1781,10 @@ class MedsFit(dict):
 
     def _combine_image_flags(self):
         """
-        add the psf flags, properly shifted
+        image flags at this point is either 0 or IMAGE_FLAGS_SET
+
+        combine with psf flags which at this point are either 0 or
+        PSF_FLAGS_SET
         """
         for band in self.iband:
             image_flags = self.all_image_flags[band]
@@ -1814,6 +1820,9 @@ class MedsFit(dict):
     def _load_meds_files(self):
         """
         Load all listed meds files
+
+        We check the flags indicated by image_flags2check.  the saved
+        flags are 0 or IMAGE_FLAGS_SET
         """
 
         self.meds_list=[]
@@ -1840,6 +1849,18 @@ class MedsFit(dict):
                 image_flags[1:] = \
                     self._get_replacement_flags(image_info['image_id'][1:])
 
+            # now we reduce the flags to zero or IMAGE_FLAGS_SET
+            # copy out and check image flags just for cutouts
+            cimage_flags=image_flags[1:].copy()
+
+            w,=numpy.where( (cimage_flags & self['image_flags2check']) != 0)
+
+            cimage_flags[:] = 0
+            if w.size > 0:
+                cimage_flags[w] = IMAGE_FLAGS_SET
+
+            # copy back in reduced flags
+            image_flags[1:] = cimage_flags
             self.all_image_flags.append(image_flags)
 
         self.nobj_tot = self.meds_list[0].size
@@ -1907,7 +1928,8 @@ class MedsFit(dict):
 
     def _psfex_path_from_image_path(self, meds, image_path):
         """
-        infer the psfex path from the image path
+        infer the psfex path from the image path.  note only certain
+        flags are returned, the ones we want to check
 
         Mike's current flags
 
@@ -1948,7 +1970,8 @@ class MedsFit(dict):
             checkflags=self['psf_flags2check']
             if (flagsall & checkflags) != 0:
                 print("    psf flags:",flagsall)
-                flags = checkflags
+                #flags = checkflags
+                flags = PSF_FLAGS_SET
                 print(psfpath,flags)
 
         return psfpath, flags
@@ -1981,7 +2004,7 @@ class MedsFit(dict):
                     print("loading:",psfpath)
                     pex=psfex.PSFEx(psfpath)
         
-            flags = flags << PSFEX_FLAGS_SHIFT
+            #flags = flags << PSFEX_FLAGS_SHIFT
             psfex_list.append(pex)
             flags_list.append(flags)
 
