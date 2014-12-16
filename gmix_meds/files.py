@@ -332,7 +332,8 @@ Notification    = Never
 # Run this exe with these args
 Executable      = %(master_script)s
 
-Image_Size      = 1000000
+#Image_Size      = 1000000
+Image_Size      = 1500000
 
 GetEnv = True
 

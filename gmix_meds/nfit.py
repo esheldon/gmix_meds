@@ -146,6 +146,8 @@ class MedsFit(dict):
 
         self['replacement_flags']=self.get('replacement_flags',None)
 
+        self['margsky'] = self.get('margsky',False)
+
     def _reset_mb_sums(self):
         from numpy import zeros
         nband=self['nband']
@@ -434,6 +436,7 @@ class MedsFit(dict):
         fitter=MCMCSimple(mb_obs_list,
                           model,
                           nu=self['nu'],
+                          margsky=self['margsky'],
                           prior=prior,
                           nwalkers=epars['nwalkers'],
                           mca_a=epars['a'],
@@ -2530,6 +2533,7 @@ class MHMedsFitLM(MedsFit):
                         model,
                         step_sizes,
                         nu=self['nu'],
+                        margsky=self['margsky'],
                         prior=prior,
                         random_state=self.random_state)
 
@@ -2760,6 +2764,7 @@ class MHMedsFitHybrid(MedsFit):
                         step_sizes,
                         prior=prior,
                         nu=self['nu'],
+                        margsky=self['margsky'],
                         random_state=self.random_state)
 
         self._print_pars(guess,front="        mh guess:      ")

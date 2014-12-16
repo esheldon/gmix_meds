@@ -15,7 +15,8 @@ bands:     ["r","i","z"]
 # in here
 medsconf: "013"
 
-nper: 20
+nper: 10
 
 # this is the gmix_meds config file
-config: "nmeds013"
+# trying margsky
+config: "nmedstest"
