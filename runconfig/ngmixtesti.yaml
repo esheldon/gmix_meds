@@ -1,0 +1,28 @@
+# fake run for matt's r-band files
+run: "ngmixtesti"
+run_type: "mcmc"
+
+# testbeds are defined in deswl/desmeds/testbed
+dataset: "testbed"
+testbed: {"name":"sva1-2", "release":"SVA1_COADD_SPTE"}
+
+# this is the gmix_meds config file
+config: "nmeds014"
+
+#
+# I think these will be unimportant since matt just made the 
+# collated files
+#
+
+# must exist in tiles
+withbands: ["r","i","z"]
+
+# what we will process
+bands:     ["i"]
+
+# if a testbed, we will only use a subset of the tiles
+# in here
+medsconf: "013"
+
+# to reduce the number of written files
+nper: 1000
