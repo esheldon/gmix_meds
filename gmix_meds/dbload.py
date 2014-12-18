@@ -111,6 +111,9 @@ class OracleInputMaker(object):
                           create=self.create,
                           primary_key=self.primary_key)
 
+        if self.create:
+            self._write_grant_files()
+
 
         if epoch_data is not None:
             print()
@@ -119,6 +122,19 @@ class OracleInputMaker(object):
                               self.epochs_table_name,
                               self.epochs_control_file,
                               create=self.create)
+
+    def _write_grant_files(self):
+        grant_file=self.control_file+'.grant.sql'
+        egrant_file=self.epochs_control_file+'.grant.sql'
+
+        print("writing grant file:",grant_file)
+        with open(grant_file,'w') as fobj:
+            q="grant select on %s to des_reader" % self.table_name
+            fobj.write(q)
+        print("writing epochs grant file:",egrant_file)
+        with open(egrant_file,'w') as fobj:
+            q="grant select on %s to des_reader" % self.epochs_table_name
+            fobj.write(q)
 
     def add_tilename(self, data):
         import esutil as eu
