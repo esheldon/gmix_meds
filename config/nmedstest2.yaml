@@ -10,6 +10,8 @@ check_image_flags: True
 
 margsky: True
 
+#max_box_size: 64
+
 # these are currently from astrometry only
 # note flag bits 0-3 are already removed from the meds file
 # note 2**4 is internal use
