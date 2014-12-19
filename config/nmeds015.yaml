@@ -1,0 +1,147 @@
+# nbrs modeling parameters
+
+fitter: "ngmix"
+fitter_class: "mh"
+coadd_fitter_class: "emcee"
+fit_me_galaxy: True
+fit_coadd_galaxy: False
+
+check_image_flags: True
+
+margsky: True
+
+# these are currently from astrometry only
+# note flag bits 0-3 are already removed from the meds file
+# note 2**4 is internal use
+# 2**0 + 2**1 + 2**2 + 2**3 + 2**5 + 2**6 + 2**7 + 2**8 + 2**9
+image_flags2check: 1007
+
+use_psf_rerun: True
+psf_rerun_version: "v3"
+psfex_blacklist: "$DESDATA/EXTRA/blacklists/psfex-sv-v3.txt"
+# this should combine all the flags of interest
+#2**0 = 1 = No stars found
+#2**1 = 2 = Too few stars found (<50)
+#2**2 = 4 = Too many stars found (>500)
+#2**3 = 8 = Too high FWHM (>1.8 arcsec)
+#2**4 = 16 = Error encountered somewhere along the line in making the PSFEx files.
+# 2**0 + 2**1 + 2**4
+psf_flags2check: 19
+
+coadd_model_guess: "iter"
+me_model_guess: "iter"
+
+print_params: True
+
+nu: 0.0
+
+nbrs_model:
+    model: "exp"
+    method: "subtract"
+    flags: "flags"
+    pars: "pars_best"
+    require_me_goodfit: True
+
+coadd_iter: 
+    max: 1
+
+    emcee_pars:
+        a: 2.0
+        nwalkers: 50
+        burnin: 10
+        nstep: 40
+
+    min_method: 'Nelder-Mead'
+
+    # nelder-mead pars
+    nm_pars:
+        tol: 1.0e-6
+
+    # levenberg marquardt pars
+    lm_ntry: 5
+    lm_pars:
+        ftol: 1.0e-6
+        xtol: 1.0e-3
+        maxfev: 500
+
+me_iter: 
+    max: 1
+    
+    emcee_pars:
+        a: 2.0
+        nwalkers: 50
+        burnin: 10
+        nstep: 40
+
+    min_method: 'Nelder-Mead'
+
+    # nelder-mead pars
+    nm_pars:
+        tol: 1.0e-6
+
+    # levenberg marquardt pars
+    lm_ntry: 5
+    lm_pars:
+        ftol: 1.0e-6
+        xtol: 1.0e-3
+        maxfev: 500
+
+emcee_pars:
+    a: 2.0
+    nwalkers: 80
+    burnin: 800
+    nstep: 800
+
+mh_pars:
+    dotest: True
+    step_factor: 0.5
+    ntest_max: 4
+    burnin: 1000
+    nstep: 1000
+    min_step_sizes: [1.0e-6,1.0e-6,1.0e-6,1.0e-6,1.0e-5,1.0e-3]
+
+psf_em_pars:
+    ngauss: 3
+    ntry: 20
+    maxiter: 5000
+    tol: 5.0e-6
+
+# at least one band must have s/n > this or
+# we won't fit the slow mcmc 
+min_psf_s2n: 4
+
+#region: "seg_and_sky"
+region: "cweight-nearest"
+
+# in arcsec
+#psf_offset_max: 0.25
+
+# models in addition to a psf flux
+model_pars:
+    exp:
+        g_prior_type: "cosmos-sersic"
+        T_prior_type: "TwoSidedErf"
+        T_prior_pars: [-0.07, 0.03, 1.0e+06, 1.0e+05]
+        counts_prior_type: "TwoSidedErf"
+        counts_prior_pars: [-1.0, 0.1, 1.0e+09, 0.25e+08]
+        cen_prior_type: "dgauss"
+        cen_prior_pars: [0.27]
+#    dev:
+#        g_prior_type: "cosmos-sersic"
+#        T_prior_type: "TwoSidedErf"
+#        T_prior_pars: [-0.07, 0.03, 1.0e+06, 1.0e+05]
+#        counts_prior_type: "TwoSidedErf"
+#        counts_prior_pars: [-1.0, 0.1, 1.0e+09, 0.25e+08]
+#        cen_prior_type: "dgauss"
+#        cen_prior_pars: [0.27]
+
+# this means repeat the couns priors for each band
+counts_prior_repeat: True
+
+do_shear: True
+
+# checkpoint times in minutes, needed for condor in case we pass a batch system
+# limit such as in the condor scavenge.
+# 0 means after the first object
+
+checkpoints: [0,10,20,30,40,50,60,70,80,90,100,110]
