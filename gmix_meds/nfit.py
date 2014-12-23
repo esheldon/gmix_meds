@@ -349,7 +349,7 @@ class MedsFit(dict):
         self._fit_psf_flux()
 
         dindex=self.dindex
-        s2n=self.data['coadd_psf_flux'][dindex,:]/self.data['coadd_psf_flux_err'][dindex,:]
+        s2n=self.data['psf_flux'][dindex,:]/self.data['psf_flux_err'][dindex,:]
         max_s2n=numpy.nanmax(s2n)
 
         if max_s2n >= self['min_psf_s2n'] and len(self['fit_models']) > 0:
@@ -2395,7 +2395,7 @@ class MHMedsFitLM(MedsFit):
         self._fit_psf_flux()
 
         dindex=self.dindex
-        s2n=self.data['coadd_psf_flux'][dindex,:]/self.data['coadd_psf_flux_err'][dindex,:]
+        s2n=self.data['psf_flux'][dindex,:]/self.data['psf_flux_err'][dindex,:]
         max_s2n=numpy.nanmax(s2n)
 
         n_se_images=len(self.sdata['mb_obs_list'])
@@ -2599,7 +2599,7 @@ class MHMedsFitHybrid(MedsFit):
             self['fit_coadd_galaxy'] = True
         
         dindex=self.dindex
-        s2n=self.data['coadd_psf_flux'][dindex,:]/self.data['coadd_psf_flux_err'][dindex,:]
+        s2n=self.data['psf_flux'][dindex,:]/self.data['psf_flux_err'][dindex,:]
         max_s2n=numpy.nanmax(s2n)
 
         if max_s2n >= self['min_psf_s2n'] and len(self['fit_models']) > 0:
