@@ -148,6 +148,8 @@ class MedsFit(dict):
 
         self['margsky'] = self.get('margsky',False)
 
+        self['use_edge_aperture'] = self.get('use_edge_aperture',False)
+
     def _reset_mb_sums(self):
         from numpy import zeros
         nband=self['nband']
@@ -984,6 +986,7 @@ class MedsFit(dict):
             #    self.coadd_wmax_byband[band]=wmax
             if wmax > 0.0:
                 self.coadd_wrelsum += wsum/wmax
+
         else:
             self.npix += npix
             self.psfrec_T_wsum += T*wsum
@@ -1020,7 +1023,24 @@ class MedsFit(dict):
         if self['make_plots']:
             self._do_make_psf_plots(band, psf_gmix, psf_obs, mindex, icut)
 
+        if self['use_edge_aperture']:
+            self._set_aperture(obs, icut)
+
         return obs
+
+    def _set_aperture(self, obs, icut):
+        """
+        set circular aperture based on minimum distance to an edge
+        """
+        if icut==0:
+            cen=[obs.jacobian.row0, obs.jacobian.col0]
+            aper=ngmix.fitting.get_edge_aperture(obs.image.shape, cen)
+            aper *= obs.jacobian.get_sdet()
+            self['aperture']=aper
+        else:
+            aper=self['aperture']
+
+        obs.set_aperture(aper)
 
     def _fit_psf(self, obs):
         """
