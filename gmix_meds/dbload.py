@@ -275,6 +275,8 @@ def add_indexes(table_name, epochs=False):
             index_name='{table_name}{col}idx'.format(table_name=table_name,
                                                        col=col)
             index_name=index_name.replace('_','')
+            if len(index_name) > 30:
+                index_name=index_name[0:30]
 
 
             query = qt.format(index_name=index_name,
