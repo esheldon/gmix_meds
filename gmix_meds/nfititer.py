@@ -103,6 +103,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         return self.guesser
 
     def _do_emcee_guess(self, mb_obs_list, model, epars, make_cov_guesser=False):
+        print('        fitting emcee for guess')
         fitter = self._fit_simple_emcee_guess(mb_obs_list,
                                                 model,
                                                 epars)
@@ -123,7 +124,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         self.emceefit=fitter
 
     def _do_nm_guess(self, mb_obs_list, model, nm_pars):
-        print('        fitting nm')
+        print('        fitting nm for guess')
         fitter, ok = self._fit_simple_max(mb_obs_list,
                                           model,
                                           nm_pars)
@@ -277,10 +278,11 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                 if (res['flags'] & EIG_NOTFINITE) == 0:
                     ok=True
                     break
+                print("        bad cov, retrying nm")
             else:
                 if res['flags']==0:
                     ok=True
                     break
-            print("        bad cov, retrying nm")
+                print("        fit failure, retrying nm")
 
         return fitter, ok

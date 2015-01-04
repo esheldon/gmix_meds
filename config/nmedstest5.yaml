@@ -45,14 +45,14 @@ nbrs_model:
 me_iter: 
     niter: 1
 
-    skip_emcee: True
+    skip_emcee: False
     
     nm_pars:
         ntry: 4
         maxiter: 2000
         maxfev: 2000
-        ftol: 1.0e-6
-        xtol: 1.0e-6
+        ftol: 1.0e-4
+        xtol: 1.0e-4
     
     emcee_pars:
         a: 2.0
