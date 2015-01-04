@@ -2602,8 +2602,7 @@ class MHMedsFitLM(MedsFit):
 
 class MHMedsFitHybrid(MedsFit):
     """
-    This version uses MH for fitting, with guess/steps from
-    a coadd emcee run
+    Use MH for fitting, with guess/steps from an alternative fitter
     """
 
     def _fit_all_models(self):
