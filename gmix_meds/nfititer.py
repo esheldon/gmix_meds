@@ -66,7 +66,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         return flags
 
     def _guess_params_iter(self, mb_obs_list, model, params, start):
-        fmt = "%10.6g "*(5+self['nband'])
+        self.fmt = "%10.6g "*(5+self['nband'])
 
         skip_emcee = params.get('skip_emcee',False)
         skip_nm = params.get('skip_nm',False)
@@ -74,8 +74,9 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
 
         print("        doing iterative init")
 
-        for i in xrange(params['niter']):
-            print('        iter % 3d of %d' % (i+1,params['max']))
+        niter=params['niter']
+        for i in xrange(niter):
+            print('        iter % 3d of %d' % (i+1,niter))
 
             if i == 0:
                 self.guesser = start
@@ -109,7 +110,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         self.bestlk = fitter.get_best_lnprob()
         if self['print_params']:
             print('            emcee max: ',
-                  fmt % tuple(pars), 'logl:   %lf' % self.bestlk)
+                  self.fmt % tuple(pars), 'logl:   %lf' % self.bestlk)
         else:
             print('            emcee max loglike: %lf' % self.bestlk)
         
@@ -122,9 +123,10 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         self.emceefit=fitter
 
     def _do_nm_guess(self, mb_obs_list, model, nm_pars):
+        print('        fitting nm')
         fitter, ok = self._fit_simple_max(mb_obs_list,
-                                              model,
-                                              params['nm_pars'])
+                                          model,
+                                          nm_pars)
         res=fitter.get_result()
         
         pars=res['pars']
@@ -132,7 +134,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
 
         if self['print_params']:
             print('            nm max:    ',
-                  fmt % tuple(pars),'logl:    %lf' % self.bestlk)
+                  self.fmt % tuple(pars),'logl:    %lf' % self.bestlk)
         else:
             print('            nm max loglike: %lf' % self.bestlk)
     
@@ -143,7 +145,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
             ok=numpy.all(numpy.abs(res['pars']) < 1e10)
             if ok:
                 self.guesser=FixedParsCovGuesser(pars,res['pars_cov'])
-        return res, pars_ok
+        return res, ok
 
     def _run_model_fit(self, model, fitter_type, coadd=False):
         """
@@ -279,5 +281,6 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                 if res['flags']==0:
                     ok=True
                     break
+            print("        bad cov, retrying nm")
 
-        return fitter
+        return fitter, ok
