@@ -43,7 +43,7 @@ nbrs_model:
     require_me_goodfit: True
 
 me_iter: 
-    max: 1
+    niter: 1
 
     skip_emcee: True
     
