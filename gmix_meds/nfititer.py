@@ -83,7 +83,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
             if not skip_emcee:
                 self._do_emcee_guess(mb_obs_list,
                                      model,
-                                     params['emcee_pars']))
+                                     params['emcee_pars'])
 
             res, ok = self._do_nm_guess(mb_obs_list,
                                         model,
