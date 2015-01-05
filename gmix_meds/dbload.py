@@ -162,7 +162,7 @@ class OracleInputMaker(object):
 
         #drop_patterns=['coadd_gauss','logpars','tau','pars','pars_cov',
         #               'psf1','processed','aic','bic']
-        drop_patterns=['coadd_gauss','logpars','tau',
+        drop_patterns=['coadd_gauss','logpars',
                        'psf1','processed','aic','bic']
 
         names2keep=[]
