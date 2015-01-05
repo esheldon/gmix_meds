@@ -79,11 +79,11 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
             if i == 0:
                 self.guesser = start
 
+            epars=params['emcee_pars']
             self._do_emcee_guess(mb_obs_list,
                                  model,
-                                 params['emcee_pars'],
+                                 epars,
                                  guesser2make='fixed')
-                                 #guesser2make='frompars')
 
             self._do_nm_guess_one(mb_obs_list,
                                   model,
@@ -91,7 +91,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
 
             self._do_emcee_guess(mb_obs_list,
                                  model,
-                                 params['emcee_pars2'],
+                                 params.get('emcee_pars2',epars),
                                  guesser2make='fixed-cov')
         
         return self.guesser
@@ -112,10 +112,11 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
             if i == 0:
                 self.guesser = start
 
+            epars=params['emcee_pars']
             if not skip_emcee:
                 self._do_emcee_guess(mb_obs_list,
                                      model,
-                                     params['emcee_pars'])
+                                     epars)
 
             res, ok = self._do_nm_guess(mb_obs_list,
                                         model,
@@ -127,7 +128,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                 self.guesser=FromParsGuesser(res['pars'],res['pars']*0.1)
                 self._do_emcee_guess(mb_obs_list,
                                      model,
-                                     params['emcee_pars2'],
+                                     params.get('emcee_pars2',epars),
                                      guesser2make='fixed-cov')
         
         return self.guesser

@@ -66,6 +66,7 @@ me_iter:
         burnin: 10
         nstep: 40
 
+    # for when nm fails
     emcee_pars2:
         a: 2.0
         nwalkers: 20
