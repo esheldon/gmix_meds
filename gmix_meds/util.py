@@ -2,7 +2,10 @@ from __future__ import print_function
 import numpy
 import fitsio
 
+import ngmix
 from ngmix import srandu
+from ngmix import print_pars
+from ngmix.priors import LOWVAL
 
 def clip_element_wise(arr, minvals, maxvals):
     """
@@ -49,7 +52,6 @@ def print_pars_and_logl(pars, logl, fmt='%10.6g', front=None):
     stdout.write('\n')
 
 
-from ngmix import print_pars
 
 class GuesserBase(object):
     def _fix_guess(self, guess, prior, ntry=4):
@@ -58,7 +60,6 @@ class GuesserBase(object):
 
         Bad guesses are replaced by a sample from the prior
         """
-        from ngmix.priors import LOWVAL
 
         #guess[:,2]=-9999
         n=guess.shape[0]
@@ -247,10 +248,16 @@ class FromParsGuesser(GuesserBase):
     get full guesses from just T,fluxes associated with
     psf
     """
-    def __init__(self, pars, pars_err, scaling='linear'):
+    def __init__(self, pars, pars_err, scaling='linear', widths=None):
         self.pars=pars
         self.pars_err=pars_err
         self.scaling=scaling
+
+        if widths is None:
+            # 0.01 offset for first c1,c2,g1,g2, 1 percent for Ti,Fi
+            widths=pars*0 + 0.01
+
+        self.widths=widths
 
     def __call__(self, n=None, get_sigmas=False, prior=None):
         """
@@ -266,26 +273,25 @@ class FromParsGuesser(GuesserBase):
         pars=self.pars
         npars=pars.size
 
-        width = pars*0 + 0.1
-
+        widths=self.widths
         guess=numpy.zeros( (n, npars) )
 
-        guess[:,0] = width[0]*srandu(n)
-        guess[:,1] = width[1]*srandu(n)
+        guess[:,0] = widths[0]*srandu(n)
+        guess[:,1] = widths[1]*srandu(n)
 
-        guess_shape=get_shape_guess(pars[2],pars[3],n,width[2:2+2])
+        guess_shape=get_shape_guess(pars[2],pars[3],n,widths[2:2+2])
         guess[:,2]=guess_shape[:,0]
         guess[:,3]=guess_shape[:,1]
 
         for i in xrange(4,npars):
             if self.scaling=='linear':
                 if pars[i] <= 0.0:
-                    guess[:,i] = width[i]*srandu(n)
+                    guess[:,i] = widths[i]*srandu(n)
                 else:
-                    guess[:,i] = pars[i]*(1.0 + width[i]*srandu(n))
+                    guess[:,i] = pars[i]*(1.0 + widths[i]*srandu(n))
             else:
                 # we add to log pars!
-                guess[:,i] = pars[i] + width[i]*srandu(n)
+                guess[:,i] = pars[i] + widths[i]*srandu(n)
 
         if prior is not None:
             self._fix_guess(guess, prior)

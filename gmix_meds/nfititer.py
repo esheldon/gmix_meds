@@ -3,6 +3,8 @@ import numpy
 from .nfit import *
 from ngmix import print_pars
 
+from ngmix.fitting import MaxSimple, EIG_NOTFINITE
+
 class MHMedsFitHybridIter(MHMedsFitHybrid):
     """
     This version uses MH for fitting, with guess/steps from
@@ -65,6 +67,35 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
 
         return flags
 
+    def _guess_params_iter_test(self, mb_obs_list, model, params, start):
+        self.fmt = "%10.6g "*(5+self['nband'])
+
+        print("        doing iterative init")
+
+        maxiter=params['maxiter']
+        for i in xrange(maxiter):
+            print('        iter % 3d of %d' % (i+1,maxiter))
+
+            if i == 0:
+                self.guesser = start
+
+            self._do_emcee_guess(mb_obs_list,
+                                 model,
+                                 params['emcee_pars'],
+                                 guesser2make='fixed')
+                                 #guesser2make='frompars')
+
+            self._do_nm_guess_one(mb_obs_list,
+                                  model,
+                                  params['nm_pars'])
+
+            self._do_emcee_guess(mb_obs_list,
+                                 model,
+                                 params['emcee_pars2'],
+                                 guesser2make='fixed-cov')
+        
+        return self.guesser
+
     def _guess_params_iter(self, mb_obs_list, model, params, start):
         self.fmt = "%10.6g "*(5+self['nband'])
 
@@ -74,9 +105,9 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
 
         print("        doing iterative init")
 
-        niter=params['niter']
-        for i in xrange(niter):
-            print('        iter % 3d of %d' % (i+1,niter))
+        maxiter=params['maxiter']
+        for i in xrange(maxiter):
+            print('        iter % 3d of %d' % (i+1,maxiter))
 
             if i == 0:
                 self.guesser = start
@@ -93,42 +124,89 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
             if not ok:
                 print("        greedy failure, running emcee")
 
-                self.guesser=FixedParsGuesser(res['pars'],res['pars']*0.1)
-                epars={'nwalkers':20,'burnin':200,'nstep':200}
+                self.guesser=FromParsGuesser(res['pars'],res['pars']*0.1)
                 self._do_emcee_guess(mb_obs_list,
                                      model,
-                                     epars,
-                                     make_cov_guesser=True)
+                                     params['emcee_pars2'],
+                                     guesser2make='fixed-cov')
         
         return self.guesser
 
-    def _do_emcee_guess(self, mb_obs_list, model, epars, make_cov_guesser=False):
-        print('        fitting emcee for guess')
+
+    def _do_emcee_guess(self, mb_obs_list, model, epars, guesser2make='fixed'):
+
+        print('        emcee for guess')
+
         fitter = self._fit_simple_emcee_guess(mb_obs_list,
-                                                model,
-                                                epars)
+                                              model,
+                                              epars)
+        fitter.calc_result()
+        res=fitter.get_result()
+
         pars = fitter.get_best_pars()
         self.bestlk = fitter.get_best_lnprob()
+        arate=fitter.get_arate()
+
+        print('            emcee a:',arate,'logl:', self.bestlk)
         if self['print_params']:
-            print('            emcee max: ',
-                  self.fmt % tuple(pars), 'logl:   %lf' % self.bestlk)
-        else:
-            print('            emcee max loglike: %lf' % self.bestlk)
+            print_pars(pars, front='        ')
+            print_pars(res['pars_err'],front='        ')
         
         # making up errors, but it doesn't matter
-        if make_cov_guesser:
-            self.guesser=FixedParsCovGuesser(pars,res['pars_cov'])
-        else:
+
+        if guesser2make=='fixed':
             self.guesser = FixedParsGuesser(pars,pars*0.1)
+        elif guesser2make=='fixed-cov':
+            self.guesser = FixedParsCovGuesser(pars,res['pars_cov'])
+        else:
+            self.guesser = FromParsGuesser(pars,pars*0.1)
 
         self.emceefit=fitter
 
-    def _do_nm_guess(self, mb_obs_list, model, nm_pars):
-        print('        fitting nm for guess')
-        fitter, ok = self._fit_simple_max(mb_obs_list,
-                                          model,
-                                          nm_pars)
+    def _do_nm_guess_one(self, mb_obs_list, model, nm_pars):
+        print('        nm for guess')
+
+        ntry=1
+        fitter = self._fit_simple_max(mb_obs_list,
+                                      model,
+                                      nm_pars,
+                                      ntry=ntry)
         res=fitter.get_result()
+        
+        pars=res['pars']
+        self.bestlk = fitter.calc_lnprob(pars)
+
+        if self['print_params']:
+            print('            nm max:    ',
+                  self.fmt % tuple(pars),'logl:    %lf' % self.bestlk)
+        else:
+            print('            nm max loglike: %lf' % self.bestlk)
+    
+        self.guesser=FromParsGuesser(pars,pars*0.1,widths=pars*0+0.01)
+        self.greedyfit = fitter
+        return res
+
+
+    def _do_nm_guess(self, mb_obs_list, model, nm_pars):
+        """
+        this is only for a guess, so we only care if the covariance
+        matrix is OK
+        """
+
+        print('        nm for guess')
+
+        ntry=nm_pars['ntry']
+        fitter = self._fit_simple_max(mb_obs_list,
+                                      model,
+                                      nm_pars,
+                                      ntry=ntry)
+
+
+        res=fitter.get_result()
+        if (res['flags'] & EIG_NOTFINITE) != 0:
+            ok=False
+        else:
+            ok=True
         
         pars=res['pars']
         self.bestlk = fitter.calc_lnprob(pars)
@@ -193,6 +271,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         prior=self['model_pars'][model]['gflat_prior']
 
         guess=self.guesser(n=epars['nwalkers'], prior=prior)
+        print_pars(guess.mean(axis=0), front="            emcee guess:")
 
         fitter=MCMCSimple(mb_obs_list,
                           model,
@@ -241,7 +320,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         res['ntry']=i+1
         return fitter
 
-    def _fit_simple_max(self, mb_obs_list, model, nm_pars, flags2check='cov'):
+    def _fit_simple_max(self, mb_obs_list, model, nm_pars, ntry=1):
         """
         parameters
         ----------
@@ -251,13 +330,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
             model to fit
         params: dict
             from the config file 'me_iter' or 'coadd_iter'
-        flags2check: string
-            if 'cov' only check EIG_NOTFINITE which indicates if the covariance
-            matrix was OK; this is fine when the result is only used as a guess
-            and full convergence is not required.  Otherwise check all flags
-            equal zero.
         """
-        from ngmix.fitting import MaxSimple, EIG_NOTFINITE
 
         prior=self['model_pars'][model]['gflat_prior']
 
@@ -268,21 +341,19 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                          prior=prior,
                          method=method)
 
-        ok=False
-        for i in xrange(nm_pars['ntry']):
-            guess=self.guesser(prior=prior)
+        guess=self.guesser(prior=prior)
+
+        for i in xrange(ntry):
             fitter.run_max(guess, **nm_pars)
             res=fitter.get_result()
 
-            if flags2check=='cov':
-                if (res['flags'] & EIG_NOTFINITE) == 0:
-                    ok=True
-                    break
-                print("        bad cov, retrying nm")
+            if (ntry > 1) and (res['flags'] & EIG_NOTFINITE) != 0:
+                # bad covariance matrix, need to get a new guess
+                print_pars(res['pars'],front='        bad cov at pars')
+                self.guesser=FromParsGuesser(guess, guess*0.1)
+                guess=self.guesser(prior=prior)
+                print_pars(guess,front='        new guess')
             else:
-                if res['flags']==0:
-                    ok=True
-                    break
-                print("        fit failure, retrying nm")
+                break
 
-        return fitter, ok
+        return fitter

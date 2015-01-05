@@ -318,7 +318,7 @@ class MedsFit(dict):
             self.data['flags'][dindex] = PSF_FIT_FAILURE 
             return
 
-        print(coadd_mb_obs_list[0][0].image.shape)
+        print("dims:",coadd_mb_obs_list[0][0].image.shape)
 
         self.data['nimage_use'][dindex, :] = n_im[:]
 
@@ -2771,7 +2771,9 @@ class MHMedsFitHybrid(MedsFit):
         min_steps = numpy.zeros(5+self['nband'])
         min_steps[0:5] = mhpars['min_step_sizes'][0:5]
         min_steps[5:] = mhpars['min_step_sizes'][5]
+
         max_steps = fac*self['model_pars'][model]['prior'].get_widths()
+        #max_steps = 2*self['model_pars'][model]['prior'].get_widths()
 
         self._print_pars(max_steps, front="        max_steps:")
         
@@ -2830,8 +2832,12 @@ class MHMedsFitHybrid(MedsFit):
                                                      max_steps)
 
                         fitter.set_step_sizes(step_sizes)
+
+                        # need another burnin for bad arate
+                        pos=fitter.run_mcmc(pos, mhpars['burnin'])
+
                     if not check:
-                        print("            mcmc test failed")
+                        print("            mcmc tau test failed")
 
                     pos=fitter.run_mcmc(pos, mhpars['nstep'])
                     best_pars=fitter.get_best_pars()

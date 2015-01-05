@@ -10,6 +10,12 @@ check_image_flags: True
 
 margsky: False
 
+# at least one band must have s/n > this or
+# we won't fit the slow mcmc 
+min_psf_s2n: 4
+
+max_box_size: 2048
+
 # these are currently from astrometry only
 # note flag bits 0-3 are already removed from the meds file
 # note 2**4 is internal use
@@ -43,14 +49,14 @@ nbrs_model:
     require_me_goodfit: True
 
 me_iter: 
-    niter: 1
+    maxiter: 1
 
     skip_emcee: False
     
     nm_pars:
-        ntry: 4
-        maxiter: 2000
-        maxfev: 2000
+        ntry: 2
+        maxiter: 1000
+        maxfev: 1000
         ftol: 1.0e-4
         xtol: 1.0e-4
     
@@ -59,6 +65,12 @@ me_iter:
         nwalkers: 50
         burnin: 10
         nstep: 40
+
+    emcee_pars2:
+        a: 2.0
+        nwalkers: 20
+        burnin: 200
+        nstep: 200
 
 
 emcee_pars:
@@ -80,10 +92,6 @@ psf_em_pars:
     ntry: 20
     maxiter: 5000
     tol: 5.0e-6
-
-# at least one band must have s/n > this or
-# we won't fit the slow mcmc 
-min_psf_s2n: 4
 
 #region: "seg_and_sky"
 region: "cweight-nearest"
