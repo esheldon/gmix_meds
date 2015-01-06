@@ -150,6 +150,8 @@ class MedsFit(dict):
 
         self['use_edge_aperture'] = self.get('use_edge_aperture',False)
 
+        self['aperture_nsigma']=self.get('aperture_nsigma',5.0)
+
     def _reset_mb_sums(self):
         from numpy import zeros
         nband=self['nband']
@@ -510,6 +512,23 @@ class MedsFit(dict):
         return flags
 
 
+    def _set_aperture_from_pars(self, obs, pars):
+        """
+        set circular aperture from jacobian center
+        """
+
+        dindex=self.dindex
+        Tpsf=self.data['coadd_psfrec_T'][dindex]
+
+        Tobj=pars[4].clip(min=0.0,max=None)
+
+        T = Tobj + Tpsf
+        sigma=numpy.sqrt(T/2.)
+        aper=self['aperture_nsigma']*sigma
+        aper_pix=aper/obs[0][0].jacobian.get_scale()
+
+        print("    setting aperture to: %s'' %s pix" % (aper,aper_pix))
+        obs.set_aperture(aper)
 
     def _get_multi_band_observations(self, mindex):
         """

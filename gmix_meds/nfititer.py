@@ -43,10 +43,11 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                     self._run_model_fit(model, self['coadd_fitter_class'],coadd=True)
 
                 if self['fit_me_galaxy']:
+                    mb_obs_list=self.sdata['mb_obs_list']
                     if 'me_iter' in self:
                         print('    multi-epoch iter fit')                
                         self.me_guesser = \
-                            self._guess_params_iter(self.sdata['mb_obs_list'],
+                            self._guess_params_iter(mb_obs_list,
                                                     model, 
                                                     self['me_iter'], 
                                                     self._get_guesser('me_psf'))
@@ -55,6 +56,10 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                     if self.me_guesser == None:
                         self.me_guesser = self._get_guesser('me_psf')
                         
+                    if self['use_guess_aper']:
+                        self._set_aperture_from_pars(mb_obs_list,
+                                                     self.me_guesser.pars.copy())
+
                     print('    multi-epoch')
                     # fitter class should be mh...
                     self._run_model_fit(model, self['fitter_class'], coadd=False)

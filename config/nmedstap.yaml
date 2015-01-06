@@ -17,7 +17,7 @@ min_psf_s2n: 4
 max_box_size: 2048
 
 use_guess_aper: True
-aperture_nsigma: 5.0
+aperture_nsigma: 4.0
 
 # these are currently from astrometry only
 # note flag bits 0-3 are already removed from the meds file
