@@ -17,7 +17,7 @@ bands:     ["r","i","z"]
 # in here
 medsconf: "013"
 
-nper: 20
+nper: 40
 
 # testing aperture based on n*sigma aperture from guess
 config: "nmedstap"
