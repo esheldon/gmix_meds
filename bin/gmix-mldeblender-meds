@@ -129,7 +129,7 @@ def run_ngmix(meds_files,
     gm=meds_fitter(conf,
                    priors,
                    meds_files,
-                   fof_range=fof_range,
+                   obj_range=fof_range,
                    model_data=model_data,
                    checkpoint_file=checkpoint_file,
                    checkpoint_data=checkpoint_data)
