@@ -66,7 +66,7 @@ class MedsFit(dict):
                  priors,
                  meds_files,
                  fof_data=None,
-                 extra_data={},
+                 extra_data=None,
                  checkpoint_file=None,
                  checkpoint_data=None):
         """
@@ -89,8 +89,11 @@ class MedsFit(dict):
 
         self['nband']=len(self.meds_files)
         self.iband = range(self['nband'])
-        
-        self.extra_data=extra_data
+
+        if extra_data is None:
+            self.extra_data = {}
+        else:
+            self.extra_data = extra_data
         self.checkpoint_file=checkpoint_file
         self.checkpoint_data=checkpoint_data
 
@@ -147,8 +150,10 @@ class MedsFit(dict):
 
         self['use_edge_aperture'] = self.get('use_edge_aperture',False)
 
-        self['aperture_nsigma']=self.get('aperture_nsigma',5.0)
+        self['aperture_nsigma'] = self.get('aperture_nsigma',5.0)
 
+        self['save_obs_per_fof'] = self.get('save_obs_per_fof',False)
+        
     def _reset_mb_sums(self):
         from numpy import zeros
         nband=self['nband']
@@ -296,6 +301,9 @@ class MedsFit(dict):
         t0=time.time()
         
         for fofid in self.fofids:
+            if self['save_obs_per_fof']:
+                self.fof_mb_obs_list = {}
+            
             fofmems = self.fofid2mindex[fofid]
             for mindex in fofmems:
                 if self.data['processed'][dindex]==1:
@@ -304,7 +312,10 @@ class MedsFit(dict):
 
                 print('index: %d:%d' % (mindex,last), )
                 ti = time.time()
-                self.fit_obj(mindex)
+                if self['model_neighbors']:
+                    self.fit_obj(mindex,model_neighbors=True)
+                else:
+                    self.fit_obj(mindex)
                 ti = time.time()-ti
                 print('    time:',ti)
             
@@ -312,12 +323,14 @@ class MedsFit(dict):
 
                 self._try_checkpoint(tm) # only at certain intervals
 
+            del self.fof_mb_obs_list
+            
         tm=time.time()-t0
         print("time:",tm)
         print("time per:",tm/num)
 
 
-    def fit_obj(self, dindex):
+    def fit_obj(self, dindex, model_neighbors=False):
         """
         Process the indicated object through the requested fits
         """
@@ -328,46 +341,87 @@ class MedsFit(dict):
         # changing the whole thing
         self.dindex = dindex
         self.mindex = dindex
-
-        # for checkpointing
-        self.data['processed'][dindex]=1
-
         mindex = self.mindex
 
-        ncutout_tot=self._get_object_ncutout(mindex)
-        self.data['nimage_tot'][dindex, :] = ncutout_tot
+        #fill data only if need to
+        if self.data['processed'][dindex] == 0:
+            self.data['nimage_tot'][dindex, :] = self._get_object_ncutout(mindex)
 
-        # need to do this because we work on subset files
-        self.data['id'][dindex] = self.meds_list[0]['id'][mindex]
-        self.data['number'][dindex] = self.meds_list[0]['number'][mindex]
-        self.data['box_size'][dindex] = \
-                self.meds_list[0]['box_size'][mindex]
-        print('    coadd_objects_id: %ld' % self.data['id'][dindex])
+            # need to do this because we work on subset files
+            self.data['id'][dindex] = self.meds_list[0]['id'][mindex]
+            self.data['number'][dindex] = self.meds_list[0]['number'][mindex]
+            self.data['box_size'][dindex] = self.meds_list[0]['box_size'][mindex]                                            
+            print('    coadd_objects_id: %ld' % self.data['id'][dindex])
+            
+            flags = self._obj_check(mindex)
+            if flags != 0:
+                self.data['flags'][dindex] = flags
+                return 0
 
-        flags = self._obj_check(mindex)
-        if flags != 0:
-            self.data['flags'][dindex] = flags
+        #if flags set from previous run, skip it
+        if self.data['flags'][dindex] != 0:
             return 0
+
         
-        # MultiBandObsList obects
-        coadd_mb_obs_list, mb_obs_list, n_im = \
-                self._get_multi_band_observations(mindex)
+        # get MultiBandObsList obects
+        if self['save_obs_per_fof'] and self.fof_mb_obs_list[self.meds_list[0]['number'][mindex]] is not None:
+            coadd_mb_obs_list = self.fof_mb_obs_list[self.meds_list[0]['number'][mindex]][0]
+            mb_obs_list = self.fof_mb_obs_list[self.meds_list[0]['number'][mindex]][1]
+            n_im = self.fof_mb_obs_list[self.meds_list[0]['number'][mindex]][2]
+        else:
+            coadd_mb_obs_list, mb_obs_list, n_im = self._get_multi_band_observations(mindex)
+            
+            if len(coadd_mb_obs_list) != self['nband']:
+                print("  some coadd failed to fit psf")
+                self.data['flags'][dindex] = PSF_FIT_FAILURE 
+                return
 
-        if len(coadd_mb_obs_list) != self['nband']:
-            print("  some coadd failed to fit psf")
-            self.data['flags'][dindex] = PSF_FIT_FAILURE 
-            return
+            if len(mb_obs_list) != self['nband']:
+                print("  not all bands had at least one psf fit"
+                      " succeed and were without image flags")
+                self.data['flags'][dindex] = PSF_FIT_FAILURE 
+                return
 
-        if len(mb_obs_list) != self['nband']:
-            print("  not all bands had at least one psf fit"
-                  " succeed and were without image flags")
-            self.data['flags'][dindex] = PSF_FIT_FAILURE 
-            return
+            #save extra copies of images if doing nbrs model
+            if model_neighbors:
+                for mbos in [coadd_mb_obs_list, mb_obs_list]:
+                    for band, obs_list in enumerate(mb_obs_list):
+                        for obs in obs_list:
+                            #copy old image and weight map
+                            obs.image_orig = obs.image.copy()
+                            obs.weight_orig = obs.weight.copy()
 
+
+            if self['save_obs_per_fof']:
+                self.fof_mb_obs_list[self.meds_list[0]['number'][mindex]] = [coadd_mb_obs_list, mb_obs_list, n_im]
+                
+        #fill in more data and checkpoint
+        if self.data['processed'][dindex] == 0:
+            self.data['nimage_use'][dindex, :] = n_im[:]
+
+            # for checkpointing, only do once
+            self.data['processed'][dindex] = 1
+            
+        #helpful I/O
         print("dims:",coadd_mb_obs_list[0][0].image.shape)
 
-        self.data['nimage_use'][dindex, :] = n_im[:]
+        #nbrs junk
+        if model_neighbors:
+            print("    modeling neighbors:")
+            for mbos in [coadd_mb_obs_list, mb_obs_list]:
+                for band, obs_list in enumerate(mb_obs_list):
+                    for obs in obs_list:
+                        #copy old image and weight map
+                        obs.image = obs.image_orig.copy()
+                        obs.weight = obs.weight_orig.copy()
+            if self['fit_coadd_galaxy']:
+                print("        doing coadd:")
+                self._model_neighbors(coadd_mb_obs_list, coadd=True)
+            if self['fit_me_galaxy']:
+                print("        doing SE:")
+                self._model_neighbors(mb_obs_list)
 
+        #fits
         self.sdata={'coadd_mb_obs_list':coadd_mb_obs_list,
                     'mb_obs_list':mb_obs_list}
 
@@ -377,6 +431,7 @@ class MedsFit(dict):
             print("Got utter failure error: %s" % str(err))
             flags=UTTER_FAILURE
 
+        #save flags of latest fit
         self.data['flags'][dindex] = flags
         self.data['time'][dindex] = time.time()-t0
 
@@ -610,15 +665,6 @@ class MedsFit(dict):
         
         print("        mask_frac:",self.data['mask_frac'][dindex],
               "coadd mask_frac:",self.data['coadd_mask_frac'][dindex])
-
-        if self['model_neighbors']:
-            print("    modelling neighbors:")
-            if self['fit_coadd_galaxy']:
-                print("        doing coadd:")
-                self._model_neighbors(coadd_mb_obs_list, coadd=True)
-            if self['fit_me_galaxy']:
-                print("        doing SE:")
-                self._model_neighbors(mb_obs_list)
 
         return coadd_mb_obs_list, mb_obs_list, n_im
 
