@@ -65,8 +65,8 @@ class MedsFit(dict):
                  conf,
                  priors,
                  meds_files,
-                 obj_range=None,
-                 model_data=None,
+                 fof_data=None,
+                 extra_data={},
                  checkpoint_file=None,
                  checkpoint_data=None):
         """
@@ -89,9 +89,8 @@ class MedsFit(dict):
 
         self['nband']=len(self.meds_files)
         self.iband = range(self['nband'])
-
-        self.obj_range=obj_range
-        self.model_data=model_data
+        
+        self.extra_data=extra_data
         self.checkpoint_file=checkpoint_file
         self.checkpoint_data=checkpoint_data
 
@@ -101,8 +100,11 @@ class MedsFit(dict):
         # load meds files and image flags array
         self._load_meds_files()
         self._maybe_load_coadd_cat_files()
-
-        self._set_index_list()
+        
+        if self.fof_data is None:            
+            self.fof_data = get_dummy_fofs(self.meds_list[0]['number'])
+        
+        self._set_and_check_index_lookups()
 
         self.psfex_lists, self.psfex_flags_lists = self._get_psfex_lists()
 
@@ -137,11 +139,6 @@ class MedsFit(dict):
 
         self['print_params'] = self.get('print_params',True)
 
-        if self.model_data is not None:
-            self['model_neighbors']=True
-        else:
-            self['model_neighbors']=False
-
         self['print_pars']=self.get('print_pars',True)
 
         self['replacement_flags']=self.get('replacement_flags',None)
@@ -170,6 +167,57 @@ class MedsFit(dict):
         self.psfrec_g1_wsum     = 0.0
         self.psfrec_g2_wsum     = 0.0
 
+    def _set_and_check_index_lookups(self):
+        """
+        Deal with common indexing issues in one place
+        """
+        
+        """
+        Indexing notes:
+        
+        Each MEDS file consists of a list of objects to be fit, which are indexed by 
+        
+           self.mindex = 0-offset from start of file
+           
+        The code runs by processing groups of objects, which we call FoFs. Note however
+        that these groupings can be arbitrary. The FoFs are specified by a numpy array 
+        (read from a FITS table) which has two columns
+        
+            fofid - the ID of the fof group, 0-offset
+            number - the ID number of the object in the coadd detection tile seg map
+            
+        We require that the FoF file number column matches the MEDS file, line-by-line.
+        
+        We do however build some lookup tables to enable easy translation. They are
+    
+            self.fofid2mindex = this is a dict keyed on the fofid - it returns the set of mindexes
+                that give the members of the FoF group
+            self.number2mindex = lookup table for converting numbers to mindexes
+
+        These are both dictionaries which use python's hashing of keys. There may be a performance 
+        issue here, in terms of building the dicts, for large numbers of objects.
+        """
+        
+        # first, we error check
+        for band,meds in enumerate(self.meds_list):
+            assert numpy.array_equal(meds['number'],self.fof_data['number']),"FoF number is not the same as MEDS number for band %d!" % band
+        
+        #set some useful stuff here
+        self.fofids = numpy.unique(self.fof_data['fofid'])
+            
+        #build the fof hash
+        self.fofid2mindex = {}
+        self.number2mindex = {}
+        for fofid in range(start_fof,end_fof+1):
+            q, = np.where(self.model_data['fofs']['fofid'] == fofid)
+            assert len(q) > 0, print 'Found zero length FoF! fofid = %ld' % fofid                        
+            self.fofid2mindex[fofid] = q.copy()
+        
+        #build the number to mindex hash
+        self.number2mindex = {}
+        for mindex in xrange(self.nobj_tot):
+            self.number2mindex[self.fof_data['number'][mindex]] = mindex
+                
     def _unpack_priors(self, priors_in):
         """
         Currently only separable priors
@@ -210,10 +258,10 @@ class MedsFit(dict):
     def _print_pars(self, pars, **kw):
         if self['print_params']:
             print_pars(pars,**kw)
+
     def _print_pars_and_logl(self, pars, logl, **kw):
         if self['print_params']:
             print_pars_and_logl(pars, logl, **kw)
-
 
     def get_data(self):
         """
@@ -246,25 +294,23 @@ class MedsFit(dict):
         """
 
         t0=time.time()
+        
+        for fofid in self.fofids:
+            fofmems = self.fofid2mindex[fofid]
+            for mindex in fofmems:
+                if self.data['processed'][dindex]==1:
+                    # was checkpointed
+                    continue
 
-        last=self.index_list[-1]
-        num=len(self.index_list)
-
-        for dindex in xrange(num):
-            if self.data['processed'][dindex]==1:
-                # was checkpointed
-                continue
-
-            mindex = self.index_list[dindex]
-            print('index: %d:%d' % (mindex,last), )
-            ti = time.time()
-            self.fit_obj(dindex)
-            ti = time.time()-ti
-            print('    time:',ti)
+                print('index: %d:%d' % (mindex,last), )
+                ti = time.time()
+                self.fit_obj(mindex)
+                ti = time.time()-ti
+                print('    time:',ti)
             
-            tm=time.time()-t0
+                tm=time.time()-t0
 
-            self._try_checkpoint(tm) # only at certain intervals
+                self._try_checkpoint(tm) # only at certain intervals
 
         tm=time.time()-t0
         print("time:",tm)
@@ -277,14 +323,16 @@ class MedsFit(dict):
         """
 
         t0=time.time()
-
-        self.dindex=dindex
-        self.mindex = self.index_list[dindex]
+        
+        #this is from the old code, but it is easier than 
+        # changing the whole thing
+        self.dindex = dindex
+        self.mindex = dindex
 
         # for checkpointing
         self.data['processed'][dindex]=1
 
-        mindex = self.index_list[dindex]
+        mindex = self.mindex
 
         ncutout_tot=self._get_object_ncutout(mindex)
         self.data['nimage_tot'][dindex, :] = ncutout_tot
@@ -300,10 +348,6 @@ class MedsFit(dict):
         if flags != 0:
             self.data['flags'][dindex] = flags
             return 0
-        
-        #need coadd seg maps here to model nbrs
-        if self['model_neighbors']:
-            self._set_coadd_seg_maps()
         
         # MultiBandObsList obects
         coadd_mb_obs_list, mb_obs_list, n_im = \
@@ -336,13 +380,7 @@ class MedsFit(dict):
         self.data['flags'][dindex] = flags
         self.data['time'][dindex] = time.time()-t0
 
-    def _set_coadd_seg_maps(self):
-        mindex=self.mindex
-        self._coadd_seg_maps=[]
-        for m in self.meds_list:
-            seg=m.get_cutout(mindex, 0, type='seg')
-            self._coadd_seg_maps.append(seg)
-
+    
     def _fit_all_models(self):
         """
         Fit psf flux and other models
@@ -584,16 +622,16 @@ class MedsFit(dict):
 
         return coadd_mb_obs_list, mb_obs_list, n_im
 
-    def _check_model_nbrs_flags(self, cid, ntot, nmodel):
-        if self.model_data['model_fits'][ntot(nmodel(self['nbrs_model']['flags']))][cid] != 0:
+    def _check_model_nbrs_flags(self, cid, ntot, nmodel, model_fits):
+        if model_fits[ntot(nmodel(self['nbrs_model']['flags']))][cid] != 0:
             return False
         
         if 'arate_min' in self['nbrs_model']:
-            if self.model_data['model_fits'][ntot(nmodel('arate'))][cid] <= self['nbrs_model']['arate_min']:
+            if model_fits[ntot(nmodel('arate'))][cid] <= self['nbrs_model']['arate_min']:
                 return False
             
         if 'arate_max' in self['nbrs_model']:
-            if self.model_data['model_fits'][ntot(nmodel('arate'))][cid] >= self['nbrs_model']['arate_max']:
+            if model_fits[ntot(nmodel('arate'))][cid] >= self['nbrs_model']['arate_max']:
                 return False
         
         return True
@@ -624,15 +662,39 @@ class MedsFit(dict):
             ntot = ncoadd
         else:
             ntot = nme
-
+            
+        if 'model_fits' in self.extra_data and \
+                'meds_object_data' in self.extra_data and \
+                'epochs' in self.extra_data and \
+                'fof_nbrs' in self.extra_data:
+            #if we have all the right stuff, then use inputs
+            model_fits = self.extra_data['model_fits']
+            epochs = self.extra_data['epochs']
+            fof_nbrs = self.extra_data['fof_nbrs']
+            meds_object_data = self.extra_data['meds_object_data']
+        else:
+            #default to internal
+            model_fits = self.data
+            epochs = self.epoch_data
+            fof_nbrs = self.fof_data
+            meds_object_data = self.meds_list
+            
         # import code here
         for band, obs_list in enumerate(mb_obs_list):
             print("            doing band %d" % band)
-            seg = self._coadd_seg_maps[band]
-            mod = self.model_data['meds_object_data'][band]
+            mod = meds_object_data[band]
             meds = self.meds_list[band]
             number = meds['number'][mindex_local] #number for seg map, index+1 into entire meds file
             mindex_global = number-1
+            
+            #get nbrs to model from nbrs fof
+            q, = np.where(fof_nbrs['number'] == number)
+            assert len(q) > 0,"Could not find gal in Nbrs FoF list! number = %ld" % number
+            fofid = fof_nbrs['fofid'][q[0]]
+            q, = np.where(fof_nbrs['fofid'] == fofid)
+            assert len(q) > 0,"Nbrs FoF has zero length! number = %ld" % number
+            seg = fof_nbrs['number'][q]
+            
             
             # get objects that are in this object's segmentation map.
             # this will return nothing if there were no neighbors in the
@@ -653,11 +715,11 @@ class MedsFit(dict):
                     
                     for cid in ids:
                         #check all flags first
-                        if self.model_data['model_fits']['flags'][cid] == 0:
+                        if model_fits['flags'][cid] == 0:
                             
                             #if have extra info, check its flags
-                            if 'model_extra_info' in self.model_data:
-                                if self.model_data['model_extra_info']['flags'][cid] != 0:
+                            if 'model_extra_info' in self.extra_data:
+                                if self.extra_data['model_extra_info']['flags'][cid] != 0:
                                     continue
                             
                             #logic for best_chi2per
@@ -665,17 +727,17 @@ class MedsFit(dict):
                             # otherwise pick model with zero flags
                             # othrwise pick best
                             if self['nbrs_model']['model'] == 'best_chi2per':
-                                if self._check_model_nbrs_flags(cid, ntot, nexp) == False and \
-                                        self._check_model_nbrs_flags(cid, ntot, ndev) == False:
+                                if self._check_model_nbrs_flags(cid, ntot, nexp, model_fits) == False and \
+                                        self._check_model_nbrs_flags(cid, ntot, ndev, model_fits) == False:
                                     continue
-                                elif self._check_model_nbrs_flags(cid, ntot, nexp) == False:
+                                elif self._check_model_nbrs_flags(cid, ntot, nexp, model_fits) == False:
                                     nmodel = ndev
                                     model = 'dev'
-                                elif self._check_model_nbrs_flags(cid, ntot, ndev) == False:
+                                elif self._check_model_nbrs_flags(cid, ntot, ndev, model_fits) == False:
                                     nmodel = nexp
                                     model = 'exp'
-                                elif self.model_data['model_fits'][ntot(nexp('chi2per'))][cid] > \
-                                        self.model_data['model_fits'][ntot(ndev('chi2per'))][cid]:
+                                elif model_fits[ntot(nexp('chi2per'))][cid] > \
+                                        model_fits[ntot(ndev('chi2per'))][cid]:
                                     nmodel = ndev
                                     model = 'dev'
                                 else:
@@ -683,13 +745,13 @@ class MedsFit(dict):
                                     model = 'exp'
                             
                             #always reject models with bad flags
-                            if self._check_model_nbrs_flags(cid, ntot, nmodel) == False:
+                            if self._check_model_nbrs_flags(cid, ntot, nmodel, model_fits) == False:
                                 continue
                             
                             #see if need good ME fit 
                             if 'require_me_goodfit' in self['nbrs_model']:
                                 if self['nbrs_model']['require_me_goodfit']:
-                                    if self._check_model_nbrs_flags(cid, nme, nmodel) == False:
+                                    if self._check_model_nbrs_flags(cid, nme, nmodel, model_fits) == False:
                                         continue
                             
                             ##################################################
@@ -706,9 +768,9 @@ class MedsFit(dict):
                             icut_obj = icut_obj[0]
                             
                             #find psf entry and make sure it is OK 
-                            q, = numpy.where((self.model_data['epochs']['number'] == cid+1) & 
-                                             (self.model_data['epochs']['file_id'] == fid_cen) & 
-                                             (self.model_data['epochs']['band_num'] == band))
+                            q, = numpy.where((epochs['number'] == cid+1) & 
+                                             (epochs['file_id'] == fid_cen) & 
+                                             (epochs['band_num'] == band))
                             #skip if psf fit was bad or could not find psf
                             if len(q) == 0:
                                 print("                could not find PSF fit for nbr %d cutout %d" % (cid,icut_obj))
@@ -716,16 +778,16 @@ class MedsFit(dict):
                             if len(q) > 1:
                                 print("                found duplicate PSF fits for nbr %d cutout %d" % (cid,icut_obj))
                                 assert len(q) == 1, "found duplicate PSF fits for nbr %d cutout %d" % (cid,icut_obj)
-                            if self.model_data['epochs']['psf_fit_flags'][q[0]] > 0:
+                            if epochs['psf_fit_flags'][q[0]] > 0:
                                 continue
-                            pars_psf = self.model_data['epochs']['psf_fit_pars'][q[0]]
+                            pars_psf = epochs['psf_fit_pars'][q[0]]
                             
                             #fiducial location of object in postage stamp
                             row = mod['orig_row'][cid,icut_obj] - obs.meta['orig_start_row']
                             col = mod['orig_col'][cid,icut_obj] - obs.meta['orig_start_col']
                             
                             #parameters for object
-                            pars_obj = self.model_data['model_fits'][ntot(nmodel(self['nbrs_model']['pars']))][cid]                            
+                            pars_obj = model_fits[ntot(nmodel(self['nbrs_model']['pars']))][cid]                            
                             pinds = range(5)
                             pinds.append(band+5)
                             pars_obj = pars_obj[pinds] 
@@ -2054,19 +2116,6 @@ class MedsFit(dict):
                 raise RuntimeError("got flags %d but not pex none" % flags)
 
         return psfex_list, flags_list
-
-    def _set_index_list(self):
-        """
-        set the list of indices to be processed
-        """
-        if self.obj_range is None:
-            start=0
-            end=self.nobj_tot-1
-        else:
-            start=self.obj_range[0]
-            end=self.obj_range[1]
-
-        self.index_list = numpy.arange(start,end+1)
 
 
     def _print_res(self, fitter, coadd=False):

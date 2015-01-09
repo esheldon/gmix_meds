@@ -7,6 +7,12 @@ from ngmix import srandu
 from ngmix import print_pars
 from ngmix.priors import LOWVAL
 
+def get_dummy_fofs(numbers):
+    nobj = len(numbers)
+    fofs = numpy.array(obj,dtype=[('fofid','i8'),('number','i8')])
+    fofs['fofid'][:] = np.arange(obj)
+    fofs['number'][:] = numbers[:] #subscript should make a copy
+
 def clip_element_wise(arr, minvals, maxvals):
     """
     Clip each element of an array separately
