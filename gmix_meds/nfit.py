@@ -408,12 +408,6 @@ class MedsFit(dict):
         #nbrs junk
         if model_neighbors:
             print("    modeling neighbors:")
-            for mbos in [coadd_mb_obs_list, mb_obs_list]:
-                for band, obs_list in enumerate(mb_obs_list):
-                    for obs in obs_list:
-                        #copy old image and weight map
-                        obs.image = obs.image_orig.copy()
-                        obs.weight = obs.weight_orig.copy()
             if self['fit_coadd_galaxy']:
                 print("        doing coadd:")
                 self._model_neighbors(coadd_mb_obs_list, coadd=True)
@@ -669,6 +663,9 @@ class MedsFit(dict):
         return coadd_mb_obs_list, mb_obs_list, n_im
 
     def _check_model_nbrs_flags(self, cid, ntot, nmodel, model_fits):
+        """
+        Checks flags for a given nbr model
+        """
         if model_fits[ntot(nmodel(self['nbrs_model']['flags']))][cid] != 0:
             return False
         
@@ -682,33 +679,119 @@ class MedsFit(dict):
         
         return True
 
-    def _model_neighbors(self, mb_obs_list, coadd=False):
+    def _get_and_check_nbrs_model(self, model_fits_index, ntot, nexp, ndev, model_fits):
         """
-        model the neighbors
-
-        need the full object_data from the meds file, as well as a results
-        structure holding the fits
+        picks the nbrs model and checks flags for it
         """
+        use_nbr = True
+        nmodel = None
+        model = None
         
-        mindex_local = self.mindex #index in current meds file
+        #check all flags first
+        if model_fits['flags'][model_fits_index] != 0:
+            use_nbr = False
         
-        #stuff to get names
-        nexp = Namer('exp')
-        ndev = Namer('dev')
         if self['nbrs_model']['model'] == 'exp':
             nmodel = nexp
             model = 'exp'
         elif self['nbrs_model']['model'] == 'dev':
             nmodel = ndev
             model = 'dev'
-
-        ncoadd = Namer('coadd')
-        nme = Namer('')
-        if coadd:
-            ntot = ncoadd
-        else:
-            ntot = nme
+        elif self['nbrs_model']['model'] == 'best_chi2per':
+            #logic for best_chi2per
+            #if both flags != 0; skip
+            # otherwise pick model with zero flags
+            # othrwise pick best
             
+            if self._check_model_nbrs_flags(model_fits_index, ntot, nexp, model_fits) == False and \
+               self._check_model_nbrs_flags(model_fits_index, ntot, ndev, model_fits) == False:
+                use_nbr = False
+            elif self._check_model_nbrs_flags(model_fits_index, ntot, nexp, model_fits) == False:
+                nmodel = ndev
+                model = 'dev'
+            elif self._check_model_nbrs_flags(model_fits_index, ntot, ndev, model_fits) == False:
+                nmodel = nexp
+                model = 'exp'
+            elif model_fits[ntot(nexp('chi2per'))][model_fits_index] > model_fits[ntot(ndev('chi2per'))][model_fits_index]:
+                nmodel = ndev
+                model = 'dev'
+            else:
+                nmodel = nexp
+                model = 'exp'
+                            
+        #always reject models with bad flags
+        if self._check_model_nbrs_flags(model_fits_index, ntot, nmodel, model_fits) == False:
+            use_nbr = False
+                            
+        #see if need good ME fit 
+        if 'require_me_goodfit' in self['nbrs_model'] and \
+           self['nbrs_model']['require_me_goodfit'] and \
+           self._check_model_nbrs_flags(model_fits_index, nme, nmodel, model_fits) == False:
+            use_nbr = False
+
+        #only get here if things are OK
+        return use_nbr, nmodel, model
+                
+    def _get_nbrs_to_model(self,fof_nbrs,number):
+        """
+        Returns the list of nbrs to model for each galaxy
+        """
+        #get nbrs to model from nbrs fof
+        q, = np.where(fof_nbrs['number'] == number)
+        assert len(q) > 0,"Could not find gal in Nbrs FoF list! number = %ld" % number
+        fofid = fof_nbrs['fofid'][q[0]]
+        q, = np.where(fof_nbrs['fofid'] == fofid)
+        assert len(q) > 0,"Nbrs FoF has zero length! number = %ld" % number
+        fofmems = fof_nbrs['number'][q]
+
+        w = numpy.where((fofmems > 0) & (fofmems != number))
+        if len(w) == 0:
+            #nothing to model!
+            return
+        nbr_numbers = numpy.unique(fofmems[w]) - 1
+        
+        #if have extra info, check its flags
+        nbr_numbers_to_keep = []
+        for nbr_number in nbr_numbers:
+            keep_nbr = True
+
+            #check flags
+            if 'model_extra_info' in self.extra_data:
+                q, = numpy.where(self.extra_data['model_extra_info']['number'] == nbr_number)
+                assert len(q) == 1,"Could not find or have duplicate Nbr data in model extra info! # found = %ld" % len(q)
+                if self.extra_data['model_extra_info']['flags'][q[0]] != 0:
+                    keep_nbr = False
+                    
+            if nbr_number == number and not self['make_plots']::
+                keep_nbr = False
+
+            if keep_nbr:
+                nbr_numbers_to_keep.append(nbr_number)
+
+        nbr_numbers = np.array(nbr_numbers_to_keep)
+        return nbr_numbers
+
+    def _get_and_check_psf_pars_nbr(self, icut_obj, nbr_number, fid_cen, band, epochs):
+        """
+        get and check the psf pars
+        """
+        pars_psf = None
+        use_psf = True
+        
+        #find psf entry and make sure it is OK 
+        q, = numpy.where((epochs['number'] == nbr_number) & 
+                         (epochs['file_id'] == fid_cen) & 
+                         (epochs['band_num'] == band))
+        #skip if psf fit was bad or could not find psf
+        assert len(q) == 1, "found duplicate or no PSF fits for nbr %d cutout %d! # found = %ld" % (nbr_number,icut_obj,len(q))
+        pars_psf = epochs['psf_fit_pars'][q[0]]
+        if epochs['psf_fit_flags'][q[0]] > 0:
+            use_psf = False
+            
+        return use_psf, pars_psf
+
+    def _get_nbrs_model_data(self):
+        #find the data needed on disk, either get input data or use from local sources
         if 'model_fits' in self.extra_data and \
                 'meds_object_data' in self.extra_data and \
                 'epochs' in self.extra_data and \
@@ -724,199 +807,179 @@ class MedsFit(dict):
             epochs = self.epoch_data
             fof_nbrs = self.fof_data
             meds_object_data = self.meds_list
-            
-        # import code here
+
+        return model_fits, epochs, fof_nbrs, meds_object_data
+    
+    def _model_neighbors(self, mb_obs_list, coadd=False):
+        """
+        model the neighbors
+
+        need the full object_data from the meds file, as well as a results
+        structure holding the fits
+        """
+
+        #central object info
+        number = meds['number'][self.mindex] #number for seg map of central object
+        
+        #stuff to get names
+        nexp = Namer('exp')
+        ndev = Namer('dev')        
+        ncoadd = Namer('coadd')
+        nme = Namer('')
+        if coadd:
+            ntot = ncoadd
+        else:
+            ntot = nme
+
+        #get nbrs model data and nbrs to model
+        model_fits, epochs, fof_nbrs, meds_object_data = self._get_nbrs_model_data()
+        nbr_numbers = self._get_nbrs_to_model(fof_nbrs,number)
+        
+        #construct some indexes of fofmems into nbrs structs
+        model_fits_indexes = {}
+        meds_object_data_indexes = {}
+        for fofmem_number in nbr_numbers:
+            q, = numpy.where(model_fits['number'] == fofmem_number)
+            assert len(q) == 1,"Could not find or have duplicate Nbr data in model_fits! # found = %ld" len(q)
+            model_fits_indexes[fofmem_number] = q[0]
+
+            q, = numpy.where(meds_object_data[0]['number'] == fofmem_number)
+            assert len(q) == 1,"Could not find or have duplicate Nbr data in MEDS object data! # found = %ld" len(q)
+            meds_object_data_indexes[fofmem_number] = q[0]
+
+        #reset images
+        for band, obs_list in enumerate(mb_obs_list):
+            for obs in obs_list:
+                #copy old image and weight map
+                obs.image = obs.image_orig.copy()
+                obs.weight = obs.weight_orig.copy()
+                
+        #now go through each band and obs to model the nbrs
         for band, obs_list in enumerate(mb_obs_list):
             print("            doing band %d" % band)
-            mod = meds_object_data[band]
-            meds = self.meds_list[band]
-            number = meds['number'][mindex_local] #number for seg map, index+1 into entire meds file
-            mindex_global = number-1
-            
-            #get nbrs to model from nbrs fof
-            q, = np.where(fof_nbrs['number'] == number)
-            assert len(q) > 0,"Could not find gal in Nbrs FoF list! number = %ld" % number
-            fofid = fof_nbrs['fofid'][q[0]]
-            q, = np.where(fof_nbrs['fofid'] == fofid)
-            assert len(q) > 0,"Nbrs FoF has zero length! number = %ld" % number
-            seg = fof_nbrs['number'][q]
-            
-            
-            # get objects that are in this object's segmentation map.
-            # this will return nothing if there were no neighbors in the
-            # postage stamp
-            w=numpy.where((seg > 0) & (seg != number))
-            if w[0].size > 0:
+
+            for obs in obs_list:
+                icut_cen = obs.meta['icut']
+                fid_cen = self.meds_list[band]['file_id'][mindex_local,icut_cen]
+                nbrs_image = numpy.zeros(obs.image.shape)
+                cen_image = None
                 
-                w=numpy.where(seg > 0)
-                ids=numpy.unique(seg[w]) - 1
-                for obs in obs_list:
-                    #copy old image and weight map
-                    obs.image_orig = obs.image.copy()
-                    obs.weight_orig = obs.weight.copy()
-                    icut_cen = obs.meta['icut']
-                    fid_cen = meds['file_id'][mindex_local,icut_cen]
-                    tot_image = numpy.zeros(obs.image.shape)
-                    cen_image = None
+                for nbr_number in nbr_numbers:
+                    model_fits_index = model_fit_indexes[nbr_number]
+                    meds_object_data_index = meds_object_data_indexes[nbr_number]
                     
-                    for cid in ids:
-                        #check all flags first
-                        if model_fits['flags'][cid] == 0:
-                            
-                            #if have extra info, check its flags
-                            if 'model_extra_info' in self.extra_data:
-                                if self.extra_data['model_extra_info']['flags'][cid] != 0:
-                                    continue
-                            
-                            #logic for best_chi2per
-                            #if both flags != 0; skip
-                            # otherwise pick model with zero flags
-                            # othrwise pick best
-                            if self['nbrs_model']['model'] == 'best_chi2per':
-                                if self._check_model_nbrs_flags(cid, ntot, nexp, model_fits) == False and \
-                                        self._check_model_nbrs_flags(cid, ntot, ndev, model_fits) == False:
-                                    continue
-                                elif self._check_model_nbrs_flags(cid, ntot, nexp, model_fits) == False:
-                                    nmodel = ndev
-                                    model = 'dev'
-                                elif self._check_model_nbrs_flags(cid, ntot, ndev, model_fits) == False:
-                                    nmodel = nexp
-                                    model = 'exp'
-                                elif model_fits[ntot(nexp('chi2per'))][cid] > \
-                                        model_fits[ntot(ndev('chi2per'))][cid]:
-                                    nmodel = ndev
-                                    model = 'dev'
-                                else:
-                                    nmodel = nexp
-                                    model = 'exp'
-                            
-                            #always reject models with bad flags
-                            if self._check_model_nbrs_flags(cid, ntot, nmodel, model_fits) == False:
-                                continue
-                            
-                            #see if need good ME fit 
-                            if 'require_me_goodfit' in self['nbrs_model']:
-                                if self['nbrs_model']['require_me_goodfit']:
-                                    if self._check_model_nbrs_flags(cid, nme, nmodel, model_fits) == False:
-                                        continue
-                            
-                            ##################################################
-                            #render each object in the seg map with a good fit
-                            
-                            #get cutout with same file_id as central object
-                            icut_obj, = numpy.where(mod['file_id'][cid] == fid_cen)
-                            if len(icut_obj) == 0:
-                                print("                could not find cutout for nbr %d file_id %d" % (cid,fid_cen))
-                                continue
-                            if len(icut_obj) > 1:
-                                print("                found duplicate cutouts for nbr %d file_id %d" % (cid,fid_cen))
-                                assert len(icut_obj) == 1, "found duplicate cutouts for nbr %d file_id %d!" % (cid,fid_cen)
-                            icut_obj = icut_obj[0]
-                            
-                            #find psf entry and make sure it is OK 
-                            q, = numpy.where((epochs['number'] == cid+1) & 
-                                             (epochs['file_id'] == fid_cen) & 
-                                             (epochs['band_num'] == band))
-                            #skip if psf fit was bad or could not find psf
-                            if len(q) == 0:
-                                print("                could not find PSF fit for nbr %d cutout %d" % (cid,icut_obj))
-                                continue                            
-                            if len(q) > 1:
-                                print("                found duplicate PSF fits for nbr %d cutout %d" % (cid,icut_obj))
-                                assert len(q) == 1, "found duplicate PSF fits for nbr %d cutout %d" % (cid,icut_obj)
-                            if epochs['psf_fit_flags'][q[0]] > 0:
-                                continue
-                            pars_psf = epochs['psf_fit_pars'][q[0]]
-                            
-                            #fiducial location of object in postage stamp
-                            row = mod['orig_row'][cid,icut_obj] - obs.meta['orig_start_row']
-                            col = mod['orig_col'][cid,icut_obj] - obs.meta['orig_start_col']
-                            
-                            #parameters for object
-                            pars_obj = model_fits[ntot(nmodel(self['nbrs_model']['pars']))][cid]                            
-                            pinds = range(5)
-                            pinds.append(band+5)
-                            pars_obj = pars_obj[pinds] 
-                            
-                            #get jacobian
-                            jacob = Jacobian(row,col,
-                                             mod['dudrow'][cid,icut_obj],
-                                             mod['dudcol'][cid,icut_obj],
-                                             mod['dvdrow'][cid,icut_obj],
-                                             mod['dvdcol'][cid,icut_obj])
-                            pixscale = jacob.get_scale()
-                            row += pars_obj[0]/pixscale
-                            col += pars_obj[1]/pixscale
-                            jacob.set_cen(row,col)
-                            
-                            #now render image of object
-                            psf_gmix = GMix(pars=pars_psf)
-                            gmix_sky = GMixModel(pars_obj, model)
-                            gmix_image = gmix_sky.convolve(psf_gmix)
-                            obj_image = gmix_image.make_image(obs.image.shape, jacobian=jacob)
-                            
-                            tot_image += obj_image
-                            if cid == mindex_global:
-                                cen_image = obj_image.copy()
-                            
-                            if self['nbrs_model']['method'] == 'subtract':
-                                #subtract its flux if not central
-                                if cid != mindex_global:
-                                    obs.image -= obj_image
+                    model_nbr,nmodel,model = self._get_and_check_nbrs_model(model_fits_index, ntot, nexp, ndev, model_fits)
 
+                    if model_nbr == False:
+                        continue
+                    
+                    ##################################################
+                    #render each object in the seg map with a good fit
                             
-                    if self['make_plots']:
-                        def plot_seg(seg):
-                            seg_new = seg.copy()
-                            seg_new = seg_new.astype(float)
-                            uvals = numpy.unique(seg)
-                            mval = 1.0*(len(uvals)-1)
-                            ind = 1.0
-                            for uval in uvals:
-                                if uval > 0:
-                                    qx,qy = numpy.where(seg == uval)
-                                    seg_new[qx[:],qy[:]] = ind/mval
-                                    ind += 1
+                    #get cutout with same file_id as central object
+                    icut_obj, = numpy.where(mod['file_id'][meds_object_data_index] == fid_cen)
+                    if len(icut_obj) == 0:
+                        print("                could not find cutout for nbr %d file_id %d" % (cid,fid_cen))
+                        continue
+                    if len(icut_obj) > 1:
+                        print("                found duplicate cutouts for nbr %d file_id %d" % (cid,fid_cen))
+                        assert len(icut_obj) == 1, "found duplicate cutouts for nbr %d file_id %d!" % (cid,fid_cen)
+                    icut_obj = icut_obj[0]
+                            
+                    #check the psf
+                    use_psf, pars_psf = self._get_and_check_psf_pars_nbr(icut_obj, nbr_number, fid_cen, band, epochs)
+                            
+                    #fiducial location of object in postage stamp
+                    row = mod['orig_row'][meds_object_data_index,icut_obj] - obs.meta['orig_start_row']
+                    col = mod['orig_col'][meds_object_data_index,icut_obj] - obs.meta['orig_start_col']
+                            
+                    #parameters for object
+                    pars_obj = model_fits[ntot(nmodel(self['nbrs_model']['pars']))][model_fits_index]
+                    pinds = range(5)
+                    pinds.append(band+5)
+                    pars_obj = pars_obj[pinds] 
+                    
+                    #get jacobian
+                    jacob = Jacobian(row,col,
+                                     mod['dudrow'][meds_object_data_index,icut_obj],
+                                     mod['dudcol'][meds_object_data_index,icut_obj],
+                                     mod['dvdrow'][meds_object_data_index,icut_obj],
+                                     mod['dvdcol'][meds_object_data_index,icut_obj])
+                    pixscale = jacob.get_scale()
+                    row += pars_obj[0]/pixscale
+                    col += pars_obj[1]/pixscale
+                    jacob.set_cen(row,col)
+                            
+                    #now render image of object
+                    psf_gmix = GMix(pars=pars_psf)
+                    gmix_sky = GMixModel(pars_obj, model)
+                    gmix_image = gmix_sky.convolve(psf_gmix)
+                    obj_image = gmix_image.make_image(obs.image.shape, jacobian=jacob)
+
+                    if nbr_number != number:
+                        nbrs_image += obj_image
+                        if self['nbrs_model']['method'] == 'subtract':
+                            obs.image -= obj_image
+                    else:
+                        cen_image = obj_image.copy()
+                
+                if self['make_plots']:
+                    self._plot_model_nbrs(band,nbrs_image,obs,coadd=coadd,cen_image=cen_image)
+
+    def _plot_model_nbrs(self,band,nbrs_image,obs,cen_image=None,coadd=False):
+        """
+        Make plots of nbrs
+        """
+        def plot_seg(seg):
+            seg_new = seg.copy()
+            seg_new = seg_new.astype(float)
+            uvals = numpy.unique(seg)
+            mval = 1.0*(len(uvals)-1)
+            ind = 1.0
+            for uval in uvals:
+                if uval > 0:
+                    qx,qy = numpy.where(seg == uval)
+                    seg_new[qx[:],qy[:]] = ind/mval
+                    ind += 1
                                     
-                            return seg_new
+            return seg_new
 
-                        import images
-                        import biggles
-                        width = 1920
-                        height = 1200
-                        biggles.configure('screen','width', width)
-                        biggles.configure('screen','height', height)
-                        tab = biggles.Table(2,3)
-                        tab.title = 'coadd_objects_id = %d' % mod['id'][mindex_global]
+        icut_cen = obs.meta['icut']
+        meds = self.meds_list[band]
+        mindex_global = meds['number'][self.mindex] - 1
+        
+        import images
+        import biggles
+        width = 1920
+        height = 1200
+        biggles.configure('screen','width', width)
+        biggles.configure('screen','height', height)
+        tab = biggles.Table(2,3)
+        tab.title = 'coadd_objects_id = %d' % self.meds_list[0]['id'][self.mindex]
+                    
+        if cen_image is None:
+            cen_image = obs.image.copy()
+            
+        tab[0,0] = images.view(obs.image_orig,title='original image',show=False,nonlinear=0.075)
+        tab[0,1] = images.view(nbrs_image,title='models of nbrs',show=False,nonlinear=0.075)
+        if coadd:
+            tab[0,2] = images.view(plot_seg(seg),title='seg map',show=False)
+        else:
+            tab[0,2] = images.view(plot_seg(meds.interpolate_coadd_seg(self.mindex,icut_cen)),title='seg map',show=False)
                         
-                        if cen_image is None:
-                            cen_image = numpy.zeros_like(obs.image)
-                        
-                        tab[0,0] = images.view(obs.image_orig,title='original image',show=False,nonlinear=0.075)
-                        tab[0,1] = images.view(tot_image-cen_image,title='models of nbrs',show=False,nonlinear=0.075)
-                        if coadd:
-                            tab[0,2] = images.view(plot_seg(seg),title='seg map',show=False)
-                        else:
-                            tab[0,2] = images.view(plot_seg(meds.interpolate_coadd_seg(mindex_local,icut_cen)),title='seg map',show=False)
-                        
-                        tab[1,0] = images.view(obs.image,title='corrected image',show=False,nonlinear=0.075)
-                        msk = tot_image != 0
-                        frac = numpy.zeros(tot_image.shape)
-                        frac[msk] = cen_image[msk]/tot_image[msk]
-                        tab[1,1] = images.view(frac,title='fraction of flux due to central',show=False)
-                        tab[1,2] = images.view(obs.weight,title='weight map',show=False)
-                        
-                        if icut_cen > 0:
-                            tab.write_img(1920,1200,'%06d-nbrs-model-band%d-icut%d.png' % (mindex_global,band,icut_cen))
-                            print("                %06d-nbrs-model-band%d-icut%d.png" % (mindex_global,band,icut_cen))
-                        else:
-                            tab.write_img(1920,1200,'%06d-nbrs-model-band%d-coadd.png' % (mindex_global,band))
-                            print("                %06d-nbrs-model-band%d-coadd.png" % (mindex_global,band))
-
-                        if False:
-                            tab.show()
-                            import ipdb
-                            ipdb.set_trace()
+        tab[1,0] = images.view(obs.image,title='corrected image',show=False,nonlinear=0.075)
+        msk = nbrs_image != 0
+        frac = numpy.zeros(nbrs_image.shape)
+        frac[msk] = cen_image[msk]/(nbrs_image[msk] + cen_image)
+        tab[1,1] = images.view(frac,title='fraction of flux due to central',show=False)                    
+        tab[1,2] = images.view(obs.weight,title='weight map',show=False)
+                    
+        if icut_cen > 0:
+            tab.write_img(1920,1200,'%06d-nbrs-model-band%d-icut%d.png' % (mindex_global,band,icut_cen))
+            print("                %06d-nbrs-model-band%d-icut%d.png" % (mindex_global,band,icut_cen))
+        else:
+            tab.write_img(1920,1200,'%06d-nbrs-model-band%d-coadd.png' % (mindex_global,band))
+            print("                %06d-nbrs-model-band%d-coadd.png" % (mindex_global,band))
 
     def set_psf_means(self):
         dindex=self.dindex
