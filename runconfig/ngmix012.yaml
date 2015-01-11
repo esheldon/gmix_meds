@@ -17,5 +17,5 @@ medsconf: "013"
 
 nper: 20
 
-# new psfs, marg sky
+# marg sky
 config: "nmeds015"

@@ -17,5 +17,5 @@ medsconf: "013"
 
 nper: 20
 
-# new psfs
+# only r,i,z.  Also only using the flags eli wanted
 config: "nmeds014"

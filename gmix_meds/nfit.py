@@ -1855,6 +1855,7 @@ class MedsFit(dict):
         from .util import AstromFlags
         if not hasattr(self,'_replacement_flags'):
             fname=self['replacement_flags']
+            print("Reading flags:",fname)
             self._replacement_flags=AstromFlags(fname)
         
         return self._replacement_flags.get_flags(image_ids)

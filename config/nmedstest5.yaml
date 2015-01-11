@@ -60,8 +60,9 @@ me_iter:
         ntry: 2
         maxiter: 1000
         maxfev: 1000
-        ftol: 1.0e-4
-        xtol: 1.0e-4
+        # relative
+        ftol: 1.0e-3
+        xtol: 1.0e-3
     
     emcee_pars:
         a: 2.0

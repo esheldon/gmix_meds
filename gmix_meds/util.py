@@ -245,8 +245,7 @@ class FixedParsGuesser(GuesserBase):
 
 class FromParsGuesser(GuesserBase):
     """
-    get full guesses from just T,fluxes associated with
-    psf
+    get full guesses 
     """
     def __init__(self, pars, pars_err, scaling='linear', widths=None):
         self.pars=pars
@@ -481,7 +480,6 @@ class AstromFlags(object):
     replacement astrometry flags
     """
     def __init__(self, filename):
-        print("Reading flags:",filename)
         self.data=fitsio.read(filename,lower=True)
 
     def get_flags(self, image_ids):
@@ -489,6 +487,8 @@ class AstromFlags(object):
         match based on image id
         """
         import esutil as eu
+
+        image_ids=numpy.array(image_ids, ndmin=1, dtype='i8',copy=False)
 
         # default is flagged, to indicated not found
         flags=numpy.ones(image_ids.size,dtype='i8')

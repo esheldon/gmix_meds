@@ -1,0 +1,165 @@
+#!/usr/bin/python
+"""
+print used images for a meds file according to the flags
+
+don't print coadd
+
+this is DES specific
+
+# astrom
+# 2**0 + 2**1 + 2**2 + 2**3 + 2**5 + 2**6 + 2**7 + 2**8 + 2**9
+1007
+
+# blacklists shifted 10
+# 2**10 + 2**11 + 2**12 + 2**13 + 2**14
+31744
+
+# psf flags2check shifted 15
+# 2**0 + 2**1 + 2**4 = 19
+# ->
+# 2**(15+0) + 2**(15+1) + 2**(15+4)
+622592
+
+total is 
+655343
+"""
+
+from __future__ import print_function
+
+import os
+from sys import stderr
+import numpy
+import meds
+import gmix_meds
+import fitsio
+import argparse
+
+parser = argparse.ArgumentParser(description=__doc__)
+
+parser.add_argument("meds_files", help="the meds files",nargs='+')
+
+parser.add_argument("--flags-file",
+                    help=("use the indicated file to get "
+                          "image flags rather than using "
+                          "the flags from meds file"))
+
+parser.add_argument("--flags2check",
+                    help="image flags to check",
+                    type=int,
+                    default=655343)
+
+def get_ccdname(fname):
+    return os.path.basename(fname).split('.')[0]
+
+def get_expnum_ccdnum(fname):
+    ccdname=get_ccdname(fname)
+    name=ccdname.replace('DECam_','')
+    exp, ccd = name.split('_')
+
+    expnum=int(exp)
+    ccdnum=int(ccd)
+
+    return expnum, ccdnum
+
+
+def make_bigind(expnum, ccdnum):
+    return "%s-%02d" % (expnum, ccdnum)
+
+def load_flags(fname):
+    import json
+    with open(fname) as fobj:
+        data=json.load(fobj)
+
+    return data
+
+class Printer(object):
+    def __init__(self, meds_file, args, flag_dict=None):
+
+        print("loading meds file:",meds_file,file=stderr)
+        self.m=meds.MEDS(meds_file)
+
+        self.flag_dict=flag_dict
+
+        bname=os.path.basename(meds_file)
+        self.filter=bname.split('-')[2]
+
+        self.flags2check=args.flags2check
+
+    def print(self):
+        print("    printing...",file=stderr)
+        ii = self.get_image_info()
+        if ii is None:
+            return
+
+        for i in xrange(ii.size):
+            self.print_image(ii[i])
+
+    def print_image(self, ii):
+        fname=ii['image_path']
+        expnum, ccdnum = get_expnum_ccdnum(fname)
+
+        print(ii['image_id'], expnum, ccdnum, self.filter, fname)
+
+    def get_image_info(self):
+        ii=self.m.get_image_info()
+
+        # remove coadd
+        ii=ii[1:]
+
+        self.set_image_flags(ii)
+
+        keep=numpy.ones(ii.size)
+
+        for i in xrange(ii.size):
+            flags=ii['image_flags'][i]
+            if (flags & self.flags2check) != 0:
+                keep[i] = 0
+
+        w,=numpy.where(keep)
+        print("found %d/%d pass "
+              "flags %d" % (w.size,ii.size,self.flags2check),
+              file=stderr)
+
+        if w.size > 0:
+            ii=ii[w]
+        else:
+            ii=None
+        return ii
+
+    def set_image_flags(self, ii):
+        """
+        coadd should be trimmed already
+        """
+        fdict=self.flag_dict
+        if fdict is not None:
+
+            image_flags=numpy.zeros(ii.size,dtype='i8')
+            for i in xrange(ii.size):
+                expnum, ccdnum = get_expnum_ccdnum(ii['image_path'][i])
+                bigind = make_bigind(expnum, ccdnum)
+
+                # note index
+                image_flags[i] = fdict.get(bigind,0)
+
+            ii['image_flags']=image_flags
+            
+
+def main():
+    args = parser.parse_args()
+
+    if args.flags_file is not None:
+        print("loading replacement flags:",args.flags_file,
+              file=stderr)
+        flag_dict=load_flags(args.flags_file)
+    else:
+        flag_dict=None
+
+    nf=len(args.meds_files)
+    for i,meds_file in enumerate(args.meds_files):
+        if (i % 10) == 0:
+            print("%d/%d" % (i+1,nf),file=stderr)
+
+        printer=Printer(meds_file, args, flag_dict=flag_dict)
+        printer.print()
+
+main()

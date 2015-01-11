@@ -153,7 +153,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         self.bestlk = fitter.get_best_lnprob()
         arate=fitter.get_arate()
 
-        print('            emcee a:',arate,'logl:', self.bestlk)
+        print('            emcee arate:',arate,'logl:', self.bestlk)
         if self['print_params']:
             print_pars(pars, front='        ')
             print_pars(res['pars_err'],front='        ')
