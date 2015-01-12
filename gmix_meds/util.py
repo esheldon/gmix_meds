@@ -1,4 +1,5 @@
 from __future__ import print_function
+import os
 import numpy
 import fitsio
 
@@ -474,6 +475,51 @@ def plot_autocorr(trials, window=100, show=False, **kw):
         arr.show(**kw)
 
     return arr
+
+class CombinedImageFlags(object):
+    """
+    replacement astrometry flags
+    """
+    def __init__(self, filename):
+        self.filename=filename
+
+        self._load()
+
+    def _load(self):
+        import json
+        with open(self.filename) as fobj:
+            self.data=json.load(fobj)
+
+    def get_key(self, filename):
+        bname=os.path.basename(filename)
+        bs=bname.split('_')
+
+        expid = int(bs[1])
+        ccdid = int( bs[2].split('.')[0] )
+        
+        key='%s-%02d' % (expid, ccdid)
+        return key
+
+    def get_flags_multi(self, image_names, default=0):
+
+        flaglist=numpy.zeros(len(image_names))
+        for i,image_name in enumerate(image_names):
+            flags=self.get_flags(image_name,default=default)
+
+            flaglist[i] = flags
+        
+        return flaglist
+
+    def get_flags(self, image_name, default=0):
+        """
+        match based on image id
+        """
+
+        key=self.get_key(image_name)
+
+        flags = self.data.get(key,default)
+        return flags
+
 
 class AstromFlags(object):
     """

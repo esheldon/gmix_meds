@@ -104,9 +104,8 @@ class MedsFit(dict):
 
         self._set_index_list()
 
-        self.psfex_lists, self.psfex_flags_lists = self._get_psfex_lists()
-
-        self._combine_image_flags()
+        # make sure to run after load meds
+        self.psfex_lists = self._get_psfex_lists()
 
         self._setup_checkpoints()
 
@@ -128,8 +127,6 @@ class MedsFit(dict):
         self['make_plots']=self.get('make_plots',False)
 
         self['work_dir'] = self.get('work_dir',os.environ.get('TMPDIR','/tmp'))
-
-        self['check_image_flags']=self.get('check_image_flags',False)
 
         self['use_psf_rerun']=self.get('use_psf_rerun',False)
 
@@ -919,40 +916,6 @@ class MedsFit(dict):
             # we set the metadata even if the fit fails
             self._set_psf_meta(meds, mindex, band, icut, flags)
             self.epoch_index += 1
-
-
-        '''
-        icut=0
-        iflags=image_flags[icut]
-        if iflags != 0:
-            flags = IMAGE_FLAGS
-        else:
-            try:
-                coadd_obs = self._get_band_observation(band, mindex, icut)
-                coadd_obs_list.append( coadd_obs )
-                flags=0
-            except GMixMaxIterEM:
-                flags |= PSF_FIT_FAILURE
-
-        self._set_psf_meta(meds, mindex, band, icut, flags)
-        self.epoch_index += 1
-
-        for icut in xrange(1,ncutout):
-            iflags = image_flags[icut]
-            if iflags != 0:
-                flags = IMAGE_FLAGS
-            else:
-                try:
-                    obs = self._get_band_observation(band, mindex, icut)
-                    obs_list.append(obs)
-                    flags=0
-                except GMixMaxIterEM:
-                    flags=PSF_FIT_FAILURE
-
-            # we set the metadata even if the fit fails
-            self._set_psf_meta(meds, mindex, band, icut, flags)
-            self.epoch_index += 1
-        '''
 
         return coadd_obs_list, obs_list
 
@@ -1820,20 +1783,6 @@ class MedsFit(dict):
         print("            ",fname)
         plt.write_img(1920,1200,fname)
 
-
-    def _combine_image_flags(self):
-        """
-        image flags at this point is either 0 or IMAGE_FLAGS_SET
-
-        combine with psf flags which at this point are either 0 or
-        PSF_FLAGS_SET
-        """
-        for band in self.iband:
-            image_flags = self.all_image_flags[band]
-            psf_flags   = self.psfex_flags_lists[band]
-            for i in xrange(image_flags.size):
-                image_flags[i] |= psf_flags[i]
-
     def _get_image_flags(self, band, mindex):
         """
         find images associated with the object and get the image flags
@@ -1843,22 +1792,21 @@ class MedsFit(dict):
         meds=self.meds_list[band]
         ncutout=meds['ncutout'][mindex]
 
-        if self['check_image_flags']:
-            file_ids = meds['file_id'][mindex, 0:ncutout]
-            image_flags = self.all_image_flags[band][file_ids]
-        else:
-            image_flags = numpy.zeros(ncutout, dtype='i4')
+        file_ids = meds['file_id'][mindex, 0:ncutout]
+        image_flags = self.all_image_flags[band][file_ids]
 
         return image_flags
 
-    def _get_replacement_flags(self, image_ids):
-        from .util import AstromFlags
+    def _get_replacement_flags(self, filenames):
+        from .util import CombinedImageFlags
+
         if not hasattr(self,'_replacement_flags'):
             fname=self['replacement_flags']
-            print("Reading flags:",fname)
-            self._replacement_flags=AstromFlags(fname)
+            print("Reading replacement flags:",fname)
+            self._replacement_flags=CombinedImageFlags(fname)
         
-        return self._replacement_flags.get_flags(image_ids)
+        default=self['image_flags2check']
+        return self._replacement_flags.get_flags_multi(filenames,default=default)
 
     def _load_meds_files(self):
         """
@@ -1890,13 +1838,15 @@ class MedsFit(dict):
             image_flags=image_info['image_flags'].astype('i8')
             if self['replacement_flags'] is not None and image_flags.size > 1:
                 image_flags[1:] = \
-                    self._get_replacement_flags(image_info['image_id'][1:])
+                    self._get_replacement_flags(image_info['image_path'][1:])
 
             # now we reduce the flags to zero or IMAGE_FLAGS_SET
             # copy out and check image flags just for cutouts
             cimage_flags=image_flags[1:].copy()
 
             w,=numpy.where( (cimage_flags & self['image_flags2check']) != 0)
+
+            print("    flags set for: %d/%d" % (w.size,cimage_flags.size))
 
             cimage_flags[:] = 0
             if w.size > 0:
@@ -1938,16 +1888,14 @@ class MedsFit(dict):
         meds_desdata=self.meds_list[0]._meta['DESDATA'][0]
 
         psfex_lists=[]
-        flags_lists=[]
 
         for band in self.iband:
             meds=self.meds_list[band]
 
-            psfex_list, flags_list = self._get_psfex_objects(meds)
+            psfex_list = self._get_psfex_objects(meds,band)
             psfex_lists.append( psfex_list )
-            flags_lists.append( flags_list )
 
-        return psfex_lists, flags_lists
+        return psfex_lists
 
     def _get_psfex_blacklist(self):
         """
@@ -1971,28 +1919,15 @@ class MedsFit(dict):
 
     def _psfex_path_from_image_path(self, meds, image_path):
         """
-        infer the psfex path from the image path.  note only certain
-        flags are returned, the ones we want to check
-
-        Mike's current flags
-
-        1 = No stars found
-        2 = Too few stars found (<50)
-        4 = Too many stars found (>500)
-        8 = Too high FWHM (>1.8 arcsec)
-        16 = Error encountered somewhere along the line in making the PSFEx files.
+        infer the psfex path from the image path.
         """
         desdata=os.environ['DESDATA']
         meds_desdata=meds._meta['DESDATA'][0]
 
         psfpath=image_path.replace('.fits.fz','_psfcat.psf')
-        #print(image_path)
-        #print(psfpath)
 
         if desdata not in psfpath:
             psfpath=psfpath.replace(meds_desdata,desdata)
-
-        flags=0
 
         if self['use_psf_rerun'] and 'coadd' not in psfpath:
             psfparts=psfpath.split('/')
@@ -2001,60 +1936,44 @@ class MedsFit(dict):
 
             psfpath='/'.join(psfparts)
 
-            expname=psfparts[-2]
-            ccd=psfparts[-1].split('_')[2]
+        return psfpath
 
-            key='%s-%s' % (expname, ccd)
-
-            blacklist=self._get_psfex_blacklist()
-            flagsall=blacklist.get(key, 0)
-
-            # we only worry about certain flags
-            checkflags=self['psf_flags2check']
-            if (flagsall & checkflags) != 0:
-                print("    psf flags:",flagsall)
-                #flags = checkflags
-                flags = PSF_FLAGS_SET
-                print(psfpath,flags)
-
-        return psfpath, flags
-
-    def _get_psfex_objects(self, meds):
+    def _get_psfex_objects(self, meds, band):
         """
         Load psfex objects for all images, including coadd
         """
+        from psfex import PSFExError
 
         psfex_list=[]
-        flags_list=[]
 
         info=meds.get_image_info()
         nimage=info.size
 
         for i in xrange(nimage):
+
             pex=None
 
-            impath=info['image_path'][i].strip()
-            psfpath, flags = self._psfex_path_from_image_path(meds, impath)
+            # don't even bother if we are going to skip this image
+            flags = self.all_image_flags[band][i]
+            if (flags & self['image_flags2check']) == 0:
 
-            if flags==0:
+                impath=info['image_path'][i].strip()
+                psfpath = self._psfex_path_from_image_path(meds, impath)
+
                 if not os.path.exists(psfpath):
-                    # this flag is Mike's
-                    # 16 = Error encountered somewhere along the line 
-                    # in making the PSFEx files.
                     print("warning: missing psfex: %s" % psfpath)
-                    flags = 1<<16
+                    self.all_image_flags[band][i] |= self['image_flags2check']
                 else:
                     print("loading:",psfpath)
-                    pex=psfex.PSFEx(psfpath)
-        
-            #flags = flags << PSFEX_FLAGS_SHIFT
+                    try:
+                        pex=psfex.PSFEx(psfpath)
+                    except PSFExError as err:
+                        print("    problem with psfex file:",str(err))
+                        pex=None
+    
             psfex_list.append(pex)
-            flags_list.append(flags)
 
-            if flags != 0 and pex is not None:
-                raise RuntimeError("got flags %d but not pex none" % flags)
-
-        return psfex_list, flags_list
+        return psfex_list
 
     def _set_index_list(self):
         """
