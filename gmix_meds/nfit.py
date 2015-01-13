@@ -2800,7 +2800,7 @@ class MHMedsFitHybrid(MedsFit):
 
 class MedsFitEmceeOnly(MedsFit):
     """
-    simplest form
+    simplest form, no coadd, emcee only
     """
 
     def _fit_all_models(self):

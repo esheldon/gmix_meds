@@ -48,6 +48,11 @@ parser.add_argument("--flags2check",
                     type=int,
                     default=655343)
 
+parser.add_argument("--zeroflags",
+                    help="check for zero flags",
+                    action='store_true')
+
+
 def get_ccdname(fname):
     return os.path.basename(fname).split('.')[0]
 
@@ -84,6 +89,7 @@ class Printer(object):
         self.filter=bname.split('-')[2]
 
         self.flags2check=args.flags2check
+        self.zeroflags=args.zeroflags
 
     def print(self):
         print("    printing...",file=stderr)
@@ -112,12 +118,20 @@ class Printer(object):
 
         for i in xrange(ii.size):
             flags=ii['image_flags'][i]
-            if (flags & self.flags2check) != 0:
-                keep[i] = 0
+
+            if self.zeroflags:
+                if flags != 0:
+                    keep[i] = 0
+            else:
+                if (flags & self.flags2check) != 0:
+                    keep[i] = 0
 
         w,=numpy.where(keep)
-        print("found %d/%d pass "
-              "flags %d" % (w.size,ii.size,self.flags2check),
+        if self.zeroflags:
+            mess='with zero flags'
+        else:
+            mess='passing flags %s' % self.flags2check
+        print("found %d/%d %s" % (w.size,ii.size,mess),
               file=stderr)
 
         if w.size > 0:

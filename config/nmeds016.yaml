@@ -1,5 +1,4 @@
-# new simpler replacement flags.
-# turning off extra stuff
+# haven't used this one yet
 
 fitter: "ngmix"
 fitter_class: "mh"
@@ -58,32 +57,28 @@ me_iter:
 
     skip_emcee: False
     
-    nm_pars:
-        ntry: 2
-        maxiter: 1000
-        maxfev: 1000
-        ftol: 1.0e-4
-        xtol: 1.0e-4
-    
+    # get inital start for nm here
     emcee_pars:
         a: 2.0
         nwalkers: 50
         burnin: 10
         nstep: 40
 
+    # try to use this as a guess
+    nm_pars:
+        ntry: 2
+        maxiter: 1000
+        maxfev: 1000
+        ftol: 1.0e-4
+        xtol: 1.0e-4
+
     # for when nm fails
+    # fall back to this after ntry
     emcee_pars2:
         a: 2.0
         nwalkers: 20
         burnin: 200
         nstep: 200
-
-
-emcee_pars:
-    a: 2.0
-    nwalkers: 80
-    burnin: 800
-    nstep: 800
 
 mh_pars:
     dotest: True
@@ -102,9 +97,6 @@ psf_em_pars:
 #region: "seg_and_sky"
 region: "cweight-nearest"
 
-# in arcsec
-#psf_offset_max: 0.25
-
 # models in addition to a psf flux
 model_pars:
     exp:
@@ -115,14 +107,6 @@ model_pars:
         counts_prior_pars: [-1.0, 0.1, 1.0e+09, 0.25e+08]
         cen_prior_type: "dgauss"
         cen_prior_pars: [0.27]
-#    dev:
-#        g_prior_type: "cosmos-sersic"
-#        T_prior_type: "TwoSidedErf"
-#        T_prior_pars: [-0.07, 0.03, 1.0e+06, 1.0e+05]
-#        counts_prior_type: "TwoSidedErf"
-#        counts_prior_pars: [-1.0, 0.1, 1.0e+09, 0.25e+08]
-#        cen_prior_type: "dgauss"
-#        cen_prior_pars: [0.27]
 
 # this means repeat the couns priors for each band
 counts_prior_repeat: True

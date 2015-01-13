@@ -1,12 +1,12 @@
-# testing using our NM and cov calculation
+# new simpler replacement flags.
+# turning off extra stuff
+# turn up steps on mh
 
 fitter: "ngmix"
 fitter_class: "mh"
 coadd_fitter_class: null
 fit_me_galaxy: True
 fit_coadd_galaxy: False
-
-check_image_flags: True
 
 margsky: False
 
@@ -19,23 +19,26 @@ max_box_size: 2048
 use_guess_aper: False
 aperture_nsigma: 4.0
 
-# these are currently from astrometry only
-# note flag bits 0-3 are already removed from the meds file
-# note 2**4 is internal use
+replacement_flags: "/gpfs/mnt/gpfs01/astro/workarea/desdata/EXTRA/combined-image-flags/sva1_astrom_run1.0.1-badflag+id+sn_stats_flagged_sheldon_psfv3_blacklists.json"
+
+# astrom
 # 2**0 + 2**1 + 2**2 + 2**3 + 2**5 + 2**6 + 2**7 + 2**8 + 2**9
-image_flags2check: 1007
+#  = 1007
+# blacklists
+# 2**(10+0) + 2**(10+1) + 2**(10+2) + 2**(10+3) + 2**(10+4) = (31<<10)
+#  = 31744
+# psf
+# 2**(15+0) + 2**(15+1) + 2**(15+4)
+#  = (19<<15)
+# total
+# 
+# 1007 + (31<<10) + (19<<15)
+#  = 655343
+
+image_flags2check: 655343
 
 use_psf_rerun: True
 psf_rerun_version: "v3"
-psfex_blacklist: "$DESDATA/EXTRA/blacklists/psfex-sv-v3.txt"
-# this should combine all the flags of interest
-#2**0 = 1 = No stars found
-#2**1 = 2 = Too few stars found (<50)
-#2**2 = 4 = Too many stars found (>500)
-#2**3 = 8 = Too high FWHM (>1.8 arcsec)
-#2**4 = 16 = Error encountered somewhere along the line in making the PSFEx files.
-# 2**0 + 2**1 + 2**4
-psf_flags2check: 19
 
 coadd_model_guess: "iter"
 me_model_guess: "iter"
@@ -56,40 +59,35 @@ me_iter:
 
     skip_emcee: False
     
-    nm_pars:
-        ntry: 2
-        maxiter: 1000
-        maxfev: 1000
-        # relative
-        ftol: 1.0e-3
-        xtol: 1.0e-3
-    
+    # get inital start for nm here
     emcee_pars:
         a: 2.0
         nwalkers: 50
         burnin: 10
         nstep: 40
 
+    # try to use this as a guess
+    nm_pars:
+        ntry: 2
+        maxiter: 1000
+        maxfev: 1000
+        ftol: 1.0e-4
+        xtol: 1.0e-4
+
     # for when nm fails
+    # fall back to this after ntry
     emcee_pars2:
         a: 2.0
         nwalkers: 20
         burnin: 200
         nstep: 200
 
-
-emcee_pars:
-    a: 2.0
-    nwalkers: 80
-    burnin: 800
-    nstep: 800
-
 mh_pars:
     dotest: True
     step_factor: 0.5
     ntest_max: 4
-    burnin: 1000
-    nstep: 1000
+    burnin: 2000
+    nstep: 2000
     min_step_sizes: [1.0e-6,1.0e-6,1.0e-6,1.0e-6,1.0e-5,1.0e-3]
 
 psf_em_pars:
@@ -101,9 +99,6 @@ psf_em_pars:
 #region: "seg_and_sky"
 region: "cweight-nearest"
 
-# in arcsec
-#psf_offset_max: 0.25
-
 # models in addition to a psf flux
 model_pars:
     exp:
@@ -114,14 +109,6 @@ model_pars:
         counts_prior_pars: [-1.0, 0.1, 1.0e+09, 0.25e+08]
         cen_prior_type: "dgauss"
         cen_prior_pars: [0.27]
-#    dev:
-#        g_prior_type: "cosmos-sersic"
-#        T_prior_type: "TwoSidedErf"
-#        T_prior_pars: [-0.07, 0.03, 1.0e+06, 1.0e+05]
-#        counts_prior_type: "TwoSidedErf"
-#        counts_prior_pars: [-1.0, 0.1, 1.0e+09, 0.25e+08]
-#        cen_prior_type: "dgauss"
-#        cen_prior_pars: [0.27]
 
 # this means repeat the couns priors for each band
 counts_prior_repeat: True
