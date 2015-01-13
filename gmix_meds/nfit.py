@@ -865,17 +865,16 @@ class MedsFit(dict):
                 cen_image = None
                 
                 for nbr_number in nbr_numbers:
+                    #indexes
                     model_fits_index = model_fit_indexes[nbr_number]
                     meds_object_data_index = meds_object_data_indexes[nbr_number]
-                    
-                    model_nbr,nmodel,model = self._get_and_check_nbrs_model(model_fits_index, ntot, nexp, ndev, model_fits)
 
+                    #get and check model of nbr
+                    model_nbr,nmodel,model = self._get_and_check_nbrs_model(model_fits_index, ntot, nexp, ndev, model_fits)
                     if model_nbr == False:
                         continue
                     
-                    ##################################################
-                    #render each object in the seg map with a good fit
-                            
+                    
                     #get cutout with same file_id as central object
                     icut_obj, = numpy.where(mod['file_id'][meds_object_data_index] == fid_cen)
                     if len(icut_obj) == 0:
@@ -888,7 +887,9 @@ class MedsFit(dict):
                             
                     #check the psf
                     use_psf, pars_psf = self._get_and_check_psf_pars_nbr(icut_obj, nbr_number, fid_cen, band, epochs)
-                            
+                    if use_psf == False:
+                        continue
+                    
                     #fiducial location of object in postage stamp
                     row = mod['orig_row'][meds_object_data_index,icut_obj] - obs.meta['orig_start_row']
                     col = mod['orig_col'][meds_object_data_index,icut_obj] - obs.meta['orig_start_col']
