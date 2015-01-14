@@ -37,11 +37,11 @@ parser.add_option("--make-plots", action='store_true',
 parser.add_option("--model-file", default=None,
                   help=("model fits to use for modeling the neighbors of each object"))
 
-parser.add_option("--fof-nbrs-file", default=None,
-                  help=("model fits to use for modeling the neighbors of each object"))
+parser.add_option("--nbrs-file", default=None,
+                  help=("file with the neighbors of each object"))
 
 parser.add_option("--fof-file", default=None,
-                  help=("model fits to use for modeling the neighbors of each object"))
+                  help=("file used to group galaxies for processing"))
 
 parser.add_option("--model-extra-info", default=None,
                   help=("extra info for neighbors modelling"))
@@ -424,8 +424,8 @@ def go(config_file, meds_files, out_file, options):
     if options.model_extra_info is not None:
         extra_data['model_extra_info'] = fitsio.read(options.model_extra_info)
         
-    if options.fof_nbrs_file is not None:
-        extra_data['fof_nbrs'] = fitsio.read(options.fof_nbrs_file)
+    if options.nbrs_file is not None:
+        extra_data['nbrs'] = fitsio.read(options.nbrs_file)
         
     data, epoch_data, meta=run_fitter(meds_files,
                                       meds_files_full,

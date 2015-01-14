@@ -312,10 +312,7 @@ class MedsFit(dict):
 
                 print('index: %d:%d' % (mindex,last), )
                 ti = time.time()
-                if self['model_neighbors']:
-                    self.fit_obj(mindex,model_neighbors=True)
-                else:
-                    self.fit_obj(mindex)
+                self.fit_obj(mindex,model_neighbors=self['model_neighbors'])
                 ti = time.time()-ti
                 print('    time:',ti)
             
@@ -732,23 +729,18 @@ class MedsFit(dict):
         #only get here if things are OK
         return use_nbr, nmodel, model
                 
-    def _get_nbrs_to_model(self,fof_nbrs,number):
+    def _get_nbrs_to_model(self,number):
         """
         Returns the list of nbrs to model for each galaxy
         """
+        #get the data
+        assert 'nbrs' in self.extra_data,"Must supply list of nbrs to model!"
+        nbrs_data = self.extra_data['nbrs']
+        
         #get nbrs to model from nbrs fof
-        q, = np.where(fof_nbrs['number'] == number)
-        assert len(q) > 0,"Could not find gal in Nbrs FoF list! number = %ld" % number
-        fofid = fof_nbrs['fofid'][q[0]]
-        q, = np.where(fof_nbrs['fofid'] == fofid)
-        assert len(q) > 0,"Nbrs FoF has zero length! number = %ld" % number
-        fofmems = fof_nbrs['number'][q]
-
-        w = numpy.where((fofmems > 0) & (fofmems != number))
-        if len(w) == 0:
-            #nothing to model!
-            return
-        nbr_numbers = numpy.unique(fofmems[w]) - 1
+        q, = np.where(nbrs_data['number'] == number)
+        assert len(q) > 0,"Could not find gal in Nbrs list! number = %ld" % number
+        nbr_numbers = nbrs_data['number'][q]
         
         #if have extra info, check its flags
         nbr_numbers_to_keep = []
@@ -762,12 +754,12 @@ class MedsFit(dict):
                 if self.extra_data['model_extra_info']['flags'][q[0]] != 0:
                     keep_nbr = False
                     
-            if nbr_number == number and not self['make_plots']::
-                keep_nbr = False
-
             if keep_nbr:
                 nbr_numbers_to_keep.append(nbr_number)
 
+        if self['make_plots']::
+            nbr_numbers_to_keep.append(number)
+        
         nbr_numbers = np.array(nbr_numbers_to_keep)
         return nbr_numbers
 
@@ -794,21 +786,18 @@ class MedsFit(dict):
         #find the data needed on disk, either get input data or use from local sources
         if 'model_fits' in self.extra_data and \
                 'meds_object_data' in self.extra_data and \
-                'epochs' in self.extra_data and \
-                'fof_nbrs' in self.extra_data:
+                'epochs' in self.extra_data
             #if we have all the right stuff, then use inputs
             model_fits = self.extra_data['model_fits']
             epochs = self.extra_data['epochs']
-            fof_nbrs = self.extra_data['fof_nbrs']
             meds_object_data = self.extra_data['meds_object_data']
         else:
             #default to internal
             model_fits = self.data
             epochs = self.epoch_data
-            fof_nbrs = self.fof_data
             meds_object_data = self.meds_list
 
-        return model_fits, epochs, fof_nbrs, meds_object_data
+        return model_fits, epochs, meds_object_data
     
     def _model_neighbors(self, mb_obs_list, coadd=False):
         """
@@ -832,20 +821,20 @@ class MedsFit(dict):
             ntot = nme
 
         #get nbrs model data and nbrs to model
-        model_fits, epochs, fof_nbrs, meds_object_data = self._get_nbrs_model_data()
-        nbr_numbers = self._get_nbrs_to_model(fof_nbrs,number)
+        model_fits, epochs, meds_object_data = self._get_nbrs_model_data()
+        nbr_numbers = self._get_nbrs_to_model(number)
         
         #construct some indexes of fofmems into nbrs structs
         model_fits_indexes = {}
         meds_object_data_indexes = {}
-        for fofmem_number in nbr_numbers:
-            q, = numpy.where(model_fits['number'] == fofmem_number)
+        for nbr_number in nbr_numbers:
+            q, = numpy.where(model_fits['number'] == nbr_number)
             assert len(q) == 1,"Could not find or have duplicate Nbr data in model_fits! # found = %ld" len(q)
-            model_fits_indexes[fofmem_number] = q[0]
+            model_fits_indexes[nbr_number] = q[0]
 
-            q, = numpy.where(meds_object_data[0]['number'] == fofmem_number)
+            q, = numpy.where(meds_object_data[0]['number'] == nbr_number)
             assert len(q) == 1,"Could not find or have duplicate Nbr data in MEDS object data! # found = %ld" len(q)
-            meds_object_data_indexes[fofmem_number] = q[0]
+            meds_object_data_indexes[nbr_number] = q[0]
 
         #reset images
         for band, obs_list in enumerate(mb_obs_list):
@@ -872,45 +861,43 @@ class MedsFit(dict):
                     #get and check model of nbr
                     model_nbr,nmodel,model = self._get_and_check_nbrs_model(model_fits_index, ntot, nexp, ndev, model_fits)
                     if model_nbr == False:
-                        continue
-                    
-                    
-                    #get cutout with same file_id as central object
-                    icut_obj, = numpy.where(mod['file_id'][meds_object_data_index] == fid_cen)
-                    if len(icut_obj) == 0:
-                        print("                could not find cutout for nbr %d file_id %d" % (cid,fid_cen))
-                        continue
-                    if len(icut_obj) > 1:
-                        print("                found duplicate cutouts for nbr %d file_id %d" % (cid,fid_cen))
-                        assert len(icut_obj) == 1, "found duplicate cutouts for nbr %d file_id %d!" % (cid,fid_cen)
-                    icut_obj = icut_obj[0]
-                            
-                    #check the psf
-                    use_psf, pars_psf = self._get_and_check_psf_pars_nbr(icut_obj, nbr_number, fid_cen, band, epochs)
-                    if use_psf == False:
-                        continue
-                    
-                    #fiducial location of object in postage stamp
-                    row = mod['orig_row'][meds_object_data_index,icut_obj] - obs.meta['orig_start_row']
-                    col = mod['orig_col'][meds_object_data_index,icut_obj] - obs.meta['orig_start_col']
-                            
-                    #parameters for object
+                        continue                    
                     pars_obj = model_fits[ntot(nmodel(self['nbrs_model']['pars']))][model_fits_index]
                     pinds = range(5)
                     pinds.append(band+5)
                     pars_obj = pars_obj[pinds] 
                     
-                    #get jacobian
-                    jacob = Jacobian(row,col,
-                                     mod['dudrow'][meds_object_data_index,icut_obj],
-                                     mod['dudcol'][meds_object_data_index,icut_obj],
-                                     mod['dvdrow'][meds_object_data_index,icut_obj],
-                                     mod['dvdcol'][meds_object_data_index,icut_obj])
-                    pixscale = jacob.get_scale()
-                    row += pars_obj[0]/pixscale
-                    col += pars_obj[1]/pixscale
-                    jacob.set_cen(row,col)
+                    #get cutout with same file_id as central object
+                    icut_obj, = numpy.where(mod['file_id'][meds_object_data_index] == fid_cen)
+                    if len(icut_obj) > 1:
+                        print("                found duplicate cutouts for nbr %d file_id %d" % (cid,fid_cen))
+                        assert len(icut_obj) == 1, "found duplicate cutouts for nbr %d file_id %d!" % (cid,fid_cen)
+                    if len(icut_obj) == 0:
+                        print("                could not find cutout for nbr %d file_id %d" % (cid,fid_cen))
+                        continue
+                    else:
+                        #cutout of object
+                        icut_obj = icut_obj[0]
                             
+                        #get the psf pars
+                        use_psf, pars_psf = self._get_and_check_psf_pars_nbr(icut_obj, nbr_number, fid_cen, band, epochs)
+                        if use_psf == False:
+                            continue
+
+                        #get jacobian
+                        #fiducial location of object in postage stamp
+                        row = mod['orig_row'][meds_object_data_index,icut_obj] - obs.meta['orig_start_row']
+                        col = mod['orig_col'][meds_object_data_index,icut_obj] - obs.meta['orig_start_col']
+                        jacob = Jacobian(row,col,
+                                         mod['dudrow'][meds_object_data_index,icut_obj],
+                                         mod['dudcol'][meds_object_data_index,icut_obj],
+                                         mod['dvdrow'][meds_object_data_index,icut_obj],
+                                         mod['dvdcol'][meds_object_data_index,icut_obj])
+                        pixscale = jacob.get_scale()
+                        #row += pars_obj[0]/pixscale
+                        #col += pars_obj[1]/pixscale
+                        jacob.set_cen(row,col)
+                    
                     #now render image of object
                     psf_gmix = GMix(pars=pars_psf)
                     gmix_sky = GMixModel(pars_obj, model)
