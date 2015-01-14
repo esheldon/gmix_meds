@@ -111,6 +111,8 @@ class MedsFit(dict):
 
         self.psfex_lists, self.psfex_flags_lists = self._get_psfex_lists()
 
+        self.wcs_lists = self._get_wcs_lists()
+        
         self._combine_image_flags()
 
         self._setup_checkpoints()
@@ -153,6 +155,8 @@ class MedsFit(dict):
         self['aperture_nsigma'] = self.get('aperture_nsigma',5.0)
 
         self['save_obs_per_fof'] = self.get('save_obs_per_fof',False)
+
+        self['model_neighbors'] = self.get('model_neighbors',False)
         
     def _reset_mb_sums(self):
         from numpy import zeros
@@ -2086,6 +2090,18 @@ class MedsFit(dict):
 
             self._cat_list=cat_list
 
+    def _get_wcs_lists(self):
+        """
+        Load the WCS headers for each meds file        
+        """
+        import json
+        wcs_lists = []
+        for band in self.iband:
+            mname = self.meds_files[band]
+            wcsname = mname.replace('-meds-','-meds-wcs-')
+            wcs_lists.append(json.load(wcsname))
+        return wcs_lists
+    
     def _get_psfex_lists(self):
         """
         Load psfex objects for each of the SE images
