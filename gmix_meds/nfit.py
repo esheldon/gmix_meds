@@ -218,7 +218,7 @@ class MedsFit(dict):
         self.fofid2mindex = {}
         self.number2mindex = {}
         for fofid in range(start_fof,end_fof+1):
-            q, = np.where(self.model_data['fofs']['fofid'] == fofid)
+            q, = numpy.where(self.model_data['fofs']['fofid'] == fofid)
             assert len(q) > 0, print 'Found zero length FoF! fofid = %ld' % fofid                        
             self.fofid2mindex[fofid] = q.copy()
         
@@ -742,7 +742,7 @@ class MedsFit(dict):
         nbrs_data = self.extra_data['nbrs']
         
         #get nbrs to model from nbrs fof
-        q, = np.where(nbrs_data['number'] == number)
+        q, = numpy.where(nbrs_data['number'] == number)
         assert len(q) > 0,"Could not find gal in Nbrs list! number = %ld" % number
         nbr_numbers = nbrs_data['number'][q]
         
@@ -764,7 +764,7 @@ class MedsFit(dict):
         if self['make_plots']::
             nbr_numbers_to_keep.append(number)
         
-        nbr_numbers = np.array(nbr_numbers_to_keep)
+        nbr_numbers = numpy.array(nbr_numbers_to_keep)
         return nbr_numbers
 
     def _get_and_check_psf_pars_nbr(self, icut_obj, nbr_number, fid_cen, band, epochs):
