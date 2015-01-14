@@ -104,6 +104,7 @@ class MedsFit(dict):
         self._load_meds_files()
         self._maybe_load_coadd_cat_files()
         
+        self.fof_data = fof_data
         if self.fof_data is None:            
             self.fof_data = get_dummy_fofs(self.meds_list[0]['number'])
         
@@ -111,7 +112,7 @@ class MedsFit(dict):
 
         self.psfex_lists, self.psfex_flags_lists = self._get_psfex_lists()
 
-        self.wcs_lists = self._get_wcs_lists()
+        self.wcs_transforms = self._get_wcs_transforms()
         
         self._combine_image_flags()
 
@@ -217,9 +218,9 @@ class MedsFit(dict):
         #build the fof hash
         self.fofid2mindex = {}
         self.number2mindex = {}
-        for fofid in range(start_fof,end_fof+1):
-            q, = numpy.where(self.model_data['fofs']['fofid'] == fofid)
-            assert len(q) > 0, print 'Found zero length FoF! fofid = %ld' % fofid                        
+        for fofid in self.fofids:
+            q, = numpy.where(self.fof_data['fofid'] == fofid)
+            assert len(q) > 0, 'Found zero length FoF! fofid = %ld' % fofid                        
             self.fofid2mindex[fofid] = q.copy()
         
         #build the number to mindex hash
@@ -303,6 +304,7 @@ class MedsFit(dict):
         """
 
         t0=time.time()
+        num = 0
         
         for fofid in self.fofids:
             if self['save_obs_per_fof']:
@@ -310,11 +312,13 @@ class MedsFit(dict):
             
             fofmems = self.fofid2mindex[fofid]
             for mindex in fofmems:
-                if self.data['processed'][dindex]==1:
+                if self.data['processed'][mindex]==1:
                     # was checkpointed
                     continue
-
-                print('index: %d:%d' % (mindex,last), )
+                
+                num += 1
+                
+                print('index: %d:%d' % (mindex,self.meds_list[0].size-1), )
                 ti = time.time()
                 self.fit_obj(mindex,model_neighbors=self['model_neighbors'])
                 ti = time.time()-ti
@@ -323,8 +327,9 @@ class MedsFit(dict):
                 tm=time.time()-t0
 
                 self._try_checkpoint(tm) # only at certain intervals
-
-            del self.fof_mb_obs_list
+                
+            if self['save_obs_per_fof']:
+                del self.fof_mb_obs_list
             
         tm=time.time()-t0
         print("time:",tm)
@@ -761,7 +766,7 @@ class MedsFit(dict):
             if keep_nbr:
                 nbr_numbers_to_keep.append(nbr_number)
 
-        if self['make_plots']::
+        if self['make_plots']:
             nbr_numbers_to_keep.append(number)
         
         nbr_numbers = numpy.array(nbr_numbers_to_keep)
@@ -790,7 +795,7 @@ class MedsFit(dict):
         #find the data needed on disk, either get input data or use from local sources
         if 'model_fits' in self.extra_data and \
                 'meds_object_data' in self.extra_data and \
-                'epochs' in self.extra_data
+                'epochs' in self.extra_data:
             #if we have all the right stuff, then use inputs
             model_fits = self.extra_data['model_fits']
             epochs = self.extra_data['epochs']
@@ -833,11 +838,11 @@ class MedsFit(dict):
         meds_object_data_indexes = {}
         for nbr_number in nbr_numbers:
             q, = numpy.where(model_fits['number'] == nbr_number)
-            assert len(q) == 1,"Could not find or have duplicate Nbr data in model_fits! # found = %ld" len(q)
+            assert len(q) == 1,"Could not find or have duplicate Nbr data in model_fits! # found = %ld" % len(q)
             model_fits_indexes[nbr_number] = q[0]
 
             q, = numpy.where(meds_object_data[0]['number'] == nbr_number)
-            assert len(q) == 1,"Could not find or have duplicate Nbr data in MEDS object data! # found = %ld" len(q)
+            assert len(q) == 1,"Could not find or have duplicate Nbr data in MEDS object data! # found = %ld" % len(q)
             meds_object_data_indexes[nbr_number] = q[0]
 
         #reset images
@@ -1668,7 +1673,7 @@ class MedsFit(dict):
         """
         from .constants import PIXSCALE, PIXSCALE2
         dindex=self.dindex
-        mindex = self.index_list[dindex]
+        mindex = self.dindex
 
         c=self._cat_list[self['T_guess_band']]
         flux_radius = c['flux_radius'][mindex]
@@ -1691,14 +1696,13 @@ class MedsFit(dict):
         print('        getting guess from coadd catalog')
 
         dindex=self.dindex
-        mindex = self.index_list[dindex]
+        mindex = self.dindex
 
         T, fluxes = self._get_coadd_cat_best()
         print("        coadd T:",T,"coadd fluxes:",fluxes)
 
         guesser=FromPSFGuesser(T, fluxes)
         return guesser
-
 
     def _get_guesser_from_coadd_mcmc(self):
         """
@@ -1907,7 +1911,7 @@ class MedsFit(dict):
 
         type = '%s-%s' % (type,fitter_type)
 
-        mindex = self.index_list[dindex]
+        mindex = self.dindex
 
         title='%s %s' % (type,model)
         try:
@@ -2090,17 +2094,30 @@ class MedsFit(dict):
 
             self._cat_list=cat_list
 
-    def _get_wcs_lists(self):
+    def _get_wcs_transforms(self):
         """
-        Load the WCS headers for each meds file        
+        Load the WCS transforms for each meds file        
         """
         import json
-        wcs_lists = []
+        from esutil.wcsutil import WCS
+        
+        print('loading WCS')
+        wcs_transforms = {}
         for band in self.iband:
-            mname = self.meds_files[band]
-            wcsname = mname.replace('-meds-','-meds-wcs-')
-            wcs_lists.append(json.load(wcsname))
-        return wcs_lists
+            mname = self['meds_files_full'][band]
+            wcsname = mname.replace('-meds-','-meds-wcs-').replace('.fits.fz','.fits').replace('.fits','.json')
+            print('loading: %s' % wcsname)
+            try:
+                with open(wcsname,'r') as fp:
+                    wcs_list = json.load(fp)
+            except:
+                assert False,"WCS file '%s' cannot be read!" % wcsname
+                
+            wcs_transforms[band] = []
+            for hdr in wcs_list:
+                wcs_transforms[band].append(WCS(hdr))
+        
+        return wcs_transforms
     
     def _get_psfex_lists(self):
         """
@@ -2360,9 +2377,9 @@ class MedsFit(dict):
         not be used.  If obj_range was sent, this will be a subset
         """
         ncutout=0
-        ncoadd=self.index_list.size
+        ncoadd=self.meds_list[0].size
         for meds in self.meds_list:
-            ncutout += meds['ncutout'][self.index_list].sum()
+            ncutout += meds['ncutout'][:].sum()
         return ncutout
 
 
@@ -2507,7 +2524,7 @@ class MedsFit(dict):
         """
         dt=self._get_dtype()
 
-        num=self.index_list.size
+        num=self.meds_list[0].size
         data=numpy.zeros(num, dtype=dt)
 
         data['coadd_mask_frac'] = PDEFVAL
