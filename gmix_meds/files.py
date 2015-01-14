@@ -551,8 +551,12 @@ class StagedOutFile(object):
         self.must_exist=must_exist
 
         self.was_staged_out=False
-
-        if tmpdir is None:
+        
+        fpath = os.path.split(fname)[0]
+        if fpath == '':
+            fpath = '.'
+        
+        if tmpdir is None or os.path.samefile(tmpdir,fpath):
             self.is_temp=False
             self.path=self.final_path
         else:
