@@ -123,4 +123,8 @@ do_shear: True
 # limit such as in the condor scavenge.
 # 0 means after the first object
 
-checkpoints: [0,10,20,30,40,50,60,70,80,90,100,110]
+# checkpoints for condor
+#checkpoints: [0,10,20,30,40,50,60,70,80,90,100,110]
+
+# checkpoints for wq
+checkpoints: [0,30,60,90,120,150,180,210,240]
