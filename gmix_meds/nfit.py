@@ -971,12 +971,13 @@ class MedsFit(dict):
         tab[1,1] = images.view(frac,title='fraction of flux due to central',show=False)                    
         tab[1,2] = images.view(obs.weight,title='weight map',show=False)
                     
+        title_num = self.meds_list[0]['id'][self.mindex]
         if icut_cen > 0:
-            tab.write_img(1920,1200,'%06d-nbrs-model-band%d-icut%d.png' % (mindex_global,band,icut_cen))
-            print("                %06d-nbrs-model-band%d-icut%d.png" % (mindex_global,band,icut_cen))
+            tab.write_img(1920,1200,'%d-nbrs-model-band%d-icut%d.png' % (title_num,band,icut_cen))
+            print("                %d-nbrs-model-band%d-icut%d.png" % (title_num,band,icut_cen))
         else:
-            tab.write_img(1920,1200,'%06d-nbrs-model-band%d-coadd.png' % (mindex_global,band))
-            print("                %06d-nbrs-model-band%d-coadd.png" % (mindex_global,band))
+            tab.write_img(1920,1200,'%d-nbrs-model-band%d-coadd.png' % (title_num,band))
+            print("                %d-nbrs-model-band%d-coadd.png" % (title_num,band))
 
     def set_psf_means(self):
         dindex=self.dindex
@@ -1912,14 +1913,15 @@ class MedsFit(dict):
         type = '%s-%s' % (type,fitter_type)
 
         mindex = self.dindex
-
+        title_num = self.meds_list[0]['id'][mindex]
+        
         title='%s %s' % (type,model)
         try:
             res_plots=fitter.plot_residuals(title=title)
             if res_plots is not None:
                 for band, band_plots in enumerate(res_plots):
                     for icut, plt in enumerate(band_plots):
-                        fname='%06d-%s-resid-%s-band%d-im%d.png' % (mindex,type,model,band,icut+1)
+                        fname='%d-%s-resid-%s-band%d-im%d.png' % (title_num,type,model,band,icut+1)
                         print("            ",fname)
                         plt.write_img(1920,1200,fname)
 
@@ -1934,8 +1936,8 @@ class MedsFit(dict):
                 pdict['trials'].aspect_ratio=1.5
                 pdict['wtrials'].aspect_ratio=1.5
 
-                trials_png='%06d-%s-trials-%s.png' % (mindex,type,model)
-                wtrials_png='%06d-%s-wtrials-%s.png' % (mindex,type,model)
+                trials_png='%06d-%s-trials-%s.png' % (title_num,type,model)
+                wtrials_png='%06d-%s-wtrials-%s.png' % (title_num,type,model)
 
                 print("            ",trials_png)
                 pdict['trials'].write_img(1200,1200,trials_png)
@@ -1978,11 +1980,12 @@ class MedsFit(dict):
                                   label1='psf', label2='model',
                                   show=False)
         plt.title=title
-
+        
+        title_num = self.meds_list[0]['id'][mindex]
         if icut==0:
-            fname='%06d-psf-resid-band%d-coadd.png' % (mindex,band)
+            fname='%06d-psf-resid-band%d-coadd.png' % (title_num,band)
         else:
-            fname='%06d-psf-resid-band%d-icut%d.png' % (mindex,band,icut+1)
+            fname='%06d-psf-resid-band%d-icut%d.png' % (title_num,band,icut+1)
 
         print("            ",fname)
         plt.write_img(1920,1200,fname)
@@ -3050,7 +3053,8 @@ class MHMedsFitHybrid(MedsFit):
         if self['make_plots']:
             plt=plot_autocorr(trials)
             plt.title='%06d-%s' % (self.mindex,model)
-            fname='%06d-%s-autocorr.png' % (self.mindex,model)
+            title_num = self.meds_list[0]['id'][self.mindex]
+            fname='%d-%s-autocorr.png' % (title_num,model)
             print("        ", fname)
             plt.write_img(1000,1000,fname)
         return fitter
