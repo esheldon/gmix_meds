@@ -1,5 +1,5 @@
 # testing robust fitting
-run: "ngmixtest5"
+run: "ngmixtest6"
 run_type: "mcmc"
 
 # testbeds are defined in deswl/desmeds/testbed
@@ -19,5 +19,5 @@ medsconf: "013"
 
 nper: 10
 
-# testing aperture based on n*sigma aperture from guess
-config: "nmedstest5"
+# 4000 iter
+config: "nmedstest6"
