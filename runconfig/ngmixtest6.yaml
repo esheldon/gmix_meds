@@ -1,4 +1,3 @@
-# testing robust fitting
 run: "ngmixtest6"
 run_type: "mcmc"
 

@@ -1,4 +1,6 @@
-# haven't used this one yet
+# new simpler replacement flags.
+# turning off extra stuff
+# turn up steps on mh
 
 fitter: "ngmix"
 fitter_class: "mh"
@@ -17,14 +19,21 @@ max_box_size: 2048
 use_guess_aper: False
 aperture_nsigma: 4.0
 
-replacement_flags: "/gpfs/mnt/gpfs01/astro/workarea/desdata/EXTRA/combined-image-flags/sva1_astrom_run1.0.1-badflag+id+sn_stats_flagged_sheldon_psfv3_blacklists.json"
+# SN
+#replacement_flags: "/gpfs/mnt/gpfs01/astro/workarea/desdata/EXTRA/combined-image-flags/sva1_astrom_run1.0.1-badflag+id+sn_stats_flagged_sheldon_psfv3_blacklists.json"
+# spt-e
+#replacement_flags: "/gpfs/mnt/gpfs01/astro/workarea/desdata/EXTRA/combined-image-flags/sva1_astrom_run1.0.1_stats_flagged_sheldon_psfv3_blacklists.json"
+# SN and old psf (no psf flags at all)
+replacement_flags: "/gpfs/mnt/gpfs01/astro/workarea/desdata/EXTRA/combined-image-flags/sva1_astrom_run1.0.1-badflag+id+sn_stats_flagged_sheldon_blacklists.json"
 
 # astrom
 # 2**0 + 2**1 + 2**2 + 2**3 + 2**5 + 2**6 + 2**7 + 2**8 + 2**9
 #  = 1007
+#
 # blacklists
 # 2**(10+0) + 2**(10+1) + 2**(10+2) + 2**(10+3) + 2**(10+4) = (31<<10)
 #  = 31744
+#
 # psf
 # 2**(15+0) + 2**(15+1) + 2**(15+4)
 #  = (19<<15)
@@ -33,10 +42,10 @@ replacement_flags: "/gpfs/mnt/gpfs01/astro/workarea/desdata/EXTRA/combined-image
 # 1007 + (31<<10) + (19<<15)
 #  = 655343
 
-image_flags2check: 655343
+# astrom and blacklist
+image_flags2check: 32751
 
-use_psf_rerun: True
-psf_rerun_version: "v3"
+use_psf_rerun: False
 
 coadd_model_guess: "iter"
 me_model_guess: "iter"
@@ -69,8 +78,8 @@ me_iter:
         ntry: 2
         maxiter: 1000
         maxfev: 1000
-        ftol: 1.0e-4
-        xtol: 1.0e-4
+        ftol: 1.0e-3
+        xtol: 1.0e-3
 
     # for when nm fails
     # fall back to this after ntry
@@ -84,8 +93,8 @@ mh_pars:
     dotest: True
     step_factor: 0.5
     ntest_max: 4
-    burnin: 1000
-    nstep: 1000
+    burnin: 4000
+    nstep: 4000
     min_step_sizes: [1.0e-6,1.0e-6,1.0e-6,1.0e-6,1.0e-5,1.0e-3]
 
 psf_em_pars:
@@ -117,4 +126,8 @@ do_shear: True
 # limit such as in the condor scavenge.
 # 0 means after the first object
 
+# checkpoints for condor
 checkpoints: [0,10,20,30,40,50,60,70,80,90,100,110]
+
+# checkpoints for wq
+#checkpoints: [0,30,60,90,120,150,180,210,240]
