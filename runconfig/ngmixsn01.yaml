@@ -1,0 +1,25 @@
+run: "ngmixsn01"
+run_type: "mcmc"
+
+# testbeds are defined in deswl/desmeds/testbed
+dataset:
+    - "SVA1_COADD_SNX"
+    - "SVA1_COADD_SNC"
+    - "SVA1_COADD_SNS"
+    - "SVA1_COADD_SNE"
+
+
+# must exist in tiles
+withbands: ["g","r","i","z"]
+
+# what we will process
+bands:     ["g","r","i","z"]
+
+# supernova fields
+medsconf: "014"
+
+nper: 10
+
+# old psf, eli's SN specific flags
+# using 4000 samples, new psfex recon code
+config: "nmedssn01"
