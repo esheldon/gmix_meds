@@ -156,6 +156,9 @@ class Concat(object):
         """
         multiply all shear type values by the blinding factor
 
+        This must be run after copying g values out of pars into
+        the model_g fields
+
         This also includes the Q values from B&A
         """
         models=self.get_models(data)
@@ -163,12 +166,20 @@ class Concat(object):
         names=data.dtype.names
         for model in models:
 
+            pars_name='%s_pars' % model
+            pars_best_name='%s_pars_best' % model
             g_name='%s_g' % model
             Q_name='%s_Q' % model
             flag_name='%s_flags' % model
 
             w,=numpy.where(data[flag_name] == 0)
             if w.size > 0:
+                data[pars_name][:,2] *= self.blind_factor
+                data[pars_name][:,3] *= self.blind_factor
+                if pars_best_name in names:
+                    data[pars_best_name][:,2] *= self.blind_factor
+                    data[pars_best_name][:,3] *= self.blind_factor
+
                 if g_name in names:
                     data[g_name][w,:] *= self.blind_factor
 
