@@ -102,11 +102,12 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         return self.guesser
 
     def _guess_params_iter(self, mb_obs_list, model, params, start):
+        mhpars=self['mh_pars']
+        fac=mhpars['step_factor']
+
         self.fmt = "%10.6g "*(5+self['nband'])
 
-        skip_emcee = params.get('skip_emcee',False)
-        skip_nm = params.get('skip_nm',False)
-        cov_from_lm = params.get('cov_from_lm',False)
+        emcee_only = params.get('emcee_only',False)
 
         print("        doing iterative init")
 
@@ -117,25 +118,36 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
             if i == 0:
                 self.guesser = start
 
-            epars=params['emcee_pars']
-            if not skip_emcee:
+            if emcee_only:
+                self._do_emcee_guess(mb_obs_list,
+                                     model,
+                                     params['emcee_long_pars'],
+                                     guesser2make='fixed-cov')
+            else:
+                epars=params['emcee_quick_pars']
                 self._do_emcee_guess(mb_obs_list,
                                      model,
                                      epars)
 
-            res, ok = self._do_nm_guess(mb_obs_list,
-                                        model,
-                                        params['nm_pars'])
-
-            if not ok:
-                print("        greedy failure, running emcee")
-
-                self.guesser=FromParsGuesser(res['pars'],res['pars']*0.1)
-                self._do_emcee_guess(mb_obs_list,
-                                     model,
-                                     params.get('emcee_pars2',epars),
-                                     guesser2make='fixed-cov')
-        
+                res, ok = self._do_nm_guess(mb_obs_list,
+                                            model,
+                                            params['nm_pars'])
+                if ok:
+                    # check step sizes
+                    tsteps=fac*res['pars_err']
+                    wbad,=numpy.where(  (tsteps > self.max_steps_dict[model])
+                                      | (tsteps < self.min_steps) )
+                    if wbad.size > 0:
+                        print("        errors out of bounds")
+                        ok=False
+                if not ok:
+                    print("        greedy failure, running emcee")
+                    self.guesser=FromParsGuesser(res['pars'],res['pars']*0.1)
+                    self._do_emcee_guess(mb_obs_list,
+                                         model,
+                                         params.get('emcee_long_pars',epars),
+                                         guesser2make='fixed-cov')
+            
         return self.guesser
 
 
@@ -146,26 +158,29 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         fitter = self._fit_simple_emcee_guess(mb_obs_list,
                                               model,
                                               epars)
-        fitter.calc_result()
+
+        # might have crazy values, and this is just for a guess anyway
+        fitter.calc_result(sigma_clip=True, niter=10)
+
         res=fitter.get_result()
 
-        pars = fitter.get_best_pars()
+        best_pars = fitter.get_best_pars()
         self.bestlk = fitter.get_best_lnprob()
         arate=fitter.get_arate()
 
         print('            emcee arate:',arate,'logl:', self.bestlk)
         if self['print_params']:
-            print_pars(pars, front='        ')
+            print_pars(best_pars, front='        ')
             print_pars(res['pars_err'],front='        ')
         
         # making up errors, but it doesn't matter
 
         if guesser2make=='fixed':
-            self.guesser = FixedParsGuesser(pars,pars*0.1)
+            self.guesser = FixedParsGuesser(best_pars,best_pars*0.1)
         elif guesser2make=='fixed-cov':
-            self.guesser = FixedParsCovGuesser(pars,res['pars_cov'])
+            self.guesser = FixedParsCovGuesser(best_pars,res['pars_cov'])
         else:
-            self.guesser = FromParsGuesser(pars,pars*0.1)
+            self.guesser = FromParsGuesser(best_pars,best_pars*0.1)
 
         self.emceefit=fitter
 
@@ -185,6 +200,9 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         if self['print_params']:
             print('            nm max:    ',
                   self.fmt % tuple(pars),'logl:    %lf' % self.bestlk)
+            if 'pars_err' in res:
+                print('            nm err:    ',
+                      self.fmt % tuple(res['pars_err']))
         else:
             print('            nm max loglike: %lf' % self.bestlk)
     
@@ -220,8 +238,11 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         if self['print_params']:
             print('            nm max:    ',
                   self.fmt % tuple(pars),'logl:    %lf' % self.bestlk)
-        else:
-            print('            nm max loglike: %lf' % self.bestlk)
+            if 'pars_err' in res:
+                print('            nm err:    ',
+                      self.fmt % tuple(res['pars_err']))
+            else:
+                print('            no errors found')
     
         self.greedyfit = fitter
 

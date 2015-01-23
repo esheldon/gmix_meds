@@ -276,12 +276,13 @@ class MedsFit(dict):
         t0=time.time()
 
         self.dindex=dindex
-        self.mindex = self.index_list[dindex]
+        mindex = self.index_list[dindex]
+        self.mindex = mindex
+        last=self.index_list[-1]
 
         # for checkpointing
         self.data['processed'][dindex]=1
 
-        mindex = self.index_list[dindex]
 
         ncutout_tot=self._get_object_ncutout(mindex)
         self.data['nimage_tot'][dindex, :] = ncutout_tot
@@ -317,7 +318,7 @@ class MedsFit(dict):
             self.data['flags'][dindex] = PSF_FIT_FAILURE 
             return
 
-        print("dims:",coadd_mb_obs_list[0][0].image.shape)
+        print("    %d:%d dims: %s" % (mindex,last,coadd_mb_obs_list[0][0].image.shape))
 
         self.data['nimage_use'][dindex, :] = n_im[:]
 
@@ -2003,7 +2004,7 @@ class MedsFit(dict):
             self._print_pars(res['pars'],    front='        ')
             self._print_pars(res['pars_err'],front='        ')
             if 'arate' in res:
-                print('        arate:',res['arate'],'chi2per:',res['chi2per'])
+                print('        arate: %.2f tau: %.2f chi2per: %.2f s2n: %.1f' % (res['arate'],res['tau'],res['chi2per'],res['s2n_w']))
 
     def _setup_checkpoints(self):
         """
@@ -2544,6 +2545,27 @@ class MHMedsFitHybrid(MedsFit):
     Use MH for fitting, with guess/steps from an alternative fitter
     """
 
+    def __init__(self, *args, **kw):
+        super(MHMedsFitHybrid,self).__init__(*args, **kw)
+
+        self._set_step_info()
+
+    def _set_step_info(self):
+        mhpars=self['mh_pars']
+        fac=mhpars['step_factor']
+
+        # this is 5-element, use 5th for all fluxes
+        min_steps = numpy.zeros(5+self['nband'])
+        min_steps[0:5] = mhpars['min_step_sizes'][0:5]
+        min_steps[5:] = mhpars['min_step_sizes'][5]
+
+        self.min_steps=min_steps
+
+        self.max_steps_dict={}
+        for model in self['fit_models']:
+            max_steps = fac*self['model_pars'][model]['prior'].get_widths()
+            self.max_steps_dict[model] = max_steps
+
     def _fit_all_models(self):
         """
         Fit psf flux and other models
@@ -2680,6 +2702,48 @@ class MHMedsFitHybrid(MedsFit):
                 
         return step_sizes
 
+    def _clip_steps_from_model(self, step_sizes, model):
+        """
+        clip steps, getting max step sizes based on model and using
+        the global min step sizes
+        """
+        max_steps = self.max_steps_dict[model]
+        step_sizes = self._clip_steps(step_sizes,self.min_steps,max_steps)
+        return step_sizes
+
+    def _get_steps_from_cov(self, cov, model):
+        """
+        get step sizes from the input covariance matrix (or diagonal errors)
+        """
+        fac=self['mh_pars']['step_factor']
+        if len(cov.shape) == 1:
+            # this is diagonals
+            step_sizes = fac*cov
+        else:
+            # full covariance matrix
+            step_sizes = fac*fac*cov
+
+        step_sizes = self._clip_steps_from_model(step_sizes,model)
+        return step_sizes
+
+    def _get_new_steps_heuristic(self, old_step_sizes, arate, model):
+        """
+        use a simple heuristic to get new steps sizes
+        """
+        if arate < 0.01:
+            fac=0.01/0.5
+        else:
+            fac = arate/0.5
+
+        if len(old_step_sizes.shape) == 1 :
+            step_sizes = old_step_sizes*fac
+        else:
+            step_sizes = old_step_sizes*fac*fac
+
+        step_sizes = self._clip_steps_from_model(step_sizes,model)
+
+        return step_sizes
+
     def _fit_simple_mh(self, mb_obs_list, model):
         """
         Fit one of the "simple" models, e.g. exp or dev
@@ -2699,25 +2763,9 @@ class MHMedsFitHybrid(MedsFit):
         # note flat on g!
         prior=self['model_pars'][model]['gflat_prior']
 
-        guess,sigmas=self.guesser(get_sigmas=True, prior=prior)
-        
-        if len(sigmas.shape) == 1:
-            step_sizes = fac*sigmas
-        else:
-            step_sizes = fac*fac*sigmas
-        
-        # this is 5-element, use 5th for all fluxes
-        min_steps = numpy.zeros(5+self['nband'])
-        min_steps[0:5] = mhpars['min_step_sizes'][0:5]
-        min_steps[5:] = mhpars['min_step_sizes'][5]
+        guess,tcov=self.guesser(get_sigmas=True, prior=prior)
 
-        max_steps = fac*self['model_pars'][model]['prior'].get_widths()
-        #max_steps = 2*self['model_pars'][model]['prior'].get_widths()
-
-        self._print_pars(max_steps, front="        max_steps:")
-        
-        
-        step_sizes = self._clip_steps(step_sizes,min_steps,max_steps)
+        step_sizes = self._get_steps_from_cov(tcov, model)
 
         fitter=MHSimple(mb_obs_list,
                         model,
@@ -2748,7 +2796,6 @@ class MHMedsFitHybrid(MedsFit):
         if mhpars['dotest']:
             for i in xrange(mhpars['ntest_max']):
 
-                acc=fitter.sampler.get_accepted()
                 arate = fitter.get_arate()
                 bad_arate=(arate < 0.4 or arate > 0.6)
 
@@ -2757,27 +2804,26 @@ class MHMedsFitHybrid(MedsFit):
                 taufrac=fitter.get_tau()
 
                 print("        taufrac:",taufrac)
-                check = (taufrac < 0.1)
+                tau_check = (taufrac < 0.1)
 
-                if bad_arate or not check:
+                if bad_arate or not tau_check:
                     if bad_arate:
                         print("            bad arate last run:",arate)
-                        if len(step_sizes.shape) == 1 :
-                            step_sizes=trials.std(axis=0)*fac
+                        if mhpars['step_size_fix']=='last':
+                            if len(step_sizes.shape) == 1 :
+                                tcov=trials.std(axis=0)
+                            else:
+                                tcov=numpy.cov(trials.T)
+                            step_sizes = self._get_steps_from_cov(tcov, model)
                         else:
-                            step_sizes=numpy.cov(trials.T)*fac*fac
-                        step_sizes = self._clip_steps(step_sizes,
-                                                     min_steps,
-                                                     max_steps)
+                            step_sizes = self._get_new_steps_heuristic(step_sizes, arate, model)
 
                         fitter.set_step_sizes(step_sizes)
 
-                        # need another burnin for bad arate
-                        pos=fitter.run_mcmc(pos, mhpars['burnin'])
-
-                    if not check:
+                    if not tau_check:
                         print("            mcmc tau test failed")
 
+                    pos=fitter.run_mcmc(pos, mhpars['burnin'])
                     pos=fitter.run_mcmc(pos, mhpars['nstep'])
                     best_pars=fitter.get_best_pars()
                     best_logl=fitter.get_best_lnprob()
@@ -2789,6 +2835,7 @@ class MHMedsFitHybrid(MedsFit):
                     break
 
         if self['make_plots']:
+            trials=fitter.get_trials()
             plt=plot_autocorr(trials)
             plt.title='%06d-%s' % (self.mindex,model)
             fname='%06d-%s-autocorr.png' % (self.mindex,model)
@@ -2796,6 +2843,9 @@ class MHMedsFitHybrid(MedsFit):
             plt.write_img(1000,1000,fname)
         return fitter
 
+    def _get_new_steps(self, fitter):
+        mhpars=self['mh_pars']
+        arate=fitter.get_arate()
 
 
 class MedsFitEmceeOnly(MedsFit):

@@ -94,7 +94,10 @@ mh_pars:
     nstep: 4000
     #min_step_sizes: [1.0e-6,1.0e-6,1.0e-6,1.0e-6,1.0e-5,1.0e-3]
     # same steps used for ngmix009 (nmeds012)
-    min_step_sizes: [1.0e-4,1.0e-4,1.0e-3,1.0e-3,1.0e-4,1.0e-3]
+    # might want 1.0e-3 for T as well.  Not sure about flux but
+    # I think it should be much higher, maybe 1.0e-1 or 1.0e-2 even
+    #min_step_sizes: [1.0e-4,1.0e-4,1.0e-3,1.0e-3,1.0e-4,1.0e-3]
+    min_step_sizes: [1.0e-4,1.0e-4,1.0e-3,1.0e-3,1.0e-3,0.05]
 
 psf_em_pars:
     ngauss: 3
