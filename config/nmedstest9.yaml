@@ -23,7 +23,7 @@ aperture_nsigma: 4.0
 # SN
 #replacement_flags: "/gpfs/mnt/gpfs01/astro/workarea/desdata/EXTRA/combined-image-flags/sva1_astrom_run1.0.1-badflag+id+sn_stats_flagged_sheldon_psfv3_blacklists.json"
 # spt-e
-replacement_flags: "/gpfs/mnt/gpfs01/astro/workarea/desdata/EXTRA/combined-image-flags/sva1_astrom_run1.0.1_stats_flagged_sheldon_psfv3_blacklists.json"
+replacement_flags: "${DESDATA}/EXTRA/combined-image-flags/sva1_astrom_run1.0.1_stats_flagged_sheldon_psfv3_blacklists.json"
 
 # astrom
 # 2**0 + 2**1 + 2**2 + 2**3 + 2**5 + 2**6 + 2**7 + 2**8 + 2**9
