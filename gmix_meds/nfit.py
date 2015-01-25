@@ -206,7 +206,7 @@ class MedsFit(dict):
 
     def _print_pars(self, pars, **kw):
         if self['print_params']:
-            print_pars(pars,**kw)
+            print_pars(pars, **kw)
     def _print_pars_and_logl(self, pars, logl, **kw):
         if self['print_params']:
             print_pars_and_logl(pars, logl, **kw)
@@ -1688,12 +1688,36 @@ class MedsFit(dict):
                     if res['tau'] is not None:
                         self.data[n('tau_uw')][dindex] = res['tau']
 
+    def _copy_simple_max_pars(self, res, coadd=False):
+        """
+        Copy from the result dict to the output array
+        """
+        
+        dindex=self.dindex
+
+        model=res['model']
+        if coadd:
+            model = 'coadd_%s' % model
+
+        n=Namer(model)
+
+        self.data[n('max_flags')][dindex] = res['flags']
+        
+        if 'pars' in res:
+            self.data[n('max_pars')][dindex,:] = res['pars']
+
+        if 'pars_cov' in res:
+            self.data[n('max_pars_cov')][dindex,:,:] = res['pars_cov']
+
+       
+
 
     def _do_make_plots(self, fitter, model, coadd=False,
                        fitter_type='emcee'):
         """
         make plots
         """
+        import images
 
         if fitter_type in ['emcee','mh']:
             do_trials=True
@@ -1742,6 +1766,14 @@ class MedsFit(dict):
             except:
                 print("caught error plotting trials")
 
+        cobs=self.sdata['coadd_mb_obs_list']
+        imlist=[obs[0].image*obs[0].weight for obs in cobs]
+        titles=['band %s' % i for i in xrange(len(cobs))]
+
+        coadd_png='%06d-coadd-images.png' % (mindex,)
+        plt=images.view_mosaic(imlist, titles=titles, show=False)
+        print("            ",coadd_png)
+        plt.write_img(1200,1200,coadd_png)
 
 
     def _do_make_psf_plots(self, band, gmix, obs, mindex, icut):
@@ -2004,7 +2036,7 @@ class MedsFit(dict):
             self._print_pars(res['pars'],    front='        ')
             self._print_pars(res['pars_err'],front='        ')
             if 'arate' in res:
-                print('        arate: %.2f tau: %.2f chi2per: %.2f s2n: %.1f' % (res['arate'],res['tau'],res['chi2per'],res['s2n_w']))
+                print('        arate: %.2f tau: %.1f chi2per: %.2f s2n: %.1f' % (res['arate'],res['tau'],res['chi2per'],res['s2n_w']))
 
     def _setup_checkpoints(self):
         """
@@ -2228,12 +2260,17 @@ class MedsFit(dict):
             
             dt+=[(n('flags'),'i4'),
                  (n('pars'),'f8',np),
-                 (n('pars_best'),'f8',np),
                  (n('pars_cov'),'f8',(np,np)),
                  (n('flux'),'f8',bshape),
                  (n('flux_cov'),'f8',fcov_shape),
                  (n('g'),'f8',2),
                  (n('g_cov'),'f8',(2,2)),
+
+                 (n('pars_best'),'f8',np),
+
+                 (n('max_flags'),'i4'),
+                 (n('max_pars'),'f8',np),
+                 (n('max_pars_cov'),'f8',(np,np)),
                 
                  (n('s2n_w'),'f8'),
                  (n('chi2per'),'f8'),
@@ -2292,21 +2329,25 @@ class MedsFit(dict):
             
             data[n('pars')] = DEFVAL
             data[n('pars_best')] = DEFVAL
-            data[n('pars_cov')] = PDEFVAL
+            data[n('pars_cov')] = PDEFVAL*1.e6
             data[n('flux')] = DEFVAL
-            data[n('flux_cov')] = PDEFVAL
+            data[n('flux_cov')] = PDEFVAL*1.e6
             data[n('g')] = DEFVAL
-            data[n('g_cov')] = PDEFVAL
+            data[n('g_cov')] = PDEFVAL*1.e6
 
             data[n('s2n_w')] = DEFVAL
             data[n('chi2per')] = PDEFVAL
 
             data[n('tau')] = PDEFVAL
             
+            data[n('max_flags')] = NO_ATTEMPT
+            data[n('max_pars')] = DEFVAL
+            data[n('max_pars_cov')] = PDEFVAL*1.e6
+
             #use a simple set for now - keep flags just in case
             data[n('flags_uw')] = NO_ATTEMPT
             data[n('pars_uw')] = DEFVAL
-            data[n('pars_cov_uw')] = PDEFVAL            
+            data[n('pars_cov_uw')] = PDEFVAL*1.e6            
             data[n('chi2per_uw')] = PDEFVAL
             data[n('tau_uw')] = PDEFVAL
             
@@ -2794,17 +2835,17 @@ class MHMedsFitHybrid(MedsFit):
         trials=fitter.get_trials()
 
         if mhpars['dotest']:
+            arate_range = mhpars['arate_range']
             for i in xrange(mhpars['ntest_max']):
 
                 arate = fitter.get_arate()
-                bad_arate=(arate < 0.4 or arate > 0.6)
+                bad_arate=(arate < arate_range[0] or arate > arate_range[1])
 
-                # this is actually 2*Tau/nstep, which is a good measure, want
-                # to be < 0.1
-                taufrac=fitter.get_tau()
+                # this is actually 2*Tau, which is a good measure, want
+                # to be < 100 typically
+                tau=fitter.get_tau()
 
-                print("        taufrac:",taufrac)
-                tau_check = (taufrac < 0.1)
+                tau_check = (tau < mhpars['max_tau'])
 
                 if bad_arate or not tau_check:
                     if bad_arate:
@@ -2821,7 +2862,7 @@ class MHMedsFitHybrid(MedsFit):
                         fitter.set_step_sizes(step_sizes)
 
                     if not tau_check:
-                        print("            mcmc tau test failed")
+                        print("            bad tau last run:",tau)
 
                     pos=fitter.run_mcmc(pos, mhpars['burnin'])
                     pos=fitter.run_mcmc(pos, mhpars['nstep'])
@@ -2842,10 +2883,6 @@ class MHMedsFitHybrid(MedsFit):
             print("        ", fname)
             plt.write_img(1000,1000,fname)
         return fitter
-
-    def _get_new_steps(self, fitter):
-        mhpars=self['mh_pars']
-        arate=fitter.get_arate()
 
 
 class MedsFitEmceeOnly(MedsFit):

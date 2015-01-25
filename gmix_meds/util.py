@@ -37,7 +37,7 @@ class Namer(object):
         else:
             return '%s_%s' % (self.front, name)
 
-def print_pars_and_logl(pars, logl, fmt='%10.6g', front=None):
+def print_pars_and_logl(pars, logl, fmt='%8.3g', front=None):
     """
     print the parameters with a uniform width
     """
@@ -48,10 +48,7 @@ def print_pars_and_logl(pars, logl, fmt='%10.6g', front=None):
 
     allfmt = ' '.join( [fmt+' ']*len(pars) )
     stdout.write(allfmt % tuple(pars))
-    stdout.write("logl: ")
-    stdout.write(fmt % logl)
-    stdout.write('\n')
-
+    stdout.write(" logl: %g\n" % logl)
 
 
 class GuesserBase(object):
