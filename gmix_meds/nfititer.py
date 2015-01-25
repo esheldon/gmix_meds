@@ -112,7 +112,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                     wbad,=numpy.where(  (tsteps > self.max_steps_dict[model])
                                       | (tsteps < self.min_steps) )
                     if wbad.size > 0:
-                        print("        errors out of bounds")
+                        print("        err out of bounds")
                         ok=False
                 if not ok:
                     print("        greedy failure, running emcee")
@@ -192,7 +192,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                 self._print_pars(res['pars_err'],
                                       front='            nm err:  ')
             else:
-                print('            no errors found')
+                print('            no err found')
     
         self.greedyfit = fitter
 
