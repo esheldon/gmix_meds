@@ -110,6 +110,7 @@ mh_pars:
     # might want 1.0e-3 for T as well.  Not sure about flux but
     # I think it should be much higher, maybe 1.0e-1 or 1.0e-2 even
     #min_step_sizes: [1.0e-4,1.0e-4,1.0e-3,1.0e-3,1.0e-4,1.0e-3]
+    # should use 1.0e-4 for T 
     min_step_sizes: [1.0e-4,1.0e-4,1.0e-3,1.0e-3,5.0e-4,0.05]
     #min_step_sizes: [1.0e-5,1.0e-5,1.0e-3,1.0e-3,1.0e-5,0.05]
 
