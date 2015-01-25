@@ -1,0 +1,99 @@
+# increased steps for NM
+# absolute autocorrelation limit
+# fixed joint prior to allow bigger steps for e
+# allow smaller steps for T and cen
+
+fitter: "ngmix"
+fitter_class: "emcee-max"
+
+fit_me_galaxy: True
+fit_coadd_galaxy: False
+
+margsky: False
+
+# at least one band must have s/n > this or
+# we won't fit the slow mcmc 
+min_psf_s2n: 4
+
+#max_box_size: 2048
+max_box_size: 96
+
+use_guess_aper: False
+aperture_nsigma: 4.0
+
+# SN
+#replacement_flags: "/gpfs/mnt/gpfs01/astro/workarea/desdata/EXTRA/combined-image-flags/sva1_astrom_run1.0.1-badflag+id+sn_stats_flagged_sheldon_psfv3_blacklists.json"
+# spt-e
+replacement_flags: "${DESDATA}/EXTRA/combined-image-flags/sva1_astrom_run1.0.1_stats_flagged_sheldon_psfv3_blacklists.json"
+
+# astrom
+# 2**0 + 2**1 + 2**2 + 2**3 + 2**5 + 2**6 + 2**7 + 2**8 + 2**9
+#  = 1007
+# blacklists
+# 2**(10+0) + 2**(10+1) + 2**(10+2) + 2**(10+3) + 2**(10+4) = (31<<10)
+#  = 31744
+# psf
+# 2**(15+0) + 2**(15+1) + 2**(15+4)
+#  = (19<<15)
+# total
+# 
+# 1007 + (31<<10) + (19<<15)
+#  = 655343
+
+image_flags2check: 655343
+
+use_psf_rerun: True
+psf_rerun_version: "v3"
+
+print_params: True
+
+nu: 0.0
+
+max_pars:
+    method: 'Nelder-Mead'
+    maxiter: 1000
+    maxfev: 1000
+    ftol: 1.0e-3
+    xtol: 1.0e-3
+
+emcee_pars:
+    a: 2.0
+    thin: 2
+    nwalkers: 20
+    burnin: 800
+    nstep: 400
+
+psf_em_pars:
+    ngauss: 3
+    ntry: 20
+    maxiter: 5000
+    tol: 5.0e-6
+
+#region: "seg_and_sky"
+region: "cweight-nearest"
+
+# models in addition to a psf flux
+model_pars:
+    exp:
+        g_prior_type: "cosmos-sersic"
+        T_prior_type: "TwoSidedErf"
+        T_prior_pars: [-0.07, 0.03, 1.0e+06, 1.0e+05]
+        counts_prior_type: "TwoSidedErf"
+        counts_prior_pars: [-1.0, 0.1, 1.0e+09, 0.25e+08]
+        cen_prior_type: "dgauss"
+        cen_prior_pars: [0.27]
+
+# this means repeat the couns priors for each band
+counts_prior_repeat: True
+
+do_shear: True
+
+# checkpoint times in minutes, needed for condor in case we pass a batch system
+# limit such as in the condor scavenge.
+# 0 means after the first object
+
+# checkpoints for condor
+#checkpoints: [0,10,20,30,40,50,60,70,80,90,100,110]
+
+# checkpoints for wq
+checkpoints: [0,30,60,90,120,150,180,210,240]
