@@ -1834,7 +1834,7 @@ class MedsFit(dict):
         from .util import CombinedImageFlags
 
         if not hasattr(self,'_replacement_flags'):
-            fname=self['replacement_flags']
+            fname=os.path.expandvars(self['replacement_flags'])
             print("Reading replacement flags:",fname)
             self._replacement_flags=CombinedImageFlags(fname)
         
