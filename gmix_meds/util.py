@@ -250,7 +250,7 @@ class FromParsGuesser(GuesserBase):
         self.scaling=scaling
 
         if widths is None:
-            # 0.01 offset for first c1,c2,g1,g2, 1 percent for Ti,Fi
+            # offset for first c1,c2,g1,g2, 1 percent for Ti,Fi
             widths=pars*0 + 0.05
 
         self.widths=widths
@@ -272,8 +272,8 @@ class FromParsGuesser(GuesserBase):
         widths=self.widths
         guess=numpy.zeros( (n, npars) )
 
-        guess[:,0] = widths[0]*srandu(n)
-        guess[:,1] = widths[1]*srandu(n)
+        guess[:,0] = pars[0]*(1. + widths[0]*srandu(n))
+        guess[:,1] = pars[1]*(1. + widths[1]*srandu(n))
 
         guess_shape=get_shape_guess(pars[2],pars[3],n,widths[2:2+2])
         guess[:,2]=guess_shape[:,0]

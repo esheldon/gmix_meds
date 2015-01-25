@@ -62,7 +62,8 @@ nbrs_model:
 me_iter: 
     maxiter: 1
     emcee_only: False
-    skip_emcee: True
+    skip_quick_emcee: True
+    always_long_emcee: True
     
     # get inital start for nm here
     emcee_quick_pars:
@@ -73,9 +74,9 @@ me_iter:
 
     # try to use this as a guess
     nm_pars:
-        ntry: 2
-        maxiter: 4000
-        maxfev: 4000
+        ntry: 1
+        maxiter: 1000
+        maxfev: 1000
         ftol: 1.0e-3
         xtol: 1.0e-3
 

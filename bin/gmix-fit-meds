@@ -128,8 +128,8 @@ def run_ngmix(meds_files,
             meds_fitter=gmix_meds.nfititer.MedsFitEmceeIter
         else:
             meds_fitter=gmix_meds.nfit.MedsFit
-    elif conf['fitter_class']=='emcee-only':
-        meds_fitter=gmix_meds.nfit.MedsFitEmceeOnly
+    elif conf['fitter_class']=='emcee-max':
+        meds_fitter=gmix_meds.nfit.MedsFitEmceeMax
     elif conf['fitter_class']=="coadd-only":
         meds_fitter=gmix_meds.nfitcoadd.MedsFitCoadd
     else:

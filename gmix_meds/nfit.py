@@ -10,6 +10,7 @@ from __future__ import print_function
 import os
 import time
 import numpy
+from numpy import sqrt, diag
 import meds
 import psfex
 import ngmix
@@ -431,9 +432,6 @@ class MedsFit(dict):
         epars=self['emcee_pars']
         guess=self.guesser(n=epars['nwalkers'], prior=prior)
         self._print_pars(tuple(numpy.mean(guess,axis=0)),front="        emcee guess: ")
-        #for olist in mb_obs_list:
-        #    print("    image filename:",olist[0].filename)
-        #    print("    psfex filename:",olist[0].psf.filename)
 
         fitter=MCMCSimple(mb_obs_list,
                           model,
@@ -445,7 +443,7 @@ class MedsFit(dict):
                           random_state=self.random_state)
 
         pos=fitter.run_mcmc(guess,epars['burnin'])
-        pos=fitter.run_mcmc(pos,epars['nstep'])
+        pos=fitter.run_mcmc(pos,epars['nstep'],thin=epars['thin'])
 
         p = fitter.get_best_pars()
         self._print_pars(tuple(p),front="        emcee final: ")
@@ -521,7 +519,7 @@ class MedsFit(dict):
         Tobj=pars[4].clip(min=0.0,max=None)
 
         T = Tobj + Tpsf
-        sigma=numpy.sqrt(T/2.)
+        sigma=sqrt(T/2.)
         aper=self['aperture_nsigma']*sigma
         aper_pix=aper/obs[0][0].jacobian.get_scale()
 
@@ -1000,7 +998,7 @@ class MedsFit(dict):
               'orig_start_col':meds['orig_start_col'][mindex, icut]}
         obs.update_meta_data(meta)
 
-        psf_fwhm=2.35*numpy.sqrt(psf_gmix.get_T()/2.0)
+        psf_fwhm=2.35*sqrt(psf_gmix.get_T()/2.0)
         print("        psf fwhm:",psf_fwhm)
 
         if self['make_plots']:
@@ -1766,6 +1764,17 @@ class MedsFit(dict):
             except:
                 print("caught error plotting trials")
 
+            try:
+                trials=fitter.get_trials()
+                plt=plot_autocorr(trials)
+                plt.title='%06d-%s %s' % (self.mindex,model,type)
+                fname='%06d-%s-%s-autocorr.png' % (self.mindex,type,model)
+                print("            ", fname)
+                plt.write_img(1000,1000,fname)
+            except:
+                print("caught error plotting autocorr")
+
+
         cobs=self.sdata['coadd_mb_obs_list']
         imlist=[obs[0].image*obs[0].weight for obs in cobs]
         titles=['band %s' % i for i in xrange(len(cobs))]
@@ -1896,6 +1905,9 @@ class MedsFit(dict):
         load the catalogs for fit guesses
         """
         import fitsio
+        if 'coadd_model_guess' not in self:
+            return
+
         if ('cat' in self['coadd_model_guess']
                 or 'cat' in self['me_model_guess']):
             cat_list=[]
@@ -2025,18 +2037,21 @@ class MedsFit(dict):
     def _print_res(self, fitter, coadd=False):
         res=fitter.get_result()
         dindex=self.dindex
-        if res['flags']==0:
-            if coadd:
-                type='coadd'
-            else:
-                type='mb'
 
+        if coadd:
+            type='coadd'
+        else:
+            type='mb'
+
+        if 'pars' in res:
             if self['print_pars']:
                 print("        %s fit pars:" % type)
-            self._print_pars(res['pars'],    front='        ')
-            self._print_pars(res['pars_err'],front='        ')
-            if 'arate' in res:
-                print('        arate: %.2f tau: %.1f chi2per: %.2f s2n: %.1f' % (res['arate'],res['tau'],res['chi2per'],res['s2n_w']))
+                self._print_pars(res['pars'],    front='        ')
+                if 'pars_err' in res:
+                    self._print_pars(res['pars_err'],front='        ')
+
+        if 'arate' in res:
+            print('        arate: %.2f tau: %.1f chi2per: %.2f s2n: %.1f' % (res['arate'],res['tau'],res['chi2per'],res['s2n_w']))
 
     def _setup_checkpoints(self):
         """
@@ -2701,7 +2716,6 @@ class MHMedsFitHybrid(MedsFit):
         clip the steps to a desired range.  Can work with
         either diagonals or cov
         """
-        from numpy import sqrt, diag
         if len(step_sizes.shape) == 1:
             clip_element_wise(step_sizes, min_steps, max_steps)
             self._print_pars(step_sizes, front="        step sizes:")
@@ -2751,6 +2765,15 @@ class MHMedsFitHybrid(MedsFit):
         max_steps = self.max_steps_dict[model]
         step_sizes = self._clip_steps(step_sizes,self.min_steps,max_steps)
         return step_sizes
+
+    def _get_steps_from_trials(self, trials, model, diagonal=False):
+        """
+        get step sizes from the input covariance matrix (or diagonal errors)
+        """
+        if diagonal:
+            tcov=trials.std(axis=0)
+        else:
+            tcov=numpy.cov(trials.T)
 
     def _get_steps_from_cov(self, cov, model):
         """
@@ -2848,21 +2871,23 @@ class MHMedsFitHybrid(MedsFit):
                 tau_check = (tau < mhpars['max_tau'])
 
                 if bad_arate or not tau_check:
+                    fitter.calc_result(sigma_clip=True)
+                    tcov=fitter.get_result()['pars_cov']
+                    if len(step_sizes.shape) == 1 :
+                        tcov = sqrt(diag(tcov))
+
                     if bad_arate:
                         print("            bad arate last run:",arate)
-                        if mhpars['step_size_fix']=='last':
-                            if len(step_sizes.shape) == 1 :
-                                tcov=trials.std(axis=0)
-                            else:
-                                tcov=numpy.cov(trials.T)
-                            step_sizes = self._get_steps_from_cov(tcov, model)
-                        else:
-                            step_sizes = self._get_new_steps_heuristic(step_sizes, arate, model)
-
-                        fitter.set_step_sizes(step_sizes)
-
                     if not tau_check:
                         print("            bad tau last run:",tau)
+
+                    if bad_arate and mhpars['step_size_fix'] == 'heuristic':
+                        step_sizes = self._get_new_steps_heuristic(step_sizes, arate, model)
+                    else:
+                        step_sizes = self._get_steps_from_cov(tcov, model)
+
+                    fitter.set_step_sizes(step_sizes)
+
 
                     pos=fitter.run_mcmc(pos, mhpars['burnin'])
                     pos=fitter.run_mcmc(pos, mhpars['nstep'])
@@ -2875,19 +2900,19 @@ class MHMedsFitHybrid(MedsFit):
                 else:
                     break
 
-        if self['make_plots']:
-            trials=fitter.get_trials()
-            plt=plot_autocorr(trials)
-            plt.title='%06d-%s' % (self.mindex,model)
-            fname='%06d-%s-autocorr.png' % (self.mindex,model)
-            print("        ", fname)
-            plt.write_img(1000,1000,fname)
+        #if self['make_plots']:
+        #    trials=fitter.get_trials()
+        #    plt=plot_autocorr(trials)
+        #    plt.title='%06d-%s' % (self.mindex,model)
+        #    fname='%06d-%s-autocorr.png' % (self.mindex,model)
+        #    print("        ", fname)
+        #    plt.write_img(1000,1000,fname)
         return fitter
 
 
-class MedsFitEmceeOnly(MedsFit):
+class MedsFitEmceeMax(MedsFit):
     """
-    simplest form, no coadd, emcee only
+    psf->max->emcee
     """
 
     def _fit_all_models(self):
@@ -2904,9 +2929,15 @@ class MedsFitEmceeOnly(MedsFit):
         max_s2n=numpy.nanmax(s2n)
         
         if max_s2n >= self['min_psf_s2n'] and len(self['fit_models']) > 0:
-            self.guesser=self._get_guesser('me_psf')
+
             for model in self['fit_models']:
                 print('    fitting:',model)
+                print('    max like')
+
+                # sets self.guesser
+                self._run_model_fit_max(model)
+
+                print('    emcee')
                 self._run_model_fit(model)
         else:
             mess="    psf s/n too low: %s (%s)"
@@ -2921,11 +2952,12 @@ class MedsFitEmceeOnly(MedsFit):
         """
         wrapper to run fit, copy pars, maybe make plots
 
-        sets .fitter
+        assumes guesser is set
         """
 
         mb_obs_list=self.sdata['mb_obs_list']
 
+        # through parent, this runs the mcmc
         fitter=self._fit_model(mb_obs_list, model)
 
         self._copy_simple_pars(fitter)
@@ -2935,7 +2967,33 @@ class MedsFitEmceeOnly(MedsFit):
         if self['make_plots']:
             self._do_make_plots(fitter, model)
 
-        self.fitter=fitter
+        return fitter
+
+    def _run_model_fit_max(self, model):
+        """
+        fit max, guessing from psf.  and set guesser
+        """
+        from ngmix.fitting import MaxSimple
+        guesser = self._get_guesser('me_psf')
+
+        mb_obs_list=self.sdata['mb_obs_list']
+
+        prior=self['model_pars'][model]['gflat_prior']
+
+        max_pars=self['max_pars']
+        fitter=MaxSimple(mb_obs_list,
+                         model,
+                         prior=prior,
+                         method=max_pars['method'])
+
+        guess=guesser(prior=prior)
+        fitter.run_max(guess, **max_pars)
+
+        res=fitter.get_result()
+        self._copy_simple_max_pars(res)
+        self._print_res(fitter)
+
+        self.guesser=FromParsGuesser(res['pars'],res['pars']*0.1)
 
 
 _stat_names=['s2n_w',
@@ -2960,8 +3018,8 @@ def get_as_list(data_in):
 def calc_offset_arcsec(gm, scale=1.0):
     data=gm.get_data()
 
-    offset=numpy.sqrt( (data['row'][0]-data['row'][1])**2 + 
-                       (data['col'][0]-data['col'][1])**2 )
+    offset=sqrt( (data['row'][0]-data['row'][1])**2 + 
+                 (data['col'][0]-data['col'][1])**2 )
     offset_arcsec=offset*scale
     return offset_arcsec
 
@@ -3016,7 +3074,7 @@ def reject_outliers(imlist, wtlist, nsigma=5.0, A=0.3):
 
         wt.clip(0.0, out=wt)
 
-        ierr = numpy.sqrt(wt)
+        ierr = sqrt(wt)
 
         # wt*(im-med)**2
         chi2_image = im.copy()

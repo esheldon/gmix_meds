@@ -77,7 +77,8 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
         fac=mhpars['step_factor']
 
         emcee_only = params.get('emcee_only',False)
-        skip_emcee = params.get('skip_emcee',False)
+        skip_quick_emcee = params.get('skip_quick_emcee',False)
+        always_long_emcee = params.get('always_long_emcee',False)
 
         print("        doing iterative init")
 
@@ -95,7 +96,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                                      guesser2make='fixed-cov')
             else:
                 epars=params['emcee_quick_pars']
-                if not skip_emcee:
+                if not skip_quick_emcee:
                     self._do_emcee_guess(mb_obs_list,
                                          model,
                                          epars)
@@ -106,7 +107,7 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
 
                 self._copy_simple_max_pars(res)
 
-                if ok:
+                if ok and not always_long_emcee:
                     # check step sizes
                     tsteps=fac*res['pars_err']
                     wbad,=numpy.where(  (tsteps > self.max_steps_dict[model])
@@ -114,8 +115,11 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
                     if wbad.size > 0:
                         print("        err out of bounds")
                         ok=False
-                if not ok:
-                    print("        greedy failure, running emcee")
+
+                    if not ok:
+                        print("        greedy failure, running emcee")
+
+                if not ok or always_long_emcee:
                     self.guesser=FromParsGuesser(res['pars'],res['pars']*0.1)
                     self._do_emcee_guess(mb_obs_list,
                                          model,
@@ -324,9 +328,16 @@ class MHMedsFitHybridIter(MHMedsFitHybrid):
             fitter.run_max(guess, **nm_pars)
             res=fitter.get_result()
 
-            if (ntry > 1) and (res['flags'] & EIG_NOTFINITE) != 0:
+            errbad=False
+            if 'pars_err' in res:
+                errmin=res['pars_err'][2:2+3].min()
+                errbad = (errmin < 1.0e-8)
+
+            if (ntry > 1) and ( (res['flags'] & EIG_NOTFINITE) != 0 or errbad ):
                 # bad covariance matrix, need to get a new guess
                 self._print_pars(res['pars'],front='        bad cov at pars')
+                if 'pars_err' in res:
+                    self._print_pars(res['pars_err'],front='                   perr')
                 self.guesser=FromParsGuesser(guess, guess*0.1)
                 guess=self.guesser(prior=prior)
                 self._print_pars(guess,front='        new guess')
