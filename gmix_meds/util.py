@@ -4,8 +4,7 @@ import numpy
 import fitsio
 
 import ngmix
-from ngmix import srandu
-from ngmix import print_pars
+from ngmix import srandu, GMixRangeError, print_pars
 from ngmix.priors import LOWVAL
 
 def clip_element_wise(arr, minvals, maxvals):
@@ -252,7 +251,7 @@ class FromParsGuesser(GuesserBase):
 
         if widths is None:
             # 0.01 offset for first c1,c2,g1,g2, 1 percent for Ti,Fi
-            widths=pars*0 + 0.01
+            widths=pars*0 + 0.05
 
         self.widths=widths
 
