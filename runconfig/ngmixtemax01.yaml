@@ -17,6 +17,6 @@ bands:     ["r","i","z"]
 # in here
 medsconf: "013"
 
-nper: 20
+nper: 15
 
 config: "nmedstemax01"

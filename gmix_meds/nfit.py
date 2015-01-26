@@ -431,7 +431,10 @@ class MedsFit(dict):
 
         epars=self['emcee_pars']
         guess=self.guesser(n=epars['nwalkers'], prior=prior)
-        self._print_pars(tuple(numpy.mean(guess,axis=0)),front="        emcee guess: ")
+        self._print_pars(tuple(numpy.mean(guess,axis=0)),
+                         front="        emcee guess: ")
+        self._print_pars(tuple(numpy.std(guess,axis=0)),
+                         front="        emcee std:   ")
 
         fitter=MCMCSimple(mb_obs_list,
                           model,
@@ -2932,9 +2935,10 @@ class MedsFitEmceeMax(MedsFit):
 
             for model in self['fit_models']:
                 print('    fitting:',model)
-                print('    max like')
 
-                # sets self.guesser
+                self.guesser = self._get_guesser('me_psf')
+
+                print('    max like')
                 self._run_model_fit_max(model)
 
                 print('    emcee')
@@ -2974,7 +2978,6 @@ class MedsFitEmceeMax(MedsFit):
         fit max, guessing from psf.  and set guesser
         """
         from ngmix.fitting import MaxSimple
-        guesser = self._get_guesser('me_psf')
 
         mb_obs_list=self.sdata['mb_obs_list']
 
@@ -2986,14 +2989,26 @@ class MedsFitEmceeMax(MedsFit):
                          prior=prior,
                          method=max_pars['method'])
 
-        guess=guesser(prior=prior)
+        guess=self.guesser(prior=prior)
         fitter.run_max(guess, **max_pars)
 
         res=fitter.get_result()
         self._copy_simple_max_pars(res)
         self._print_res(fitter)
 
-        self.guesser=FromParsGuesser(res['pars'],res['pars']*0.1)
+        if 'pars_err' in res:
+            self.guesser=FromParsErrGuesser(res['pars'],res['pars_err'])
+        else:
+            widths=res['pars']*0
+            widths[0:0+2] = 0.02
+            widths[2:2+2] = 0.02
+            widths[4] = 0.1
+            widths[5:] = 1.0
+            self.guesser=FromParsGuesser(res['pars'],
+                                         res['pars']*0.1,
+                                         widths=widths)
+        #self.guesser=FromParsGuesser(res['pars'], res['pars']*0.1)
+
 
 
 _stat_names=['s2n_w',

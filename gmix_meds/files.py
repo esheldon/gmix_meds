@@ -303,7 +303,7 @@ def get_chunks(ntot, nper):
 
     """
     indices=numpy.arange(ntot)
-    nchunk=ntot/nper
+    nchunk=ntot//nper
 
     nleft=ntot % nper
     if nleft > 1:

@@ -176,17 +176,11 @@ class FromPSFGuesser(GuesserBase):
         #guess[:,4] = numpy.log10( self.T*(1.0 + 0.2*srandu(n)) )
 
         if self.scaling=='linear':
-            if self.T <= 0.0:
-                guess[:,4] = 0.05*srandu(n)
-            else:
-                guess[:,4] = self.T*(1.0 + 0.1*srandu(n))
+            guess[:,4] = self.T*(1.0 + 0.1*srandu(n))
 
             fluxes=self.fluxes
             for band in xrange(nband):
-                if fluxes[band] <= 0.0:
-                    guess[:,5+band] = (1.0 + 0.1*srandu(n))
-                else:
-                    guess[:,5+band] = fluxes[band]*(1.0 + 0.1*srandu(n))
+                guess[:,5+band] = fluxes[band]*(1.0 + 0.1*srandu(n))
 
         else:
             guess[:,4] = self.log_T + 0.1*srandu(n)
@@ -244,18 +238,73 @@ class FromParsGuesser(GuesserBase):
     """
     get full guesses 
     """
-    def __init__(self, pars, pars_err, scaling='linear', widths=None):
+    def __init__(self, pars, pars_err, widths=None):
         self.pars=pars
         self.pars_err=pars_err
-        self.scaling=scaling
 
         if widths is None:
-            # offset for first c1,c2,g1,g2, 1 percent for Ti,Fi
-            widths=pars*0 + 0.05
+            widths=pars*0 + 0.01
 
         self.widths=widths
 
-    def __call__(self, n=None, get_sigmas=False, prior=None):
+    def __call__(self, n=None, get_sigmas=False, prior=None, ntry=10):
+        """
+        center, shape are just distributed around zero
+        """
+
+        if n is None:
+            n=1
+            is_scalar=True
+        else:
+            is_scalar=False
+
+        pars=self.pars
+        widths=self.widths
+        npars=pars.size
+
+        guess=numpy.zeros( (n, npars) )
+
+        # bigger than LOWVAL
+        badval=-9999.0e20
+        for i in xrange(n):
+
+            ok=False
+            for itry in xrange(ntry):
+                guess[i,0] = pars[0] + widths[0]*srandu()
+                guess[i,1] = pars[1] + widths[1]*srandu()
+
+                # prevent from getting too large
+                guess_shape=get_shape_guess(pars[2],pars[3],
+                                            1,
+                                            widths[2:2+2],
+                                            max=0.8)
+                guess[i,2]=guess_shape[0,0]
+                guess[i,3]=guess_shape[0,1]
+
+                for j in xrange(4,npars):
+                    guess[i,j] = pars[j] + widths[j]*srandu()
+
+                try:
+                    lnp=prior.get_lnprob_scalar(guess[i,:])
+                    if lnp > badval:
+                        ok=True
+                        break
+                except GMixRangeError as err:
+                    pass
+
+            if not ok:
+                print("    had to sample....")
+                guess[j,:] = prior.sample()
+
+        if is_scalar:
+            guess=guess[0,:]
+
+        if get_sigmas:
+            return guess, self.pars_err
+        else:
+            return guess
+
+    def __call__old(self, n=None, get_sigmas=False, prior=None):
         """
         center, shape are just distributed around zero
         """
@@ -272,22 +321,74 @@ class FromParsGuesser(GuesserBase):
         widths=self.widths
         guess=numpy.zeros( (n, npars) )
 
-        guess[:,0] = pars[0]*(1. + widths[0]*srandu(n))
-        guess[:,1] = pars[1]*(1. + widths[1]*srandu(n))
+        guess[:,0] = pars[0] + widths[0]*srandu(n)
+        guess[:,1] = pars[1] + widths[1]*srandu(n)
 
         guess_shape=get_shape_guess(pars[2],pars[3],n,widths[2:2+2])
         guess[:,2]=guess_shape[:,0]
         guess[:,3]=guess_shape[:,1]
 
         for i in xrange(4,npars):
-            if self.scaling=='linear':
-                if pars[i] <= 0.0:
-                    guess[:,i] = widths[i]*srandu(n)
-                else:
-                    guess[:,i] = pars[i]*(1.0 + widths[i]*srandu(n))
-            else:
-                # we add to log pars!
-                guess[:,i] = pars[i] + widths[i]*srandu(n)
+            guess[:,i] = pars[i] + widths[i]*srandu(n)
+
+        if prior is not None:
+            self._fix_guess(guess, prior)
+
+        if is_scalar:
+            guess=guess[0,:]
+
+        if get_sigmas:
+            return guess, self.pars_err
+        else:
+            return guess
+
+
+class FromParsErrGuesser(FromParsGuesser):
+    """
+    get full guesses 
+    """
+    def __init__(self, pars, pars_err, frac=0.2):
+        self.pars=pars
+        
+        widths=frac*pars_err
+
+        # remember that srandu has width 0.57
+        sw=0.57
+        widths[0:0+2] = widths[0:0+2].clip(min=1.0e-2, max=1.0)
+        widths[2:2+2] = widths[2:2+2].clip(min=1.0e-2, max=1.0)
+        widths[4:] = widths[4:].clip(min=1.0e-1, max=10.0)
+
+        widths *= (1.0/sw)
+
+        self.widths=widths
+
+    def __call__old(self, n=None, get_sigmas=False, prior=None):
+        """
+        center, shape are just distributed around zero
+        """
+
+        if n is None:
+            n=1
+            is_scalar=True
+        else:
+            is_scalar=False
+
+        pars=self.pars
+        widths=self.widths
+        npars=pars.size
+
+        guess=numpy.zeros( (n, npars) )
+
+        # srandu() has std of 0.57..
+        guess[:,0] = pars[0] + widths[0]*srandu(n)
+        guess[:,1] = pars[1] + widths[1]*srandu(n)
+
+        guess_shape=get_shape_guess(pars[2],pars[3],n,widths[2:2+2])
+        guess[:,2]=guess_shape[:,0]
+        guess[:,3]=guess_shape[:,1]
+
+        for i in xrange(4,npars):
+            guess[:,i] = pars[i] + widths[i]*srandu(n)
 
         if prior is not None:
             self._fix_guess(guess, prior)
@@ -420,10 +521,17 @@ class FromFullParsGuesser(GuesserBase):
             return guess
 
 
-def get_shape_guess(g1, g2, n, width):
+def get_shape_guess(g1, g2, n, width, max=0.99):
     """
     Get guess, making sure in range
     """
+
+    g=numpy.sqrt(g1**2 + g2**2)
+    if g > max:
+        fac = max/g
+
+        g1 = g1 * fac
+        g2 = g2 * fac
 
     guess=numpy.zeros( (n, 2) )
     shape=ngmix.Shape(g1, g2)

@@ -19,5 +19,5 @@ medsconf: "013"
 
 nper: 20
 
-# 4000 iter, heuristic arate fix, checking NM errors
+# 4000 iter, last arate fix, checking NM errors
 config: "nmedstest10"

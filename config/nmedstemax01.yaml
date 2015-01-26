@@ -51,8 +51,8 @@ nu: 0.0
 
 max_pars:
     method: 'Nelder-Mead'
-    maxiter: 1000
-    maxfev: 1000
+    maxiter: 4000
+    maxfev: 4000
     ftol: 1.0e-3
     xtol: 1.0e-3
 
@@ -79,7 +79,7 @@ model_pars:
         T_prior_type: "TwoSidedErf"
         T_prior_pars: [-0.07, 0.03, 1.0e+06, 1.0e+05]
         counts_prior_type: "TwoSidedErf"
-        counts_prior_pars: [-1.0, 0.1, 1.0e+09, 0.25e+08]
+        counts_prior_pars: [-10.0, 1.0, 1.0e+09, 0.25e+08]
         cen_prior_type: "dgauss"
         cen_prior_pars: [0.27]
 
