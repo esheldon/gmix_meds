@@ -244,6 +244,7 @@ def NbrsFoFExtractor(object):
             if len(q) > 0:
                 inds.extend(list(q))
         inds = numpy.array(inds,dtype=int)
+        self.numbers = data['number'][inds]
         return inds
                     
     def _extract(self):

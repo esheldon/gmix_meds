@@ -304,13 +304,13 @@ def get_sub_fname(fname, rng, work_dir):
 
     return newf
 
-def get_sub(meds_files, rng, work_dir, fof_data=None):
+def get_sub(meds_files, rng, work_dir, fof_file):
     """
     Local files will get cleaned up
     """
     extracted=[]
     
-    if fof_data is None:
+    if fof_file is None:
         #FoF data defaults to 1 per object so range is old range
         for f in meds_files:
             print(f)
@@ -320,15 +320,20 @@ def get_sub(meds_files, rng, work_dir, fof_data=None):
             
         extracted.append(None)
     else:
-        #FIXME need to subset meds and fofs with range
-        
         # do the fofs first
+        print(fof_file)
+        newf = get_sub_fname(fof_file, rng, work_dir)
+        fofex = gmix_meds.nbrsfofs.NbrsFoFExtractor(fof_file, rng[0], rng[1], newf, cleanup=True)
         
         # now do the meds
-        
-        #extracted.append(fof_data_extracted)
-        assert False
-        
+        for f in meds_files:
+            print(f)
+            newf = get_sub_fname(f, rng, work_dir)
+            ex=meds.MEDSNumberExtractor(f, fofex.numbers, newf, cleanup=True)
+            extracted.append(ex)
+
+        extracted.append(fofex)
+    
     return extracted
 
 def get_range(rng_string):
@@ -340,28 +345,23 @@ def get_range(rng_string):
 
     return rng
 
-def setup_work_files(options, meds_files, fof_data=None):
+def setup_work_files(options, meds_files, fof_file):
     """
     Set up local, possibly sub-range meds files
     """
-    meds_files_full=meds_files
+    meds_files_full = meds_files
+    fof_file_full = fof_file
     extracted=None
     rng=get_range( options.fof_range )
     if rng is not None:
         # note variable extracted is cleaned up when MedsExtractors get
         # garbage collected
-        extracted=get_sub(meds_files, rng, options.work_dir, fof_data=fof_data)
-        meds_files_full=meds_files
+        extracted=get_sub(meds_files, rng, options.work_dir, fof_file)
         meds_files=[ex.sub_file for ex in extracted if ex is not None]
-        if extracted[-1] is None:
-            fof_data_extracted = None
-        else:
+        if extracted[-1] is not None:
+            fof_file = extracted[-1].sub_file        
             meds_files = meds_files[:-1]
-    else:
-        meds_files_full = meds_files
-        fof_data_extracted = fof_data
-    return meds_files, meds_files_full, fof_data, fof_data_extracted, extracted
-
+    return meds_files, meds_files_full, fof_file, fof_file_full, extracted
  
 def write_data(data, epoch_data, meta, out_file, work_dir=None):
     """
@@ -397,17 +397,14 @@ def go(config_file, meds_files, out_file, options):
 
     pprint.pprint(conf)
     
-    if options.fof_file is not None:
-        fof_data = fitsio.read(options.fof_file)
-    else:
-        fof_data = None
+    meds_files,meds_files_full,fof_file,fof_file_full,extracted=\
+        setup_work_files(options,meds_files,options.fof_file)
     
-    meds_files,meds_files_full,fof_data,fof_data_extracted,extracted=\
-        setup_work_files(options,meds_files,fof_data=fof_data)
-
-    # if work_dir is sent, we do range by extracting it, see above, so
-    # rng_send would be None
-
+    if fof_file is not None:
+        fof_data = fitsio.read(fof_file)
+    else:
+        fof_data = None        
+    
     conf['config_file']=config_file
     conf['meds_files_full'] = meds_files_full
     
@@ -433,13 +430,14 @@ def go(config_file, meds_files, out_file, options):
     data, epoch_data, meta=run_fitter(meds_files,
                                       meds_files_full,
                                       conf, 
-                                      fof_data=fof_data_extracted,
+                                      fof_data=fof_data,
                                       extra_data=extra_data,
                                       checkpoint_file=checkpoint_file,
                                       checkpoint_data=checkpoint_data)
 
-    if options.work_dir is not None:
-        meta['meds_file'] = meds_files_full
+    meta['meds_file'] = meds_files_full
+    if fof_file_full is not None:
+        meta['fof_file'] = fof_file_full
 
     write_data(data, epoch_data, meta, out_file, work_dir=options.work_dir)
 
