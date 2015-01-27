@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 import numpy
+import os
+import fitsio
 
 def _get_nbrs(mindex,m,buff_frac=0.25,maxsize=512):
     """
@@ -207,7 +209,7 @@ class NbrsFoF(object):
         self._make_fof_data()
 
 
-def NbrsFoFExtractor(object):
+class NbrsFoFExtractor(object):
     """
     Class to extract subet set of FoF file and destroy on exit if wanted.
     """
@@ -249,7 +251,7 @@ def NbrsFoFExtractor(object):
                     
     def _extract(self):
         
-        with fitsio.FITS(self.meds_file) as infits:
+        with fitsio.FITS(self.fof_file) as infits:
             print 'opening sub file:',self.sub_file
             with fitsio.FITS(self.sub_file,'rw',clobber=True) as outfits:
                 old_data = infits[1][:]
@@ -258,7 +260,7 @@ def NbrsFoFExtractor(object):
                 outfits.write(obj_data)
 
     def _check_inputs(self):
-        if self.meds_file==self.sub_file:
+        if self.fof_file==self.sub_file:
             raise ValueError("output file name equals input")
 
         if self.start > self.end:

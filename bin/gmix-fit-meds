@@ -436,9 +436,7 @@ def go(config_file, meds_files, out_file, options):
                                       checkpoint_data=checkpoint_data)
 
     meta['meds_file'] = meds_files_full
-    if fof_file_full is not None:
-        meta['fof_file'] = fof_file_full
-
+    
     write_data(data, epoch_data, meta, out_file, work_dir=options.work_dir)
 
     cleanup_checkpoint(checkpoint_file)

@@ -358,6 +358,7 @@ class MedsFit(dict):
             self.data['number'][dindex] = self.meds_list[0]['number'][mindex]
             self.data['box_size'][dindex] = self.meds_list[0]['box_size'][mindex]                                            
             print('    coadd_objects_id: %ld' % self.data['id'][dindex])
+            print('    number: %ld' % self.data['number'][dindex])
             
             flags = self._obj_check(mindex)
             if flags != 0:
@@ -367,7 +368,6 @@ class MedsFit(dict):
         #if flags set from previous run, skip it
         if self.data['flags'][dindex] != 0:
             return 0
-
         
         # get MultiBandObsList obects
         if self['save_obs_per_fof'] and self.fof_mb_obs_list[self.meds_list[0]['number'][mindex]] is not None:
@@ -1136,10 +1136,10 @@ class MedsFit(dict):
                     #get cutout with same file_id as central object
                     icut_obj, = numpy.where(mod['file_id'][meds_object_data_index] == fid_cen)
                     if len(icut_obj) > 1:
-                        print("                found duplicate cutouts for nbr %d file_id %d" % (cid,fid_cen))
-                        assert len(icut_obj) == 1, "found duplicate cutouts for nbr %d file_id %d!" % (cid,fid_cen)
+                        print("                found duplicate cutouts for nbr %d file_id %d" % (nbr_number,fid_cen))
+                        assert len(icut_obj) == 1, "found duplicate cutouts for nbr %d file_id %d!" % (nbr_number,fid_cen)
                     if len(icut_obj) == 0:
-                        print("                could not find cutout for nbr %d file_id %d" % (cid,fid_cen))
+                        print("                could not find cutout for nbr %d file_id %d" % (nbr_number,fid_cen))
                         continue
                     else:
                         #cutout of object
