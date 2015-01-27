@@ -267,7 +267,7 @@ class MedsFit(dict):
 
     def _print_pars(self, pars, **kw):
         if self['print_params']:
-            print_pars(pars,**kw)
+            print_pars(pars, **kw)
 
     def _print_pars_and_logl(self, pars, logl, **kw):
         if self['print_params']:
