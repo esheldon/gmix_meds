@@ -1,0 +1,129 @@
+#!/usr/bin/env python
+import os
+import sys
+import numpy
+import meds
+import fitsio
+from glob import glob
+import shutil
+import errno
+from gmix_meds.nbrsfofs import get_meds_nbrs
+
+from optparse import OptionParser
+usage = """usage: %prog [options] config file
+
+A config file looks like 
+
+#versions
+meds_version: '013'
+nbrs_version: '001'
+
+#stamps have to overlap by this amount to be nbrs
+overlap_frac: 0.25
+
+#256 stamps are resized to this size
+size_for_256: 512"""
+
+parser = OptionParser(usage=usage)
+
+parser.add_option("--meds-range",default=None,
+                  help=("Inclusive, zero-offset range of MEDS files to process as comma spearated list (e.g., '1,2')"))
+parser.add_option("--get-num-meds",default=False,action="store_true",
+                  help=("Print the number of MEDS files to process to stdout and return"))
+
+def mkdir(path):
+    try:
+        os.makedirs(path)
+    except OSError as ex:
+        if ex.errno == errno.EEXIST and os.path.isdir(path):
+            pass
+        else: raise
+
+def read_yaml(config_path):
+    """
+    read from the file assuming it is yaml
+    """
+    import yaml
+    with open(config_path) as fobj:
+        conf=yaml.load(fobj)
+    return conf
+
+def run_meds_nbrs_dir(meds_version,bands,nbrs_version,meds_dir,conf,base_output_path="${DESDATA}/EXTRA/meds"):
+    """
+    Make the nbrs file for a given meds dir
+    """
+    tilename = meds_dir.split('/')[-1].split('_')[-1]
+    date = meds_dir.split('/')[-1].split('_')[-2]
+    
+    mlist = []
+    for band in bands:
+        bname = '$DESDATA/meds/%s/%s_%s/%s-%s-meds-%s.fits.fz' % (meds_version,date,tilename,tilename,band,meds_version)
+        if os.path.exists(os.path.expandvars(bname)):
+            print bname
+            mlist.append(meds.MEDS(os.path.expandvars(bname)))
+            break
+
+    if len(mlist) == 0:
+        return None
+
+    nbrs_data = get_meds_nbrs(mlist,conf)
+    if nbrs_data is not None:
+        opth = '%s/%s/nbrs-data/%s/%s_%s' % (base_output_path,meds_version,nbrs_version,date,tilename)
+        mkdir(os.path.expandvars(opth))
+        name = '%s-meds-%s-nbrslist-%s.fits' % (tilename,meds_version,nbrs_version)
+        fitsio.write(os.path.expandvars(os.path.join(opth,name)),nbrs_data,clobber=True)
+    return nbrs_data
+
+def get_meds_dirs(meds_version):
+    """
+    Get all MEDS dirs to process.
+    """
+    pattern = "$DESDATA/meds/{meds_version}/*_*"
+    pattern = pattern.format(meds_version=meds_version)
+    pattern = os.path.expandvars(pattern)
+    meds_dirs = glob(pattern)
+    meds_dirs.sort()
+    return meds_dirs
+
+def run_meds_nbrs(meds_version,bands,nbrs_version,conf,meds_range=None):
+    """
+    Make all of the nbrs file for every MEDS dir
+    """
+    meds_dirs = get_meds_dirs(meds_version)
+    
+    if meds_range is None:
+        meds_range = [0,len(meds_dirs)-1]
+
+    for dind in xrange(meds_range[0],meds_range[1]+1):
+        meds_dir = meds_dirs[dind]
+        run_meds_nbrs_dir(meds_version,bands,nbrs_version,meds_dir,conf)
+        
+def main():
+    options, args = parser.parse_args(sys.argv[1:])
+    if len(args) == 0:
+        parser.print_help()
+        sys.exit(45)
+
+    conf = read_yaml(args[0])
+    
+    meds_version = conf['meds_version']
+    if options.get_num_meds:
+        print len(get_meds_dirs(meds_version))
+    else:
+        bands = ['g','r','i','z']
+        nbrs_version = conf['nbrs_version']
+
+        obase = os.path.join("${DESDATA}/EXTRA/meds",meds_version,'nbrs-data',nbrs_version)
+        mkdir(os.path.expandvars(obase))
+        shutil.copy(args[0],os.path.expandvars(os.path.join(obase,os.path.split(args[0])[-1])))
+
+        if options.meds_range is not None:
+            meds_range = [int(el) for el in options.meds_range.split(',')]
+        else:
+            meds_range = None
+        run_meds_nbrs(meds_version,bands,nbrs_version,conf,meds_range=meds_range)
+    
+if __name__ == '__main__':
+    main()
+    
+
