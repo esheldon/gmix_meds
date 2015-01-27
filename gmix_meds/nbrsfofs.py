@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import numpy
 
-def get_nbrs(mindex,m,buff_frac=0.25,maxsize=512):
+def _get_nbrs(mindex,m,buff_frac=0.25,maxsize=512):
     """
     Gets nbrs of any postage stamp in the MEDS.
     
@@ -104,7 +104,7 @@ def get_meds_nbrs(meds_list,conf):
             assert m['id'][mindex] == meds_list[0]['id'][mindex]
 
             #add on the nbrs
-            nbrs.extend(list(get_nbrs(mindex,m,buff_frac=float(conf['overlap_frac']),maxsize=int(conf['size_for_256']))))
+            nbrs.extend(list(_get_nbrs(mindex,m,buff_frac=float(conf['overlap_frac']),maxsize=int(conf['size_for_256']))))
 
         #only keep unique nbrs
         nbrs = numpy.unique(numpy.array(nbrs))
@@ -205,4 +205,61 @@ class NbrsFoF(object):
         bar.finish()
         
         self._make_fof_data()
+
+
+def NbrsFoFExtractor(object):
+    """
+    Class to extract subet set of FoF file and destroy on exit if wanted.
+    """
+
+    def __init__(self, fof_file, start, end, sub_file, cleanup=False):
+        self.fof_file = fof_file
+        self.start = start
+        self.end = end
+        self.sub_file = sub_file
+        self.cleanup = cleanup
+        self._check_inputs()
+        
+        self._extract()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exception_type, exception_value, traceback):
+        self.close()
+
+    def __del__(self):
+        self.close()
+
+    def close(self):
+        if self.cleanup:
+            if os.path.exists(self.sub_file):
+                print 'removing sub file:',self.sub_file
+                os.remove(self.sub_file)
+
+    def _get_inds(self, data):
+        inds = []
+        for fofid in range(self.start,self.end+1):
+            q, = numpy.where(data['fofid'] == fofid)
+            if len(q) > 0:
+                inds.extend(list(q))
+        inds = numpy.array(inds,dtype=int)
+        return inds
+                    
+    def _extract(self):
+        
+        with fitsio.FITS(self.meds_file) as infits:
+            print 'opening sub file:',self.sub_file
+            with fitsio.FITS(self.sub_file,'rw',clobber=True) as outfits:
+                old_data = infits[1][:]
+                inds = self._get_inds(old_data)
+                obj_data = old_data[inds]
+                outfits.write(obj_data)
+
+    def _check_inputs(self):
+        if self.meds_file==self.sub_file:
+            raise ValueError("output file name equals input")
+
+        if self.start > self.end:
+            raise ValueError("one must extract at least one object")
 
