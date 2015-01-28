@@ -340,7 +340,9 @@ class MedsFit(dict):
         """
         Process the indicated object through the requested fits
         """
-
+        
+        #if self.data['processed'][dindex] == 0 you must set to 1 before leaving the routine
+        
         t0=time.time()
         
         #this is from the old code, but it is easier than 
@@ -363,29 +365,37 @@ class MedsFit(dict):
             flags = self._obj_check(mindex)
             if flags != 0:
                 self.data['flags'][dindex] = flags
-                return 0
+                self.data['processed'][dindex] = 1
+                self.data['time'][dindex] = time.time()-t0
+                return
 
-        #if flags set from previous run, skip it
-        if self.data['flags'][dindex] != 0:
-            return 0
-        
         # get MultiBandObsList obects
         if self['save_obs_per_fof'] and self.fof_mb_obs_list[self.meds_list[0]['number'][mindex]] is not None:
             coadd_mb_obs_list = self.fof_mb_obs_list[self.meds_list[0]['number'][mindex]][0]
             mb_obs_list = self.fof_mb_obs_list[self.meds_list[0]['number'][mindex]][1]
             n_im = self.fof_mb_obs_list[self.meds_list[0]['number'][mindex]][2]
+            if self.data['processed'][dindex] == 0:
+                self.data['nimage_use'][dindex, :] = n_im[:]
         else:
             coadd_mb_obs_list, mb_obs_list, n_im = self._get_multi_band_observations(mindex)
-            
+            if self.data['processed'][dindex] == 0:
+                self.data['nimage_use'][dindex, :] = n_im[:]
+                
             if len(coadd_mb_obs_list) != self['nband']:
                 print("  some coadd failed to fit psf")
-                self.data['flags'][dindex] = PSF_FIT_FAILURE 
+                self.data['flags'][dindex] = PSF_FIT_FAILURE
+                self.data['time'][dindex] = time.time()-t0
+                if self.data['processed'][dindex] == 0:
+                    self.data['processed'][dindex] = 1
                 return
 
             if len(mb_obs_list) != self['nband']:
                 print("  not all bands had at least one psf fit"
                       " succeed and were without image flags")
                 self.data['flags'][dindex] = PSF_FIT_FAILURE 
+                self.data['time'][dindex] = time.time()-t0
+                if self.data['processed'][dindex] == 0:
+                    self.data['processed'][dindex] = 1
                 return
 
             #save extra copies of images if doing nbrs model
@@ -397,17 +407,9 @@ class MedsFit(dict):
                             obs.image_orig = obs.image.copy()
                             obs.weight_orig = obs.weight.copy()
 
-
             if self['save_obs_per_fof']:
                 self.fof_mb_obs_list[self.meds_list[0]['number'][mindex]] = [coadd_mb_obs_list, mb_obs_list, n_im]
                 
-        #fill in more data and checkpoint
-        if self.data['processed'][dindex] == 0:
-            self.data['nimage_use'][dindex, :] = n_im[:]
-
-            # for checkpointing, only do once
-            self.data['processed'][dindex] = 1
-            
         #helpful I/O
         print("dims:",coadd_mb_obs_list[0][0].image.shape)
 
@@ -431,6 +433,10 @@ class MedsFit(dict):
             print("Got utter failure error: %s" % str(err))
             flags=UTTER_FAILURE
 
+        # for checkpointing, only do once
+        if self.data['processed'][dindex] == 0:
+            self.data['processed'][dindex] = 1
+        
         #save flags of latest fit
         self.data['flags'][dindex] = flags
         self.data['time'][dindex] = time.time()-t0

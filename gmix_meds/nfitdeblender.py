@@ -61,7 +61,7 @@ class MLDeblender(MedsFit):
                     print('index: %d:%d' % (mindex,len(rfofmems)-1), )
                     ti = time.time()                    
                     #skip if flags are set from first try
-                    if self.data['flags'][mindex] > 0 and self.data['flags'][mindex] != NO_ATTEMPT:
+                    if self.data['flags'][mindex] > 0:
                         pass
                     else:
                         self.fit_obj(mindex,model_neighbors=True)
@@ -88,7 +88,7 @@ class MLDeblender(MedsFit):
         """
         dindex=self.dindex
 
-        if self.data['flags'][dindex] == NO_ATTEMPT:        
+        if self.data['processed'][dindex] == 0:        
             flags=0
             # fit both coadd and se psf flux if exists
             self._fit_psf_flux()
@@ -108,6 +108,7 @@ class MLDeblender(MedsFit):
             #test is in do_fits above
             fit_obj = True
             flags = self.data['flags'][dindex]
+            assert flags == 0
         
         if fit_obj:
             for model in self['fit_models']:
