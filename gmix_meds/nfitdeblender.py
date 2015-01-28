@@ -104,6 +104,8 @@ class MLDeblender(MedsFit):
                 print(mess)            
                 flags |= LOW_PSF_FLUX
         else:
+            #we don't get here if flags != from previous attempt
+            #test is in do_fits above
             fit_obj = True
             flags = self.data['flags'][dindex]
         
