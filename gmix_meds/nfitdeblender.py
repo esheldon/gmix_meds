@@ -86,13 +86,13 @@ class MLDeblender(MedsFit):
         """
         Fit psf flux and other models
         """
-        
+        dindex=self.dindex
+
         if self.data['flags'][dindex] == NO_ATTEMPT:        
             flags=0
             # fit both coadd and se psf flux if exists
             self._fit_psf_flux()
 
-            dindex=self.dindex
             s2n=self.data['psf_flux'][dindex,:]/self.data['psf_flux_err'][dindex,:]
             max_s2n=numpy.nanmax(s2n)
 
@@ -126,19 +126,21 @@ class MLDeblender(MedsFit):
         wrapper to run fit, copy pars, maybe make plots
         sets .fitter or .coadd_fitter
         """
+        dindex = self.mindex
+        
         if coadd:
             if self.data['processed'][dindex] == 0:
                 self.guesser = self._get_guesser('coadd_psf')
             else:
-                pars = self.data['coadd_'+model+'_pars_best'][dindex]
-                self.guesser = FixedParsGuesser(pars,pars*0.1)
+                pars = self.data['coadd_'+model+'_pars'][dindex]
+                self.guesser = FixedParsGuesser(pars,pars*self['deblend_guess_frac'])
             mb_obs_list=self.sdata['coadd_mb_obs_list']
         else:
             if self.data['processed'][dindex] == 0:
                 self.guesser = self._get_guesser('me_psf')
             else:
-                pars = self.data[model+'pars_best'][dindex]
-                self.guesser = FixedParsGuesser(pars,pars*0.1)
+                pars = self.data[model+'pars'][dindex]
+                self.guesser = FixedParsGuesser(pars,pars*self['deblend_guess_frac'])
             mb_obs_list=self.sdata['mb_obs_list']
 
         fitter=self._fit_model(mb_obs_list, model)
@@ -177,7 +179,7 @@ class MLDeblender(MedsFit):
         model: string
             model to fit
         params: dict
-            from the config file 'me_iter' or 'coadd_iter'
+            from the config file
         """
 
         prior=self['model_pars'][model]['gflat_prior']
