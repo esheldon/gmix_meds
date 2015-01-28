@@ -15,7 +15,8 @@ bands:     ["r","i","z"]
 # in here
 medsconf: "013"
 
-nper: 20
+nper: 15
 
-# marg sky
+# new emcee and simplifications
+# new psf
 config: "nmeds016"
