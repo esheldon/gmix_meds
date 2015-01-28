@@ -10,171 +10,77 @@ class MLDeblender(MedsFit):
     Maximum Likelihood Deblender
     """
     
-    def __init__(self,self,
-                 conf,
-                 priors,
-                 meds_files,
-                 fof_range=None,
-                 model_data=None,
-                 checkpoint_file=None,
-                 checkpoint_data=None):
-        self.fof_range = fof_range
-        super(MLDeblender,self).__init__(self,
-                                         conf,
-                                         priors,
-                                         meds_files,
-                                         obj_range=None,
-                                         model_data=model_data,
-                                         checkpoint_file=checkpoint_file,
-                                         checkpoint_data=checkpoint_data)
-
-    """
-    Indexing notes:
-    
-        self.dindex = 0-offset index into number of objects currently being processed
-            This also indexes the output data table, self.data.
-        self.mindex = self.index_list[dindex] 
-            = 0-offset index into input meds file
-        
-    Note that mindex and dindex can differ if a finite range of objects is begin processed.
-    Also, if a subset of a meds file is passed in, mindex is an index into the subset of 
-    the meds file. 
-    
-    Note that in the case of deblending, we never use a subset the range of objects in the file using
-    self.obj_range. We do use subsets with the fof_range.
-    
-    The FoFs are made with the global seg map IDs. These are usually called "number" and are 
-    1-offset. The mindex above equals number-1, if a total MEDs file is being processed. However 
-    for subsets, the last statement is not true. Instead then mindex is for the local MEDS file only. 
-    
-    Below, we build lookup tables to enable easy translation. They are
-    
-        self.fofid2dindex = this is a dict keyed on the fofid - it returns the set of dindexes
-            that gives the members of the FoF group
-        self.fofid2number = a dict keyed by fofid that returns all the seg map IDs of a given FoF
-        self.dindex2fofid = a lookup table that returns the fofid of a given object
-    
-    If one loops through the fofids from 0 the Nfofs-1, you get back all dindexes in order and can 
-    use them in the self.index_list to get the mindexes.
-        
-        for fofid in fofids:
-            fof_dindexes = self.fofid2dindex[fofid] # these index the self.data table
-            fof_mindexes = self.index_list[fof_dindexes] # these subscript the local MEDS file
-            
-    """
-
-    def _set_index_list(self):
-        """
-        set the list of objects to be processed from the fof groups
-        """
-        if self.fof_range is None:
-            start_fof = 0
-            end_fof = len(self.mode_data['fofs']['fofid'])-1
-        else:
-            start_fof = self.fof_range[0]
-            end_fof = self.fof_range[1]
-            
-        #build the fof hash which sets the dindexes            
-        self.fofid2dindex = {}
-        self.fofid2number = {}
-        self.dindex2fofid = []
-        loc = 0
-        segnumbers = []
-        for fofid in range(start_fof,end_fof+1):
-            q, = np.where(self.model_data['fofs']['fofid'] == fofid)
-            assert len(q) > 0, print 'Found zero length FoF! fofid = %ld' % fofid
-            segnumbers.extend(list(self.model_data['fofs']['number'][q]))
-            
-            self.fofid2dindex[fofid] = np.arange(loc,loc+len(q))
-            self.fofid2number[fofid] = self.model_data['fofs']['number'][q]
-            self.dindex2fofid.extend(list([fofid for i in xrange(len(q))]))            
-            loc += len(q)
-        segnumbers = np.array(segnumbers,dtype=int)
-        self.dindex2fofid = np.array(self.dindex2fofid,dtype=int)
-            
-        #now set self.index_list to point the dindex-th element 
-        #with segnumbers[dindex] to the proper mindex in local meds file
-        
-        
-            
-        #double check against the fofid2number hash above against internal 
-        #seg ids in MEDS
-        
-        
-        
     def do_fits(self):
         """
         Fit all objects in our list
         """
-
-        last=self.index_list[-1]
-        num=len(self.index_list)
-
-        #################################
-        #first get fiducial models
-        #################################
         
         t0=time.time()
+        num = len(self.fofids)
         
-        #FIXME sort by size or mag
-        #FIXME do in order of fofs
-        for dindex in xrange(num):
-            if self.data['processed'][dindex] > 0:
+        for fofid in self.fofids:
+            if self['save_obs_per_fof']:
+                self.fof_mb_obs_list = {}
+                
+            #################################
+            #first get fiducial models
+            #################################
+            
+            fofmems = self.fofid2mindex[fofid]
+            q = numpy.argsort(self.meds_list[0]['box_size'][fofmems])
+            q = q[::-1]
+            sfofmems = fofmems[q]
+            
+            for mindex in fofmems:
+                if self.data['processed'][mindex] > 0:
+                    continue
+                
+                print('index: %d:%d' % (mindex,len(fofmems)-1), )
+                ti = time.time()
+                self.fit_obj(mindex,model_neighbors=False)
+                ti = time.time()-ti
+                print('    time:',ti)
+                
+            
+            #################################
+            #now deblend the light
+            #################################
+                
+            #if only 1 mem, no deblending needed!
+            if len(fofmems) == 1:
                 continue
-
-            mindex = self.index_list[dindex]
-            print('index: %d:%d' % (mindex,last), )
-            ti = time.time()
-            
-            #saving this bit of code for later
-            self.fit_obj(dindex)
-            ti = time.time()-ti
-            print('    time:',ti)
-            
-        tm=time.time()-t0
-        print("time:",tm)
-        print("time per:",tm/num)
-        
-        #################################
-        #now deblend the light
-        #################################
-        
-        #FIXME: loop through fofs, only run fofs with 1 object once, so skip them
-        fofids = np.unique(self.model_data['fofs']['fofid'])
-        for fofid in fofids:
-            fofmems = self.fofmem_hash[fofid]
+                        
             for itr in range(self['max_deblend_itr']):
                 #copy data
                 self.prev_data = self.data.copy()
                 
                 rfofmems = numpy.random.permutation(fofmems)
-                for dindex in rfofmems:
-                    self.data['processed'][dindex] += 1
-
-                    mindex = self.index_list[dindex]
-                    print('index: %d:%d' % (mindex,last), )
-                    ti = time.time()            
-                
+                for mindex in rfofmems:
+                    self.data['processed'][mindex] += 1
+                    
+                    print('index: %d:%d' % (mindex,len(rfofmems)-1), )
+                    ti = time.time()                    
                     #skip if flags are set from first try
-                    if self.data['flags'][dindex] > 0 and self.data['flags'][dindex] != NO_ATTEMPT:
+                    if self.data['flags'][mindex] > 0 and self.data['flags'][mindex] != NO_ATTEMPT:
                         pass
                     else:
-                        self.fit_obj(dindex)
+                        self.fit_obj(mindex,model_neighbors=True)
                     ti = time.time()-ti
                     print('    time:',ti)
-                
-                #FIXME: do conv check here
+                    
+                #FIXME do conv check
                 
                 tm=time.time()-t0
                 self._try_checkpoint(tm) # only at certain intervals
+                    
+            #FIXME: do cov comp here...
 
-
-        #FIXME: do cov comp here...
-
+            if self['save_obs_per_fof']:
+                del self.fof_mb_obs_list
+        
         tm=time.time()-t0
         print("time:",tm)
-        print("time per:",tm/num)
-        
+        print("time per fof:",tm/num)
         
     def _fit_all_models(self):
         """

@@ -23,7 +23,13 @@ parser = OptionParser(__doc__)
 parser.add_option("--fof-range",default=None,
                   help=("Inclusive, zero-offset range of FoFs to "
                         "process"))
-parser.add_option("--work-dir", default='.',
+
+#####################################
+# NOT WORKING YET!
+# Needs changes in MEDS code
+# -Matt
+#
+parser.add_option("--work-dir", default=None,
                   help=("copy files local for processing.  "
                         "Also write to local files and copy out."
                         "The local files are not removed."))
@@ -34,14 +40,11 @@ parser.add_option("--profile", action='store_true',
 parser.add_option("--make-plots", action='store_true',
                   help=("make some plots"))
 
-parser.add_option("--nbrs-file", default=None,
-                  help=("file with the neighbors of each object"))
-
 parser.add_option("--fof-file", default=None,
-                  help=("file used to group galaxies for processing"))
+                  help=("list of FoFs to use to deblend the light of the objects"))
 
 parser.add_option("--model-extra-info", default=None,
-                  help=("extra info for neighbors modelling"))
+                  help=("extra info like flags for light deblending"))
 
 
 def make_ngmix_meta(conf, meds_meta_list, meds_files):
@@ -88,8 +91,8 @@ def make_ngmix_meta(conf, meds_meta_list, meds_files):
 def run_ngmix(meds_files,
               meds_files_full,
               conf,
-              fof_data=None,
-              extra_data=None,
+              fof_range=None,
+              model_data=None,
               checkpoint_file=None,
               checkpoint_data=None):
     import ngmix
@@ -116,25 +119,25 @@ def run_ngmix(meds_files,
             set_g_prior(params)
             set_T_prior(params)
             set_counts_prior(params)
-
-   if conf['fitter_class'] == 'deblender':
+            
+            
+    if conf['fitter_class'] == 'deblender':
         meds_fitter = gmix_meds.nfitdeblender.MLDeblender
-   else:
+    else:
         raise ValueError("bad fitter class: '%s'" % conf['fitter_class'])
-
+    
     gm=meds_fitter(conf,
                    priors,
                    meds_files,
-                   fof_data=fof_data,
-                   extra_data=extra_data,
+                   fof_range=fof_range,
+                   model_data=model_data,
                    checkpoint_file=checkpoint_file,
                    checkpoint_data=checkpoint_data)
     gm.do_fits()
     data=gm.get_data()
     epoch_data=gm.get_epoch_data()
     meds_meta=gm.get_meds_meta_list()
-
-
+    
     meta=make_ngmix_meta(conf, meds_meta, meds_files_full)
 
     return data, epoch_data, meta
@@ -207,6 +210,42 @@ def set_cen_prior(params):
     p=ngmix.priors.CenPrior(0.0, 0.0, width, width)
     params['cen_prior'] = p
 
+def get_sub_fname(fname, rng, work_dir):
+    rng_string = '%s-%s' % (rng[0], rng[1])
+
+    bname = os.path.basename(fname)
+
+    bname = bname.replace('.fits.fz','').replace('.fits','')
+    bname = '%s-%s.fits' % (bname, rng_string)
+
+    newf = os.path.join(work_dir, bname)
+
+    return newf
+
+def get_sub(meds_files, rng, work_dir):
+    """
+    Local files will get cleaned up
+    """
+    extracted=[]
+
+    for f in meds_files:
+
+        print(f)
+        newf = get_sub_fname(f, rng, work_dir)
+        #FIXME: extractor for FoFs needs to be used here
+        ex=meds.MEDSExtractor(f, rng[0], rng[1], newf, cleanup=True)
+        extracted.append(ex)
+
+    return extracted
+
+def get_range(rng_string):
+    if rng_string is not None:
+        rng = rng_string.split(',')
+        rng = [int(i) for i in rng]
+    else:
+        rng=None
+
+    return rng
 
 def go_profile(config_file, meds_files, out_file, options):
     import cProfile
@@ -252,8 +291,8 @@ def get_checkpoint_data(out_file):
 def run_fitter(meds_files,
                meds_files_full,
                conf,
-               fof_data=None,
-               extra_data=None,
+               fof_range=None,
+               model_data=None,
                checkpoint_file=None,
                checkpoint_data=None):
     """
@@ -264,8 +303,8 @@ def run_fitter(meds_files,
         data, epoch_data, meta = run_ngmix(meds_files,
                                            meds_files_full,
                                            conf,
-                                           fof_data=fof_data,
-                                           extra_data=extra_data,
+                                           fof_range=fof_range,
+                                           model_data=model_data,
                                            checkpoint_file=checkpoint_file,
                                            checkpoint_data=checkpoint_data)
     else:
@@ -273,76 +312,32 @@ def run_fitter(meds_files,
 
     return data, epoch_data, meta
 
-def get_sub_fname(fname, rng, work_dir):
-    rng_string = '%s-%s' % (rng[0], rng[1])
 
-    bname = os.path.basename(fname)
-
-    bname = bname.replace('.fits.fz','').replace('.fits','')
-    bname = '%s-%s.fits' % (bname, rng_string)
-
-    newf = os.path.join(work_dir, bname)
-
-    return newf
-
-def get_sub(meds_files, rng, work_dir, fof_file):
+def setup_work_files(options, meds_files):
     """
-    Local files will get cleaned up
+    #Set up local, possibly sub-range meds files
     """
-    extracted=[]
-    
-    if fof_file is None:
-        #FoF data defaults to 1 per object so range is old range
-        for f in meds_files:
-            print(f)
-            newf = get_sub_fname(f, rng, work_dir)
-            ex=meds.MEDSExtractor(f, rng[0], rng[1], newf, cleanup=True)
-            extracted.append(ex)
-            
-        extracted.append(None)
-    else:
-        # do the fofs first
-        print(fof_file)
-        newf = get_sub_fname(fof_file, rng, work_dir)
-        fofex = gmix_meds.nbrsfofs.NbrsFoFExtractor(fof_file, rng[0], rng[1], newf, cleanup=True)
-        
-        # now do the meds
-        for f in meds_files:
-            print(f)
-            newf = get_sub_fname(f, rng, work_dir)
-            ex=meds.MEDSNumberExtractor(f, fofex.numbers, newf, cleanup=True)
-            extracted.append(ex)
-
-        extracted.append(fofex)
-    
-    return extracted
-
-def get_range(rng_string):
-    if rng_string is not None:
-        rng = rng_string.split(',')
-        rng = [int(i) for i in rng]
-    else:
-        rng=None
-
-    return rng
-
-def setup_work_files(options, meds_files, fof_file):
-    """
-    Set up local, possibly sub-range meds files
-    """
-    meds_files_full = meds_files
-    fof_file_full = fof_file
+    meds_files_full=meds_files
     extracted=None
+    rng_send=None    
     rng=get_range( options.fof_range )
+    
     if rng is not None:
-        # note variable extracted is cleaned up when MedsExtractors get
-        # garbage collected
-        extracted=get_sub(meds_files, rng, options.work_dir, fof_file)
-        meds_files=[ex.sub_file for ex in extracted if ex is not None]
-        if extracted[-1] is not None:
-            fof_file = extracted[-1].sub_file        
-            meds_files = meds_files[:-1]
-    return meds_files, meds_files_full, fof_file, fof_file_full, extracted
+        if options.work_dir is not None:
+            #FIXME: comment out assert when work_dir is working
+            assert False, "--work-dir option cannot be used for light deblender"
+            
+            # note variable extracted is cleaned up when MedsExtractors get
+            # garbage collected
+            extracted=get_sub(meds_files, rng, options.work_dir)
+            meds_files_full=meds_files
+            meds_files=[ex.sub_file for ex in extracted]
+            rng_send=None
+        else:
+            rng_send=rng
+    
+    return rng_send, meds_files, meds_files_full, extracted
+
  
 def write_data(data, epoch_data, meta, out_file, work_dir=None):
     """
@@ -351,7 +346,7 @@ def write_data(data, epoch_data, meta, out_file, work_dir=None):
     from gmix_meds.files import StagedOutFile
 
     if work_dir is None:
-        work_dir='.'
+        work_dir=os.environ.get('TMPDIR','/tmp')
 
     with StagedOutFile(out_file, tmpdir=work_dir) as sf:
         print('writing:',sf.path)
@@ -377,36 +372,36 @@ def go(config_file, meds_files, out_file, options):
     conf['make_plots'] = options.make_plots
 
     pprint.pprint(conf)
-    
-    meds_files,meds_files_full,fof_file,fof_file_full,extracted=\
-        setup_work_files(options,meds_files,options.fof_file)
-    
-    if fof_file is not None:
-        fof_data = fitsio.read(fof_file)
-    else:
-        fof_data = None        
-    
+
+    rng_send,meds_files,meds_files_full,extracted=\
+                        setup_work_files(options,meds_files)
+
+    # if work_dir is sent, we do range by extracting it, see above, so
+    # rng_send would be None
+
     conf['config_file']=config_file
-    conf['meds_files_full'] = meds_files_full
-    
-    extra_data = {}
-    
+
+    if options.fof_file is not None:
+        model_data={}
+        model_data['fofs'] = fitsio.read(options.fof_file)
+    else:
+        model_data=None
+
     if options.model_extra_info is not None:
-        extra_data['model_extra_info'] = fitsio.read(options.model_extra_info)
-        
-    if options.nbrs_file is not None:
-        extra_data['nbrs'] = fitsio.read(options.nbrs_file)
-        
+        assert model_data is not None,"You cannot use --model-extra-info without --fof-file!"
+        model_data['model_extra_info'] = fitsio.read(options.model_extra_info)
+
     data, epoch_data, meta=run_fitter(meds_files,
                                       meds_files_full,
                                       conf, 
-                                      fof_data=fof_data,
-                                      extra_data=extra_data,
+                                      fof_range=rng_send,
+                                      model_data=model_data,
                                       checkpoint_file=checkpoint_file,
                                       checkpoint_data=checkpoint_data)
 
-    meta['meds_file'] = meds_files_full
-    
+    if options.work_dir is not None:
+        meta['meds_file'] = meds_files_full
+
     write_data(data, epoch_data, meta, out_file, work_dir=options.work_dir)
 
     cleanup_checkpoint(checkpoint_file)
@@ -421,7 +416,10 @@ def main():
     config_file=args[0]
     out_file=args[1]
     meds_files=args[2:]
-
+    
+    #FIXME: comment this out when workdir option is working
+    options.work_dir = None
+    
     if options.profile:
         go_profile(config_file, meds_files, out_file, options)
     else:

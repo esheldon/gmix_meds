@@ -246,6 +246,9 @@ class NbrsFoFExtractor(object):
             if len(q) > 0:
                 inds.extend(list(q))
         inds = numpy.array(inds,dtype=int)
+        #always write this sorted!
+        q = np.argsort(data['number'][inds])
+        inds = inds[q]
         self.numbers = data['number'][inds]
         return inds
                     
