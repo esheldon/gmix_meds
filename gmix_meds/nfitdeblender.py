@@ -31,7 +31,7 @@ class MLDeblender(MedsFit):
             q = q[::-1]
             sfofmems = fofmems[q]
             
-            for mindex in fofmems:
+            for mindex in sfofmems:
                 if self.data['processed'][mindex] > 0:
                     continue
                 
