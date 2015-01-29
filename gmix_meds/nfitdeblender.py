@@ -86,6 +86,7 @@ class MLDeblender(MedsFit):
                         print_pars(old,front='            old      ')
                         print_pars(new,front='            new      ')
                         print_pars(new/old-1.0,front='            frac diff')
+                        print_pars(new-old,front='            abs diff ')
                         
                 tm=time.time()-t0
                 self._try_checkpoint(tm) # only at certain intervals
