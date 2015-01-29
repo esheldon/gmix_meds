@@ -117,9 +117,9 @@ def run_ngmix(meds_files,
             set_T_prior(params)
             set_counts_prior(params)
 
-   if conf['fitter_class'] == 'deblender':
+    if conf['fitter_class'] == 'deblender':
         meds_fitter = gmix_meds.nfitdeblender.MLDeblender
-   else:
+    else:
         raise ValueError("bad fitter class: '%s'" % conf['fitter_class'])
 
     gm=meds_fitter(conf,

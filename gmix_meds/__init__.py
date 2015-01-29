@@ -18,3 +18,4 @@ from . import dbload
 from . import files
 
 from . import nbrsfofs
+from . import nfitdeblender

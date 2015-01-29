@@ -52,6 +52,11 @@ class MLDeblender(MedsFit):
                         
             for itr in range(self['max_deblend_itr']):
                 #copy data
+                print (' ')
+                print('================================================================================')
+                print('================================================================================')
+                print('deblend itr: %d of %d' % (itr+1,self['max_deblend_itr']))
+                
                 self.prev_data = self.data.copy()
                 
                 rfofmems = numpy.random.permutation(fofmems)
@@ -62,6 +67,8 @@ class MLDeblender(MedsFit):
                     ti = time.time()                    
                     #skip if flags are set from first try
                     if self.data['flags'][mindex] > 0:
+                        print('    flags:',self.data['flags'][mindex])
+                        print('    PASS')
                         pass
                     else:
                         self.fit_obj(mindex,model_neighbors=True)
@@ -69,12 +76,20 @@ class MLDeblender(MedsFit):
                     print('    time:',ti)
                     
                 #FIXME do conv check
-                
+                print('convergence:')
+                for mindex in fofmems:
+                    print('    mindex:',mindex)
+                    for model in self['fit_models']:
+                        print('        %s:' % model)
+                        old = self.prev_data[model+'_pars'][mindex]
+                        new = self.data[model+'_pars'][mindex]
+                        print_pars(old,front='            old      ')
+                        print_pars(new,front='            new      ')
+                        print_pars(new/old-1.0,front='            frac diff')
+                        
                 tm=time.time()-t0
                 self._try_checkpoint(tm) # only at certain intervals
                     
-            #FIXME: do cov comp here...
-
             if self['save_obs_per_fof']:
                 del self.fof_mb_obs_list
         
@@ -142,7 +157,7 @@ class MLDeblender(MedsFit):
             if self.data['processed'][dindex] == 0:
                 self.guesser = self._get_guesser('me_psf')
             else:
-                pars = self.data[model+'pars'][dindex]
+                pars = self.data[model+'_pars'][dindex]
                 self.guesser = FixedParsGuesser(pars,pars*self['deblend_guess_frac'])
             mb_obs_list=self.sdata['mb_obs_list']
 
@@ -165,7 +180,10 @@ class MLDeblender(MedsFit):
         Fit all the simple models
         """
 
-        fitter=self. _fit_simple_max(self, mb_obs_list, model, self['nm_pars'], ntry=1)
+        fitter=self._fit_simple_max(mb_obs_list, model, self['max_pars'])
+        
+        #wow this next bit is a total hack...
+        fitter.get_best_pars = lambda : fitter.get_result()['pars']
         
         #FIXME - not doing MCMC stats clearly - any side effects?
         # also adds .weights attribute
@@ -173,7 +191,7 @@ class MLDeblender(MedsFit):
 
         return fitter
         
-    def _fit_simple_max(self, mb_obs_list, model, nm_pars, ntry=1):
+    def _fit_simple_max(self, mb_obs_list, model, max_pars):
         """
         parameters
         ----------
@@ -187,20 +205,19 @@ class MLDeblender(MedsFit):
 
         prior=self['model_pars'][model]['gflat_prior']
 
-        method = 'Nelder-Mead'
-
         fitter=MaxSimple(mb_obs_list,
                          model,
                          prior=prior,
-                         method=method)
+                         method=max_pars['method'])
 
         guess=self.guesser(prior=prior)
-
-        for i in xrange(ntry):
-            fitter.run_max(guess, **nm_pars)
+        print_pars(guess,front='        guess:')
+        
+        for i in xrange(max_pars['ntry']):
+            fitter.run_max(guess, **max_pars)
             res=fitter.get_result()
 
-            if (ntry > 1) and (res['flags'] & EIG_NOTFINITE) != 0:
+            if (max_pars['ntry'] > 1) and (res['flags'] & EIG_NOTFINITE) != 0:
                 # bad covariance matrix, need to get a new guess
                 print_pars(res['pars'],front='        bad cov at pars')
                 self.guesser=FromParsGuesser(guess, guess*0.1)
@@ -208,5 +225,9 @@ class MLDeblender(MedsFit):
                 print_pars(guess,front='        new guess')
             else:
                 break
-
+            
+        #print_pars(res['pars'],front='        final:')
+        print('        flags:',res['flags'])
+            
         return fitter
+

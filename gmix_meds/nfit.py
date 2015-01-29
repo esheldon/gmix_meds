@@ -359,8 +359,6 @@ class MedsFit(dict):
             self.data['id'][dindex] = self.meds_list[0]['id'][mindex]
             self.data['number'][dindex] = self.meds_list[0]['number'][mindex]
             self.data['box_size'][dindex] = self.meds_list[0]['box_size'][mindex]                                            
-            print('    coadd_objects_id: %ld' % self.data['id'][dindex])
-            print('    number: %ld' % self.data['number'][dindex])
             
             flags = self._obj_check(mindex)
             if flags != 0:
@@ -368,9 +366,12 @@ class MedsFit(dict):
                 self.data['processed'][dindex] = 1
                 self.data['time'][dindex] = time.time()-t0
                 return
-
+        
+        print('    coadd_objects_id: %ld' % self.data['id'][dindex])
+        print('    number: %ld' % self.data['number'][dindex])
+        
         # get MultiBandObsList obects
-        if self['save_obs_per_fof'] and self.fof_mb_obs_list[self.meds_list[0]['number'][mindex]] is not None:
+        if self['save_obs_per_fof'] and self.meds_list[0]['number'][mindex] in self.fof_mb_obs_list:
             coadd_mb_obs_list = self.fof_mb_obs_list[self.meds_list[0]['number'][mindex]][0]
             mb_obs_list = self.fof_mb_obs_list[self.meds_list[0]['number'][mindex]][1]
             n_im = self.fof_mb_obs_list[self.meds_list[0]['number'][mindex]][2]
@@ -398,20 +399,19 @@ class MedsFit(dict):
                     self.data['processed'][dindex] = 1
                 return
 
-            #save extra copies of images if doing nbrs model
-            if model_neighbors:
-                for mbos in [coadd_mb_obs_list, mb_obs_list]:
-                    for band, obs_list in enumerate(mb_obs_list):
-                        for obs in obs_list:
-                            #copy old image and weight map
-                            obs.image_orig = obs.image.copy()
-                            obs.weight_orig = obs.weight.copy()
+            #save extra copies of images
+            for mbos in [coadd_mb_obs_list, mb_obs_list]:
+                for band, obs_list in enumerate(mb_obs_list):
+                    for obs in obs_list:
+                        #copy old image and weight map
+                        obs.image_orig = obs.image.copy()
+                        obs.weight_orig = obs.weight.copy()
 
             if self['save_obs_per_fof']:
                 self.fof_mb_obs_list[self.meds_list[0]['number'][mindex]] = [coadd_mb_obs_list, mb_obs_list, n_im]
                 
         #helpful I/O
-        print("dims:",coadd_mb_obs_list[0][0].image.shape)
+        print("    dims:",coadd_mb_obs_list[0][0].image.shape)
 
         #nbrs junk
         if model_neighbors:
@@ -951,6 +951,7 @@ class MedsFit(dict):
         
         #check all flags first
         if model_fits['flags'][model_fits_index] != 0:
+            print('                bad flags',model_fits['number'][model_fits_index])
             use_nbr = False
         
         if self['nbrs_model']['model'] == 'exp':
@@ -983,6 +984,7 @@ class MedsFit(dict):
                             
         #always reject models with bad flags
         if self._check_model_nbrs_flags(model_fits_index, ntot, nmodel, model_fits) == False:
+            print('                bad model flags',model_fits['number'][model_fits_index])
             use_nbr = False
                             
         #see if need good ME fit 
@@ -990,6 +992,7 @@ class MedsFit(dict):
         if 'require_me_goodfit' in self['nbrs_model'] and \
            self['nbrs_model']['require_me_goodfit'] and \
            self._check_model_nbrs_flags(model_fits_index, nme, nmodel, model_fits) == False:
+            print('                bad me model flags',model_fits['number'][model_fits_index])
             use_nbr = False
 
         #only get here if things are OK
@@ -1047,6 +1050,7 @@ class MedsFit(dict):
         assert len(q) == 1, "found duplicate or no PSF fits for nbr %d cutout %d! # found = %ld" % (nbr_number,icut_obj,len(q))        
         pars_psf = epochs['psf_fit_pars'][q[0]]
         if epochs['psf_fit_flags'][q[0]] > 0:
+            print('                bad psf flags',nbr_number)
             use_psf = False
             
         return use_psf, pars_psf
@@ -1092,6 +1096,7 @@ class MedsFit(dict):
         #get nbrs model data and nbrs to model
         model_fits, epochs, meds_object_data = self._get_nbrs_model_data()
         nbr_numbers = self._get_nbrs_to_model(number)
+        print('            nbrs:',nbr_numbers)
         
         #construct some indexes of fofmems into nbrs structs
         model_fits_indexes = {}
@@ -1133,6 +1138,7 @@ class MedsFit(dict):
                     #get and check model of nbr
                     model_nbr,nmodel,model = self._get_and_check_nbrs_model(model_fits_index, ntot, nexp, ndev, model_fits)
                     if model_nbr == False:
+                        print('                bad model skipping nbr',nbr_number)
                         continue                    
                     pars_obj = model_fits[ntot(nmodel(self['nbrs_model']['pars']))][model_fits_index]
                     pinds = range(5)
@@ -1177,6 +1183,7 @@ class MedsFit(dict):
                     obj_image = gmix_image.make_image(obs.image.shape, jacobian=jacob)
 
                     if nbr_number != number:
+                        print('                render nbr:',nbr_number)
                         nbrs_image += obj_image
                         if self['nbrs_model']['method'] == 'subtract':
                             obs.image -= obj_image
