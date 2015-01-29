@@ -147,14 +147,14 @@ class MLDeblender(MedsFit):
         dindex = self.mindex
         
         if coadd:
-            if self.data['processed'][dindex] == 0:
+            if self.data['processed'][dindex] == 0 or self.data['coadd_'+model+'_flags'][dindex] > 0:
                 self.guesser = self._get_guesser('coadd_psf')
             else:
                 pars = self.data['coadd_'+model+'_pars'][dindex]
                 self.guesser = FixedParsGuesser(pars,pars*self['deblend_guess_frac'])
             mb_obs_list=self.sdata['coadd_mb_obs_list']
         else:
-            if self.data['processed'][dindex] == 0:
+            if self.data['processed'][dindex] == 0 or self.data[model+'_flags'][dindex] > 0:
                 self.guesser = self._get_guesser('me_psf')
             else:
                 pars = self.data[model+'_pars'][dindex]
