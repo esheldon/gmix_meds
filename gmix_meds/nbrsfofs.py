@@ -3,7 +3,8 @@ import numpy
 import os
 import fitsio
 
-def _get_nbrs(mindex,m,buff_frac=0.25,buff_type='min',maxsize_to_replace=256,new_maxsize=512,check_seg=True):
+#FIXME
+class MedsNbrs(object):
     """
     Gets nbrs of any postage stamp in the MEDS.
     
@@ -22,140 +23,135 @@ def _get_nbrs(mindex,m,buff_frac=0.25,buff_type='min',maxsize_to_replace=256,new
         maxsize - size ot use instead of maxsize_to_replace to compute overlap
     
         check_seg - use object's seg map to get nbrs in addition to postage stamp overlap
-    """
-    
-    #print config
-    #print "    buff_type:",buff_type
-    #print "    buff_frac:",buff_frac
-    #print "    maxsize_to_replace:",maxsize_to_replace
-    #print "    new_maxsize:",new_maxsize
-    #print "    check_seg:",check_seg
-    
-    #check that current gal has OK stamp, or return bad crap
-    if m['orig_start_row'][mindex,0] == -9999 or m['orig_start_col'][mindex,0] == -9999:
-        nbr_numbers = numpy.array([-1],dtype=int)
-        return nbr_numbers        
-    
-    #expand the stamps and get edges
-    dsize = (new_maxsize-maxsize_to_replace)/2
-    sze = m['box_size'].copy()
-    l = m['orig_start_row'][:,0].copy()
-    r = m['orig_start_row'][:,0].copy()
-    b = m['orig_start_col'][:,0].copy()
-    t = m['orig_start_col'][:,0].copy()
-    
-    q, = numpy.where(sze == maxsize_to_replace)
-    if q.size > 0:
-        sze[q[:]] = new_maxsize
-        l[q[:]] -= dsize
-        b[q[:]] -= dsize
+    """    
+
+    def __init__(self,meds_list,conf)
+        self.meds_list = meds_list
+        self.conf = conf
+        self.m = m
         
-    r += sze
-    t += sze
+        #print config
+        #print "    buff_type:",buff_type
+        #print "    buff_frac:",buff_frac
+        #print "    maxsize_to_replace:",maxsize_to_replace
+        #print "    new_maxsize:",new_maxsize
+        #print "    check_seg:",check_seg
 
-    #get the nbrs from two sources
-    # 1) intersection of postage stamps
-    # 2) seg map vals
-    nbr_numbers = []
+    def _init_bounds(self,m):
+        #expand the stamps and get edges
+        dsize = (self.new_maxsize-self.maxsize_to_replace)/2
+        self.sze = self.m['box_size'].copy()
+        self.l = self.m['orig_start_row'][:,0].copy()
+        self.r = self.m['orig_start_row'][:,0].copy()
+        self.b = self.m['orig_start_col'][:,0].copy()
+        self.t = self.m['orig_start_col'][:,0].copy()
     
-    #box intersection test and exclude yourself
-    #use buffer of 1/4 of smaller of pair of stamps
-    buff = sze.copy()
-    if buff_type == 'min':
-        q, = numpy.where(buff[mindex] < buff)
-        if len(q) > 0:
-            buff[q[:]] = buff[mindex]
-    elif buff_type == 'max':
-        q, = numpy.where(buff[mindex] > buff)
-        if len(q) > 0:
-            buff[q[:]] = buff[mindex]
-    elif buff_type == 'tot':
-        buff = buff[mindex] + buff
-    else:
-        assert False, "buff_type '%s' not supported!" % buff_type
-    buff = buff*buff_frac
-    q, = numpy.where((~((l[mindex] > r-buff) | (r[mindex] < l+buff) | (t[mindex] < b+buff) | (b[mindex] > t-buff))) & (m['number'][mindex] != m['number']))
-    if len(q) > 0:
-        nbr_numbers.extend(list(m['number'][q]))
+        q, = numpy.where(self.sze == self.maxsize_to_replace)
+        if q.size > 0:
+            self.sze[q[:]] = self.new_maxsize
+            self.l[q[:]] -= dsize
+            self.b[q[:]] -= dsize
+        
+        self.r += sze
+        self.t += sze
 
-    #check coadd seg maps
-    if check_seg:
-        try:
-            segmap = m.get_cutout(mindex,0,type='seg')
-            q = numpy.where((segmap > 0) & (segmap != m['number'][mindex]))
+    def get_nbrs(self):
+        #data types
+        nbrs_data = []
+        dtype = [('number','i8'),('nbr_number','i8')]
+        print "    config:",self.conf
+    
+        #loop through objects, get nbrs in each meds list
+        for mindex in xrange(meds_list[0].size):
+            if mindex%1000 == 0:
+                print "    on % 5d of % 5d" % (mindex,meds_list[0].size)
+            nbrs = []
+            for m in meds_list:
+                #make sure MEDS lists have the same objects!
+                assert m['number'][mindex] == meds_list[0]['number'][mindex]
+                assert m['id'][mindex] == meds_list[0]['id'][mindex]
+                
+                #add on the nbrs
+                nbrs.extend(list(self.check_mindex(mindex,m,**self.conf)))
+
+            #only keep unique nbrs
+            nbrs = numpy.unique(numpy.array(nbrs))
+                
+            #add to final list
+            for nbr in nbrs:
+                nbrs_data.append((m['number'][mindex],nbr))
+    
+        #return array sorted by number
+        nbrs_data = numpy.array(nbrs_data,dtype=dtype)
+        i = numpy.argsort(nbrs_data['number'])
+        nbrs_data = nbrs_data[i]
+        
+        return nbrs_data
+        
+    def check_mindex(self,mindex,m,buff_frac=0.25,buff_type='min',maxsize_to_replace=256,new_maxsize=512,check_seg=True):
+        #check that current gal has OK stamp, or return bad crap
+        if self.m['orig_start_row'][mindex,0] == -9999 or self.m['orig_start_col'][mindex,0] == -9999:
+            nbr_numbers = numpy.array([-1],dtype=int)
+            return nbr_numbers        
+    
+        #get the nbrs from two sources
+        # 1) intersection of postage stamps
+        # 2) seg map vals
+        nbr_numbers = []
+        
+        #box intersection test and exclude yourself
+        #use buffer of 1/4 of smaller of pair of stamps
+        buff = self.sze.copy()
+        if buff_type == 'min':
+            q, = numpy.where(buff[mindex] < buff)
             if len(q) > 0:
-                nbr_numbers.extend(list(numpy.unique(segmap[q])))    
-        except:
-            pass
-    
-    #cut weird crap
-    if len(nbr_numbers) > 0:
-        nbr_numbers = numpy.array(nbr_numbers,dtype=int)
-        nbr_numbers = numpy.unique(nbr_numbers)
-        inds = nbr_numbers-1
-        q, = numpy.where((m['orig_start_row'][inds,0] != -9999) & (m['orig_start_col'][inds,0] != -9999))
-        if len(q) > 0:
-            nbr_numbers = list(nbr_numbers[q])
+                buff[q[:]] = buff[mindex]
+        elif buff_type == 'max':
+            q, = numpy.where(buff[mindex] > buff)
+            if len(q) > 0:
+                buff[q[:]] = buff[mindex]
+        elif buff_type == 'tot':
+            buff = buff[mindex] + buff
         else:
-            nbr_numbers = []
-    
-    #if have stuff return unique else return -1
-    if len(nbr_numbers) == 0:
-        nbr_numbers = numpy.array([-1],dtype=int)
-    else:
-        nbr_numbers = numpy.array(nbr_numbers,dtype=int)
-        nbr_numbers = numpy.unique(nbr_numbers)
-    
-    return nbr_numbers
+            assert False, "buff_type '%s' not supported!" % buff_type
+        buff = buff*buff_frac
+        q, = numpy.where((~((self.l[mindex] > self.r-buff) | (self.r[mindex] < self.l+buff) | 
+                            (self.t[mindex] < self.b+buff) | (self.b[mindex] > self.t-buff))) & 
+                         (m['number'][mindex] != m['number']) &
+                         (m['orig_start_row'][:,0] != -9999) & (m['orig_start_col'][:,0] != -9999))
 
-def get_meds_nbrs(meds_list,conf):
-    """
-    For a given list of MEDS files, returns all the nbrs of every object.
-    
-    The returned array has two columns
-    
-        number - the number in the seg map of the central object
-        nbr_number - the number of the nbr
-    
-    To get all of the nbrs of object num, one just needs to find all rows 
-    with the same number field like this
-    
-        q, = numpy.where(nbrs_data['number'] == num)
-        nbrs_numbers = nbrs_data['nbr_number'][q]
-        
-    conf is a dict of parameters. See _get_nbrs.
-    """
-    #data types
-    nbrs_data = []
-    dtype = [('number','i8'),('nbr_number','i8')]
-    print "    config:",conf
-    
-    #loop through objects, get nbrs in each meds list
-    for mindex in xrange(meds_list[0].size):
-        if mindex%1000 == 0:
-            print "    on % 5d of % 5d" % (mindex,meds_list[0].size)
-        nbrs = []
-        for m in meds_list:
-            #make sure MEDS lists have the same objects!
-            assert m['number'][mindex] == meds_list[0]['number'][mindex]
-            assert m['id'][mindex] == meds_list[0]['id'][mindex]
+        if len(q) > 0:
+            nbr_numbers.extend(list(m['number'][q]))
 
-            #add on the nbrs
-            nbrs.extend(list(_get_nbrs(mindex,m,**conf)))
-
-        #only keep unique nbrs
-        nbrs = numpy.unique(numpy.array(nbrs))
-        
-        #add to final list
-        for nbr in nbrs:
-            nbrs_data.append((m['number'][mindex],nbr))
+        #check coadd seg maps
+        if self.check_seg:
+            try:
+                segmap = m.get_cutout(mindex,0,type='seg')
+                q = numpy.where((segmap > 0) & (segmap != m['number'][mindex]))
+                if len(q) > 0:
+                    nbr_numbers.extend(list(numpy.unique(segmap[q])))    
+            except:
+                pass
     
-    #return array sorted by number
-    nbrs_data = numpy.array(nbrs_data,dtype=dtype)
-    i = numpy.argsort(nbrs_data['number'])
-    nbrs_data = nbrs_data[i]
-
-    return nbrs_data
+        #cut weird crap
+        if len(nbr_numbers) > 0:
+            nbr_numbers = numpy.array(nbr_numbers,dtype=int)
+            nbr_numbers = numpy.unique(nbr_numbers)
+            inds = nbr_numbers-1
+            q, = numpy.where((m['orig_start_row'][inds,0] != -9999) & (m['orig_start_col'][inds,0] != -9999))
+            if len(q) > 0:
+                nbr_numbers = list(nbr_numbers[q])
+            else:
+                nbr_numbers = []
+    
+        #if have stuff return unique else return -1
+        if len(nbr_numbers) == 0:
+            nbr_numbers = numpy.array([-1],dtype=int)
+        else:
+            nbr_numbers = numpy.array(nbr_numbers,dtype=int)
+            nbr_numbers = numpy.unique(nbr_numbers)
+    
+        return nbr_numbers
 
 class NbrsFoF(object):
     def __init__(self,nbrs_data):
