@@ -66,7 +66,7 @@ def run_meds_nbrs_dir(meds_version,bands,nbrs_version,meds_dir,conf,base_output_
     if len(mlist) == 0:
         return None
 
-    nbrs_data = get_meds_nbrs(mlist,conf)
+    nbrs_data = get_meds_nbrs(mlist,conf['nbrs_pars'])
     if nbrs_data is not None:
         opth = '%s/%s/nbrs-data/%s/%s_%s' % (base_output_path,meds_version,nbrs_version,date,tilename)
         mkdir(os.path.expandvars(opth))

@@ -4,9 +4,10 @@
 meds_version: '013'
 nbrs_version: '001'
 
-#stamps have to overlap by this amount to be nbrs
-overlap_frac: 0.25
-
-#256 stamps are resized to this size
-size_for_256: 384
+nbrs_pars:
+     buff_type: 'tot'
+     buff_frac: 0.25
+     maxsize_to_replace: 256
+     new_maxsize: 384
+     check_seg: True
 
