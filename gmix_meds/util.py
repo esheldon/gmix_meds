@@ -41,10 +41,17 @@ class PBar(object):
             self.pc = "|" * int(float(slen)/float(self.Nmax))
         #print slen,self.Nmax,self.di,self.pc
         
+    def _get_width(self):
+        try:
+            rows, columns = os.popen('stty size', 'r').read().split()
+        except:
+            columns= '80'
+        return columns
+            
     def start(self):
         self.tstart = time.time()
         self.tp = time.time()
-        rows, columns = os.popen('stty size', 'r').read().split()
+        columns = self._get_width()
         self.width = int(columns)
         tail = " %3d%% ETA: --:--:--" % 0
         slen = self.width - len(self.name)-len(tail)
@@ -56,7 +63,8 @@ class PBar(object):
         
     def update(self,i):
         if i-self.ic >= self.di:
-            rows, columns = os.popen('stty size', 'r').read().split()
+            columns = self._get_width()
+            
             if self.lp is not None:
                 if self.columnsp is not None and self.columnsp > int(columns):
                     sys.stdout.write('\n')
@@ -98,7 +106,7 @@ class PBar(object):
             nb = len(self.lp)+1
             sys.stdout.write('\b' * nb)
             sys.stdout.flush()
-        rows, columns = os.popen('stty size', 'r').read().split()
+        columns = self._get_width()
         self.width = int(columns)
         telapsed = time.time()-self.tstart
         tail = " %3d%% Time: " % 100
