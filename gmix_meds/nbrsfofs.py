@@ -1,6 +1,7 @@
 #!/usr/bin/env python
-import numpy
 import os
+import sys
+import numpy
 import fitsio
 from .util import PBar
 
