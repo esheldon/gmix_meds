@@ -176,22 +176,13 @@ class NbrsFoF(object):
         self.nbrs_data = nbrs_data
         self.Nobj = len(numpy.unique(nbrs_data['number']))
 
-        #what if we percolate?
-        sys.setrecursionlimit(self.Nobj)
-        
-        #holds links of all current groups
-        self.links = numpy.zeros(self.Nobj,dtype='i8')
-
-        #records in fof group has been processed
+        #records if object has been processed
         # -1 == not linked yet, will be tested right away
+        # -2 == linked, but needs to be tested
         # >= 0 : fof index (or id)
         self.linked = numpy.zeros(self.Nobj,dtype='i8')
-
-        #holds first index, num and last index of fof groups
-        self.fofs_head = []
-        self.fofs_num = []
-        self.fofs_tail = []
-
+        self.num_fofs = 0
+        
         self.fof_data = None
         
         #make fofs on init
@@ -210,12 +201,9 @@ class NbrsFoF(object):
         assert numpy.all(self.fof_data['fofid'] >= 0)
         
     def _init_fofs(self):
-        self.links[:] = -1
         self.linked[:] = -1
-        self.fofs_head = []
-        self.fofs_num = []
-        self.fofs_tail = []
-
+        self.num_fofs = 0
+        
     def _get_nbrs_index(self,mind):
         q, = numpy.where((self.nbrs_data['number'] == mind+1) & (self.nbrs_data['nbr_number'] > 0))
         if len(q) > 0:
@@ -223,18 +211,23 @@ class NbrsFoF(object):
         else:
             return []
 
-    def _recursive_link_fof(self,mind,fofind):
-        #get nbrs for this object
-        nbrs = set(self._get_nbrs_index(mind))
+    def _link_fof(self,baseid,fofind):
+        ids_to_check = [baseid]
         
-        #add links to tail of fof
-        for ids in list(nbrs):
-            if self.linked[ids] == -1:
-                self.links[self.fofs_tail[fofind]] = copy.copy(ids)
-                self.fofs_tail[fofind] = copy.copy(ids)
-                self.fofs_num[fofind] += 1
-                self.linked[ids] = fofind
-                self._recursive_link_fof(ids,fofind)
+        while len(ids_to_check) > 0:
+            mind = ids_to_check.pop()
+            
+            #get nbrs for this object
+            nbrs = set(self._get_nbrs_index(mind))
+        
+            #add links to tail of fof
+            for ids in list(nbrs):
+                if self.linked[ids] == -1:
+                    self.linked[ids] = copy.copy(fofind)
+                    if ids not in ids_to_check:
+                        ids_to_check.append(copy.copy(ids))
+                else:
+                    assert self.linked[ids] == fofind
 
     def make_fofs(self,verbose=True):
         #init
@@ -244,16 +237,16 @@ class NbrsFoF(object):
         if verbose:
             bar = PBar(self.Nobj,"making fofs")
             bar.start()
+
         for i in xrange(self.Nobj):
             if verbose: 
                 bar.update(i+1)
             if self.linked[i] == -1:
-                self.fofs_head.append(i)
-                self.fofs_tail.append(i)
-                self.fofs_num.append(1)            
-                fofind = len(self.fofs_head)-1            
-                self.linked[i] = fofind
-                self._recursive_link_fof(i,fofind)
+                self.num_fofs += 1
+                fofind = self.num_fofs - 1
+                self.linked[i] = copy.copy(fofind)
+                self._link_fof(i,fofind)
+
         if verbose: 
             bar.finish()
         
