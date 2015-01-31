@@ -7,7 +7,7 @@ import fitsio
 from glob import glob
 import shutil
 import errno
-from gmix_meds.nbrsfofs import get_meds_nbrs
+from gmix_meds.nbrsfofs import MedsNbrs
 
 from optparse import OptionParser
 usage = """usage: %prog [options] config file
@@ -30,6 +30,8 @@ parser.add_option("--meds-range",default=None,
                   help=("Inclusive, zero-offset range of MEDS files to process as comma spearated list (e.g., '1,2')"))
 parser.add_option("--get-num-meds",default=False,action="store_true",
                   help=("Print the number of MEDS files to process to stdout and return"))
+parser.add_option("--silent",default=False,action="store_true",
+                  help=("Print the number of MEDS files to process to stdout and return"))
 
 def mkdir(path):
     try:
@@ -48,7 +50,7 @@ def read_yaml(config_path):
         conf=yaml.load(fobj)
     return conf
 
-def run_meds_nbrs_dir(meds_version,bands,nbrs_version,meds_dir,conf,base_output_path="${DESDATA}/EXTRA/meds"):
+def run_meds_nbrs_dir(meds_version,bands,nbrs_version,meds_dir,conf,base_output_path="${DESDATA}/EXTRA/meds",silent=False):
     """
     Make the nbrs file for a given meds dir
     """
@@ -66,7 +68,8 @@ def run_meds_nbrs_dir(meds_version,bands,nbrs_version,meds_dir,conf,base_output_
     if len(mlist) == 0:
         return None
 
-    nbrs_data = get_meds_nbrs(mlist,conf['nbrs_pars'])
+    nbrs = MedsNbrs(mlist,conf['nbrs_pars'])
+    nbrs_data = nbrs.get_nbrs(verbose=not silent)
     if nbrs_data is not None:
         opth = '%s/%s/nbrs-data/%s/%s_%s' % (base_output_path,meds_version,nbrs_version,date,tilename)
         mkdir(os.path.expandvars(opth))
@@ -85,7 +88,7 @@ def get_meds_dirs(meds_version):
     meds_dirs.sort()
     return meds_dirs
 
-def run_meds_nbrs(meds_version,bands,nbrs_version,conf,meds_range=None):
+def run_meds_nbrs(meds_version,bands,nbrs_version,conf,meds_range=None,silent=False):
     """
     Make all of the nbrs file for every MEDS dir
     """
@@ -96,7 +99,7 @@ def run_meds_nbrs(meds_version,bands,nbrs_version,conf,meds_range=None):
 
     for dind in xrange(meds_range[0],meds_range[1]+1):
         meds_dir = meds_dirs[dind]
-        run_meds_nbrs_dir(meds_version,bands,nbrs_version,meds_dir,conf)
+        run_meds_nbrs_dir(meds_version,bands,nbrs_version,meds_dir,conf,silent=silent)
         
 def main():
     options, args = parser.parse_args(sys.argv[1:])
@@ -121,7 +124,7 @@ def main():
             meds_range = [int(el) for el in options.meds_range.split(',')]
         else:
             meds_range = None
-        run_meds_nbrs(meds_version,bands,nbrs_version,conf,meds_range=meds_range)
+        run_meds_nbrs(meds_version,bands,nbrs_version,conf,meds_range=meds_range,silent=options.silent)
     
 if __name__ == '__main__':
     main()

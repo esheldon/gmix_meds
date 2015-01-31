@@ -2,8 +2,8 @@
 import numpy
 import os
 import fitsio
+from .util import PBar
 
-#FIXME
 class MedsNbrs(object):
     """
     Gets nbrs of any postage stamp in the MEDS.
@@ -25,11 +25,11 @@ class MedsNbrs(object):
         check_seg - use object's seg map to get nbrs in addition to postage stamp overlap
     """    
 
-    def __init__(self,meds_list,conf)
+    def __init__(self,meds_list,conf):
         self.meds_list = meds_list
         self.conf = conf
-        self.m = m
         
+        self._init_bounds()
         #print config
         #print "    buff_type:",buff_type
         #print "    buff_frac:",buff_frac
@@ -37,42 +37,53 @@ class MedsNbrs(object):
         #print "    new_maxsize:",new_maxsize
         #print "    check_seg:",check_seg
 
-    def _init_bounds(self,m):
-        #expand the stamps and get edges
-        dsize = (self.new_maxsize-self.maxsize_to_replace)/2
-        self.sze = self.m['box_size'].copy()
-        self.l = self.m['orig_start_row'][:,0].copy()
-        self.r = self.m['orig_start_row'][:,0].copy()
-        self.b = self.m['orig_start_col'][:,0].copy()
-        self.t = self.m['orig_start_col'][:,0].copy()
-    
-        q, = numpy.where(self.sze == self.maxsize_to_replace)
-        if q.size > 0:
-            self.sze[q[:]] = self.new_maxsize
-            self.l[q[:]] -= dsize
-            self.b[q[:]] -= dsize
+    def _init_bounds(self):
+        self.l = {}
+        self.r = {}
+        self.t = {}
+        self.b = {}
+        self.sze = {}
         
-        self.r += sze
-        self.t += sze
+        for band,m in enumerate(self.meds_list):
+            #expand the stamps and get edges
+            dsize = (self.conf['new_maxsize']-self.conf['maxsize_to_replace'])/2
+            self.sze[band] = m['box_size'].copy()
+            self.l[band] = m['orig_start_row'][:,0].copy()
+            self.r[band] = m['orig_start_row'][:,0].copy()
+            self.b[band] = m['orig_start_col'][:,0].copy()
+            self.t[band] = m['orig_start_col'][:,0].copy()
+    
+            q, = numpy.where(self.sze[band] == self.conf['maxsize_to_replace'])
+            if q.size > 0:
+                self.sze[band][q[:]] = self.conf['new_maxsize']
+                self.l[band][q[:]] -= dsize
+                self.b[band][q[:]] -= dsize
+                
+            self.r[band] += self.sze[band]
+            self.t[band] += self.sze[band]
 
-    def get_nbrs(self):
+    def get_nbrs(self,verbose=True):
         #data types
         nbrs_data = []
         dtype = [('number','i8'),('nbr_number','i8')]
         print "    config:",self.conf
     
         #loop through objects, get nbrs in each meds list
-        for mindex in xrange(meds_list[0].size):
-            if mindex%1000 == 0:
-                print "    on % 5d of % 5d" % (mindex,meds_list[0].size)
+        if verbose:
+            pgr = PBar(self.meds_list[0].size,"    finding nbrs")
+            pgr.start()
+        for mindex in xrange(self.meds_list[0].size):
+            if verbose:
+                pgr.update(mindex+1)
             nbrs = []
-            for m in meds_list:
+            for band,m in enumerate(self.meds_list):
                 #make sure MEDS lists have the same objects!
-                assert m['number'][mindex] == meds_list[0]['number'][mindex]
-                assert m['id'][mindex] == meds_list[0]['id'][mindex]
+                assert m['number'][mindex] == self.meds_list[0]['number'][mindex]
+                assert m['id'][mindex] == self.meds_list[0]['id'][mindex]
+                assert m['number'][mindex] == mindex+1
                 
                 #add on the nbrs
-                nbrs.extend(list(self.check_mindex(mindex,m,**self.conf)))
+                nbrs.extend(list(self.check_mindex(mindex,band)))
 
             #only keep unique nbrs
             nbrs = numpy.unique(numpy.array(nbrs))
@@ -80,7 +91,10 @@ class MedsNbrs(object):
             #add to final list
             for nbr in nbrs:
                 nbrs_data.append((m['number'][mindex],nbr))
-    
+                
+        if verbose:
+            pgr.finish()
+        
         #return array sorted by number
         nbrs_data = numpy.array(nbrs_data,dtype=dtype)
         i = numpy.argsort(nbrs_data['number'])
@@ -88,9 +102,11 @@ class MedsNbrs(object):
         
         return nbrs_data
         
-    def check_mindex(self,mindex,m,buff_frac=0.25,buff_type='min',maxsize_to_replace=256,new_maxsize=512,check_seg=True):
+    def check_mindex(self,mindex,band):
+        m = self.meds_list[band]
+        
         #check that current gal has OK stamp, or return bad crap
-        if self.m['orig_start_row'][mindex,0] == -9999 or self.m['orig_start_col'][mindex,0] == -9999:
+        if m['orig_start_row'][mindex,0] == -9999 or m['orig_start_col'][mindex,0] == -9999:
             nbr_numbers = numpy.array([-1],dtype=int)
             return nbr_numbers        
     
@@ -101,22 +117,22 @@ class MedsNbrs(object):
         
         #box intersection test and exclude yourself
         #use buffer of 1/4 of smaller of pair of stamps
-        buff = self.sze.copy()
-        if buff_type == 'min':
+        buff = self.sze[band].copy()
+        if self.conf['buff_type'] == 'min':
             q, = numpy.where(buff[mindex] < buff)
             if len(q) > 0:
                 buff[q[:]] = buff[mindex]
-        elif buff_type == 'max':
+        elif self.conf['buff_type'] == 'max':
             q, = numpy.where(buff[mindex] > buff)
             if len(q) > 0:
                 buff[q[:]] = buff[mindex]
-        elif buff_type == 'tot':
+        elif self.conf['buff_type'] == 'tot':
             buff = buff[mindex] + buff
         else:
-            assert False, "buff_type '%s' not supported!" % buff_type
-        buff = buff*buff_frac
-        q, = numpy.where((~((self.l[mindex] > self.r-buff) | (self.r[mindex] < self.l+buff) | 
-                            (self.t[mindex] < self.b+buff) | (self.b[mindex] > self.t-buff))) & 
+            assert False, "buff_type '%s' not supported!" % self.conf['buff_type']
+        buff = buff*self.conf['buff_frac']
+        q, = numpy.where((~((self.l[band][mindex] > self.r[band]-buff) | (self.r[band][mindex] < self.l[band]+buff) | 
+                            (self.t[band][mindex] < self.b[band]+buff) | (self.b[band][mindex] > self.t[band]-buff))) & 
                          (m['number'][mindex] != m['number']) &
                          (m['orig_start_row'][:,0] != -9999) & (m['orig_start_col'][:,0] != -9999))
 
@@ -124,7 +140,7 @@ class MedsNbrs(object):
             nbr_numbers.extend(list(m['number'][q]))
 
         #check coadd seg maps
-        if self.check_seg:
+        if self.conf['check_seg']:
             try:
                 segmap = m.get_cutout(mindex,0,type='seg')
                 q = numpy.where((segmap > 0) & (segmap != m['number'][mindex]))
