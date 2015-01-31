@@ -2,6 +2,7 @@ from __future__ import print_function
 import numpy
 import fitsio
 import time,os,sys
+from subprocess import check_output
 
 import ngmix
 from ngmix import srandu
@@ -43,7 +44,9 @@ class PBar(object):
         
     def _get_width(self):
         try:
-            rows, columns = os.popen('stty size', 'r').read().split()
+            with open(os.devnull, 'w') as silent:
+                line = check_output(['stty','size'], stderr=silent)
+                columns = line.strip().split()[-1]
         except:
             columns= '80'
         return columns
