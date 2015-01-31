@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import os
 import sys
+import copy
 import numpy
 import fitsio
 from .util import PBar
@@ -171,7 +172,7 @@ class MedsNbrs(object):
         return nbr_numbers
 
 class NbrsFoF(object):
-    def __init__(self,nbrs_data):
+    def __init__(self,nbrs_data,verbose=True):
         self.nbrs_data = nbrs_data
         self.Nobj = len(numpy.unique(nbrs_data['number']))
 
@@ -194,7 +195,7 @@ class NbrsFoF(object):
         self.fof_data = None
         
         #make fofs on init
-        self.make_fofs()
+        self.make_fofs(verbose=verbose)
 
     def write_fofs(self,fname):
         fitsio.write(fname,self.fof_data,clobber=True)
@@ -235,16 +236,17 @@ class NbrsFoF(object):
                 self.linked[ids] = fofind
                 self._recursive_link_fof(ids,fofind)
 
-    def make_fofs(self):
+    def make_fofs(self,verbose=True):
         #init
         self._init_fofs()
 
         #link
-        import progressbar
-        bar = progressbar.ProgressBar(maxval=self.Nobj,widgets=[progressbar.Bar(marker='|', left='doing work: |', right=''), ' ', progressbar.Percentage(), ' ', progressbar.AdaptiveETA()])
-        bar.start()
+        if verbose:
+            bar = PBar(self.Nobj,"making fofs")
+            bar.start()
         for i in xrange(self.Nobj):
-            bar.update(i+1)
+            if verbose: 
+                bar.update(i+1)
             if self.linked[i] == -1:
                 self.fofs_head.append(i)
                 self.fofs_tail.append(i)
@@ -252,7 +254,8 @@ class NbrsFoF(object):
                 fofind = len(self.fofs_head)-1            
                 self.linked[i] = fofind
                 self._recursive_link_fof(i,fofind)
-        bar.finish()
+        if verbose: 
+            bar.finish()
         
         self._make_fof_data()
 

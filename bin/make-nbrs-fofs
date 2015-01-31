@@ -19,13 +19,15 @@ parser.add_option("--get-num-files",default=False,action="store_true",
                                     help=("Print the number of Nbrs files to process to stdout and return"))
 parser.add_option("--nbrs-file",default=None,
                   help=("A single nbrs file to process"))
+parser.add_option("--silent",default=False,action="store_true",
+                  help=("Print the number of MEDS files to process to stdout and return"))
 
-def run_fofs_file(nbrs_file):
+def run_fofs_file(nbrs_file,silent=False):
     """
     Make FoFs for a single file.
     """
     nbrs_data = fitsio.read(nbrs_file)
-    fofs = NbrsFoF(nbrs_data)
+    fofs = NbrsFoF(nbrs_data,verbose=not silent)
     fof_file = nbrs_file.replace('-nbrslist-','-nbrsfofs-')    
     fofs.write_fofs(fof_file)
     
@@ -40,7 +42,7 @@ def get_nbrs_files(meds_version,nbrs_version):
     nbrs_files.sort()
     return nbrs_files
 
-def run_fofs(meds_version,nbrs_version,file_range=None):
+def run_fofs(meds_version,nbrs_version,file_range=None,silent=False):
     """
     Make FoFs for all nbrs files.
     """
@@ -51,7 +53,7 @@ def run_fofs(meds_version,nbrs_version,file_range=None):
 
     for dind in xrange(file_range[0],file_range[1]+1):
         nbrs_file = nbrs_files[dind]
-        run_fofs_file(nbrs_file)
+        run_fofs_file(nbrs_file,silent=silent)
 
 def read_yaml(config_path):
     """
@@ -82,7 +84,7 @@ def main():
             else:
                 file_range = None
                 
-            run_fofs(meds_version,nbrs_version,file_range=file_range)
+            run_fofs(meds_version,nbrs_version,file_range=file_range,silent=options.silent)
 
 if __name__ == '__main__':
     main()
