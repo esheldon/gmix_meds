@@ -356,7 +356,7 @@ def get_wq_template():
     text="""
 command: |
     source ~/.bashrc
-    source ~/shell_scripts/nsim-prepare.sh
+    source ~/shell_scripts/gmix-meds-prepare.sh
 
     config_file="%(config_file)s"
     meds_files="%(meds_files_spaced)s"
@@ -389,7 +389,7 @@ def get_concat_wq_template(noblind=False, verify=False):
     text="""
 command: |
     source ~/.bashrc
-    source ~/shell_scripts/nsim-prepare.sh
+    source ~/shell_scripts/gmix-meds-prepare.sh
 
     run="%(run_name)s"
     config_file="%(config_file)s"
@@ -435,7 +435,7 @@ def get_oracle_wq_template(create=False, noblind=False):
     text="""
 command: |
     source ~/.bashrc
-    source ~/shell_scripts/nsim-prepare.sh
+    source ~/shell_scripts/gmix-meds-prepare.sh
 
     run="%(run_name)s"
     table_name="%(run_name)s"
