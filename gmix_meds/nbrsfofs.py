@@ -68,11 +68,11 @@ class MedsNbrs(object):
         #data types
         nbrs_data = []
         dtype = [('number','i8'),('nbr_number','i8')]
-        print "    config:",self.conf
+        print "config:",self.conf
     
         #loop through objects, get nbrs in each meds list
         if verbose:
-            pgr = PBar(self.meds_list[0].size,"    finding nbrs")
+            pgr = PBar(self.meds_list[0].size,"finding nbrs")
             pgr.start()
         for mindex in xrange(self.meds_list[0].size):
             if verbose:
@@ -172,7 +172,7 @@ class MedsNbrs(object):
         return nbr_numbers
 
 class NbrsFoF(object):
-    def __init__(self,nbrs_data,verbose=True):
+    def __init__(self,nbrs_data):
         self.nbrs_data = nbrs_data
         self.Nobj = len(numpy.unique(nbrs_data['number']))
 
@@ -182,16 +182,11 @@ class NbrsFoF(object):
         
         self._fof_data = None
         
-        #make fofs on init
-        self.make_fofs(verbose=verbose)
-
-    def write_fofs(self,fname):
-        fitsio.write(fname,self._fof_data,clobber=True)
-            
-    def get_fofs(self):
+    def get_fofs(self,verbose=True):
+        self._make_fofs(verbose=verbose)
         return self._fof_data
 
-    def make_fofs(self,verbose=True):
+    def _make_fofs(self,verbose=True):
         #init
         self._init_fofs()
 

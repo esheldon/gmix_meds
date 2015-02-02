@@ -74,9 +74,10 @@ def run_meds_nbrs(meds_version,meds_files,nbrs_version,conf,base_output_path="${
         nbrs_file = '%s-meds-%s-nbrslist-%s.fits' % (tilename,meds_version,nbrs_version)
         fitsio.write(os.path.expandvars(os.path.join(opth,nbrs_file)),nbrs_data,clobber=True)
         
-        fofs = NbrsFoF(nbrs_data,verbose=not silent)
+        fofs = NbrsFoF(nbrs_data)
+        fof_data = fofs.get_fofs(verbose=not silent)
         fof_file = nbrs_file.replace('-nbrslist-','-nbrsfofs-')
-        fofs.write_fofs(fof_file)
+        fitsio.write(os.path.expandvars(os.path.join(opth,fof_file)),fof_data,clobber=True)
         
     return None
 
