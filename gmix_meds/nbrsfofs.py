@@ -176,58 +176,20 @@ class NbrsFoF(object):
         self.nbrs_data = nbrs_data
         self.Nobj = len(numpy.unique(nbrs_data['number']))
 
-        #records if object has been processed
-        # -1 == not linked yet, will be tested right away
-        # -2 == linked, but needs to be tested
-        # >= 0 : fof index (or id)
+        #records fofid of entry
         self.linked = numpy.zeros(self.Nobj,dtype='i8')
-        self.num_fofs = 0
+        self.fofs = {}
         
-        self.fof_data = None
+        self._fof_data = None
         
         #make fofs on init
         self.make_fofs(verbose=verbose)
 
     def write_fofs(self,fname):
-        fitsio.write(fname,self.fof_data,clobber=True)
+        fitsio.write(fname,self._fof_data,clobber=True)
             
-    def _make_fof_data(self):
-        self.fof_data = []
-        for i in xrange(self.Nobj):
-            self.fof_data.append((self.linked[i],i+1))
-        self.fof_data = numpy.array(self.fof_data,dtype=[('fofid','i8'),('number','i8')])
-        i = numpy.argsort(self.fof_data['number'])
-        self.fof_data = self.fof_data[i]
-        assert numpy.all(self.fof_data['fofid'] >= 0)
-        
-    def _init_fofs(self):
-        self.linked[:] = -1
-        self.num_fofs = 0
-        
-    def _get_nbrs_index(self,mind):
-        q, = numpy.where((self.nbrs_data['number'] == mind+1) & (self.nbrs_data['nbr_number'] > 0))
-        if len(q) > 0:
-            return list(self.nbrs_data['nbr_number'][q]-1)
-        else:
-            return []
-
-    def _link_fof(self,baseid,fofind):
-        ids_to_check = [baseid]
-        
-        while len(ids_to_check) > 0:
-            mind = ids_to_check.pop()
-            
-            #get nbrs for this object
-            nbrs = set(self._get_nbrs_index(mind))
-        
-            #add links to tail of fof
-            for ids in list(nbrs):
-                if self.linked[ids] == -1:
-                    self.linked[ids] = copy.copy(fofind)
-                    if ids not in ids_to_check:
-                        ids_to_check.append(copy.copy(ids))
-                else:
-                    assert self.linked[ids] == fofind
+    def get_fofs(self):
+        return self._fof_data
 
     def make_fofs(self,verbose=True):
         #init
@@ -241,17 +203,63 @@ class NbrsFoF(object):
         for i in xrange(self.Nobj):
             if verbose: 
                 bar.update(i+1)
-            if self.linked[i] == -1:
-                self.num_fofs += 1
-                fofind = self.num_fofs - 1
-                self.linked[i] = copy.copy(fofind)
-                self._link_fof(i,fofind)
+            self._link_fof(i)
 
         if verbose: 
             bar.finish()
+
+        for fofid,k in enumerate(self.fofs):
+            inds = numpy.array(list(self.fofs[k]),dtype=int)
+            self.linked[inds[:]] = fofid
+        self.fofs = {}
         
         self._make_fof_data()
 
+    def _link_fof(self,mind):
+        #get nbrs for this object
+        nbrs = set(self._get_nbrs_index(mind))
+        
+        #always make a base fof 
+        if self.linked[mind] == -1:
+            fofid = copy.copy(mind)
+            self.fofs[fofid] = set([mind])
+            self.linked[mind] = fofid
+        else:
+            fofid = copy.copy(self.linked[mind])
+        
+        #loop through nbrs
+        for nbr in nbrs:
+            if self.linked[nbr] == -1 or self.linked[nbr] == fofid:
+                #not linked so add to current
+                self.fofs[fofid].add(nbr)
+                self.linked[nbr] = fofid
+            else:
+                #join!
+                self.fofs[self.linked[nbr]] |= self.fofs[fofid]
+                del self.fofs[fofid]
+                fofid = copy.copy(self.linked[nbr])
+                inds = numpy.array(list(self.fofs[fofid]),dtype=int)
+                self.linked[inds[:]] = fofid
+
+    def _make_fof_data(self):
+        self._fof_data = []
+        for i in xrange(self.Nobj):
+            self._fof_data.append((self.linked[i],i+1))
+        self._fof_data = numpy.array(self._fof_data,dtype=[('fofid','i8'),('number','i8')])
+        i = numpy.argsort(self._fof_data['number'])
+        self._fof_data = self._fof_data[i]
+        assert numpy.all(self._fof_data['fofid'] >= 0)
+
+    def _init_fofs(self):
+        self.linked[:] = -1
+        self.fofs = {}
+        
+    def _get_nbrs_index(self,mind):
+        q, = numpy.where((self.nbrs_data['number'] == mind+1) & (self.nbrs_data['nbr_number'] > 0))
+        if len(q) > 0:
+            return list(self.nbrs_data['nbr_number'][q]-1)
+        else:
+            return []
 
 class NbrsFoFExtractor(object):
     """

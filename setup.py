@@ -9,7 +9,8 @@ scripts=['gmix-fit-meds',
          'gmix-meds-make-scripts', # des specific
          'gmix-meds-make-oracle',  # des specific
          'gmix-meds-add-indexes',
-         'gmix-meds-optimize-table']
+         'gmix-meds-optimize-table',
+         'gmix-meds-make-nbrs-data']
 
 
 scripts=[os.path.join('bin',s) for s in scripts]

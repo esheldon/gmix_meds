@@ -50,7 +50,16 @@ class PBar(object):
         except:
             columns= '80'
         return columns
-            
+
+    def _erase(self,columns):
+        if self.lp is not None:
+            if self.columnsp is not None and self.columnsp > int(columns):
+                sys.stdout.write('\n')
+            else:
+                nb = len(self.lp)+1
+                sys.stdout.write('\b' * nb)
+            sys.stdout.flush()
+    
     def start(self):
         self.tstart = time.time()
         self.tp = time.time()
@@ -67,14 +76,7 @@ class PBar(object):
     def update(self,i):
         if i-self.ic >= self.di:
             columns = self._get_width()
-            
-            if self.lp is not None:
-                if self.columnsp is not None and self.columnsp > int(columns):
-                    sys.stdout.write('\n')
-                else:
-                    nb = len(self.lp)+1
-                    sys.stdout.write('\b' * nb)
-                sys.stdout.flush()
+            self._erase(columns)
             self.width = int(columns)
             dn = int(float(i)/float(self.Nmax)*100.0)
             
@@ -105,11 +107,8 @@ class PBar(object):
             self.columnsp = int(columns)
             
     def finish(self):
-        if self.lp is not None:
-            nb = len(self.lp)+1
-            sys.stdout.write('\b' * nb)
-            sys.stdout.flush()
         columns = self._get_width()
+        self._erase(columns)
         self.width = int(columns)
         telapsed = time.time()-self.tstart
         tail = " %3d%% Time: " % 100
