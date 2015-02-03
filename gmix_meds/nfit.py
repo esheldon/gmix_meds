@@ -161,6 +161,8 @@ class MedsFit(dict):
         
         self['debug_level'] = self.get('debug_level',1)
         
+        self['make_nbrs_plots']=self.get('make_nbrs_plots',False)
+        
     def _reset_mb_sums(self):
         from numpy import zeros
         nband=self['nband']
@@ -384,12 +386,16 @@ class MedsFit(dict):
                 self.data['nimage_use'][dindex, :] = n_im[:]
         else:
             print("    getting observations:")
+            tg = -time.time()
             coadd_mb_obs_list, mb_obs_list, n_im = self._get_multi_band_observations(mindex)
+            tg += time.time()
             if self.data['processed'][dindex] == 0:
                 self.data['nimage_use'][dindex, :] = n_im[:]
-            print("        nimage_tot:",self.data['nimage_tot'][dindex, :])
             print("        nimage_use:",self.data['nimage_use'][dindex, :])
-                
+            print("        nimage_tot:",self.data['nimage_tot'][dindex, :])
+            if self['debug_level'] >= 2:
+                print("        time: %0.2g seconds",tg)
+            
             if len(coadd_mb_obs_list) != self['nband']:                
                 print("        some coadd failed to fit psf")
                 self.data['flags'][dindex] = PSF_FIT_FAILURE
@@ -1236,7 +1242,7 @@ class MedsFit(dict):
                     else:
                         cen_image = obj_image.copy()
                 
-                if self['make_plots']:
+                if self['make_plots'] or self['make_nbrs_plots']:
                     self._plot_model_nbrs(band,nbrs_image,obs,coadd=coadd,cen_image=cen_image)
 
     def _plot_model_nbrs(self,band,nbrs_image,obs,cen_image=None,coadd=False):
