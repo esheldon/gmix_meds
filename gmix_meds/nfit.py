@@ -1146,8 +1146,7 @@ class MedsFit(dict):
         #get nbrs model data and nbrs to model
         model_fits, epochs, meds_object_data = self._get_nbrs_model_data()
         nbr_numbers = self._get_nbrs_to_model(number)
-        if self['debug_level'] >= 2:
-            print('            nbrs:',nbr_numbers)
+        print('            nbrs:',nbr_numbers)
         
         #construct some indexes of fofmems into nbrs structs
         model_fits_indexes = {}
