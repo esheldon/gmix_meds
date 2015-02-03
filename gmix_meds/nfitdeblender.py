@@ -25,21 +25,28 @@ class MLDeblender(MedsFit):
             #################################
             #first get fiducial models
             #################################
+            print('================================================================================')
+            print('================================================================================')
+            print('first fit:')
             
             fofmems = self.fofid2mindex[fofid]
             q = numpy.argsort(self.meds_list[0]['box_size'][fofmems])
             q = q[::-1]
             sfofmems = fofmems[q]
             
+            loc = 0
             for mindex in sfofmems:
                 if self.data['processed'][mindex] > 0:
                     continue
                 
-                print('index: %d:%d' % (mindex,len(fofmems)-1), )
+                print('index: %d:%d' % (mindex,len(fofmems)-1))
+                print('    on % 5d of % 5d' % (loc+1,len(fofmems)))
                 ti = time.time()
                 self.fit_obj(mindex,model_neighbors=False)
                 ti = time.time()-ti
                 print('    time:',ti)
+                
+                loc += 1
                 
             
             #################################
@@ -59,11 +66,13 @@ class MLDeblender(MedsFit):
                 
                 self.prev_data = self.data.copy()
                 
+                loc = 0
                 rfofmems = numpy.random.permutation(fofmems)
                 for mindex in rfofmems:
                     self.data['processed'][mindex] += 1
                     
                     print('index: %d:%d' % (mindex,len(rfofmems)-1), )
+                    print('    on % 5d of % 5d' % (loc+1,len(fofmems)))
                     ti = time.time()                    
                     #skip if flags are set from first try
                     if self.data['flags'][mindex] > 0:
@@ -74,6 +83,7 @@ class MLDeblender(MedsFit):
                         self.fit_obj(mindex,model_neighbors=True)
                     ti = time.time()-ti
                     print('    time:',ti)
+                    loc += 1
                     
                 #FIXME do conv check
                 print('convergence:')
@@ -186,6 +196,14 @@ class MLDeblender(MedsFit):
         #wow this next bit is a total hack...
         fitter.get_best_pars = lambda : fitter.get_result()['pars']
         
+        if self['deblend_force_flags'] and fitter._result['flags'] > 0:
+            Np = len(fitter._result['pars'])
+            cov = numpy.zeros((Np,Np),dtype=float)
+            fitter._result['pars_cov'] = cov
+            fitter._result['pars_err'] = numpy.sqrt(numpy.diag(cov))
+            fitter._result['g_cov'] = cov[2:2+2, 2:2+2]
+            fitter._result['flags'] = 0
+            
         #FIXME - not doing MCMC stats clearly - any side effects?
         # also adds .weights attribute
         #self._calc_mcmc_stats(fitter, model)

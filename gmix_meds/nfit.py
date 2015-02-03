@@ -159,6 +159,8 @@ class MedsFit(dict):
 
         self['model_neighbors'] = self.get('model_neighbors',False)
         
+        self['debug_level'] = self.get('debug_level',1)
+        
     def _reset_mb_sums(self):
         from numpy import zeros
         nband=self['nband']
@@ -366,9 +368,12 @@ class MedsFit(dict):
                 self.data['processed'][dindex] = 1
                 self.data['time'][dindex] = time.time()-t0
                 return
-        
+
+        #helpful I/O        
         print('    coadd_objects_id: %ld' % self.data['id'][dindex])
         print('    number: %ld' % self.data['number'][dindex])
+        print("    dims: (%d,%d)" % (self.data['box_size'][dindex],self.data['box_size'][dindex]))
+
         
         # get MultiBandObsList obects
         if self['save_obs_per_fof'] and self.meds_list[0]['number'][mindex] in self.fof_mb_obs_list:
@@ -378,12 +383,15 @@ class MedsFit(dict):
             if self.data['processed'][dindex] == 0:
                 self.data['nimage_use'][dindex, :] = n_im[:]
         else:
+            print("    getting observations:")
             coadd_mb_obs_list, mb_obs_list, n_im = self._get_multi_band_observations(mindex)
             if self.data['processed'][dindex] == 0:
                 self.data['nimage_use'][dindex, :] = n_im[:]
+            print("        nimage_tot:",self.data['nimage_tot'][dindex, :])
+            print("        nimage_use:",self.data['nimage_use'][dindex, :])
                 
-            if len(coadd_mb_obs_list) != self['nband']:
-                print("  some coadd failed to fit psf")
+            if len(coadd_mb_obs_list) != self['nband']:                
+                print("        some coadd failed to fit psf")
                 self.data['flags'][dindex] = PSF_FIT_FAILURE
                 self.data['time'][dindex] = time.time()-t0
                 if self.data['processed'][dindex] == 0:
@@ -391,7 +399,7 @@ class MedsFit(dict):
                 return
 
             if len(mb_obs_list) != self['nband']:
-                print("  not all bands had at least one psf fit"
+                print("        not all bands had at least one psf fit"
                       " succeed and were without image flags")
                 self.data['flags'][dindex] = PSF_FIT_FAILURE 
                 self.data['time'][dindex] = time.time()-t0
@@ -410,9 +418,6 @@ class MedsFit(dict):
             if self['save_obs_per_fof']:
                 self.fof_mb_obs_list[self.meds_list[0]['number'][mindex]] = [coadd_mb_obs_list, mb_obs_list, n_im]
                 
-        #helpful I/O
-        print("    dims:",coadd_mb_obs_list[0][0].image.shape)
-
         #nbrs junk
         if model_neighbors:
             print("    modeling neighbors:")
@@ -600,12 +605,14 @@ class MedsFit(dict):
 
         # informative only
         if w.size != image_flags.size:
-            print("    for band %d removed %d/%d images due to "
-                  "flags" % (band, ncutout-w.size, ncutout))
+            if self['debug_level'] >= 1:
+                print("    for band %d removed %d/%d images due to "
+                      "flags" % (band, ncutout-w.size, ncutout))
 
         # need coadd and at lease one SE image
         if w.size < 2:
-            print('    < 2 with no image flags')
+            if self['debug_level'] >= 1:
+                print('    < 2 with no image flags')
             flags |= IMAGE_FLAGS
 
         return flags
@@ -625,8 +632,9 @@ class MedsFit(dict):
         sigma=numpy.sqrt(T/2.)
         aper=self['aperture_nsigma']*sigma
         aper_pix=aper/obs[0][0].jacobian.get_scale()
-
-        print("    setting aperture to: %s'' %s pix" % (aper,aper_pix))
+        
+        if self['debug_level'] >= 1:
+            print("    setting aperture to: %s'' %s pix" % (aper,aper_pix))
         obs.set_aperture(aper)
 
     def _get_multi_band_observations(self, mindex):
@@ -742,7 +750,8 @@ class MedsFit(dict):
         # weight map is modified
         nreject=meds.reject_outliers(imlist,wtlist)
         if nreject > 0:
-            print('        rejected:',nreject)
+            if self['debug_level'] >= 1:
+                print('        rejected:',nreject)
 
     def _get_band_observations(self, band, mindex):
         """
@@ -825,20 +834,54 @@ class MedsFit(dict):
         GMixMaxIterEM is raised if psf fitting fails
         """
         meds=self.meds_list[band]
-
+        
+        #timing
+        tio_tot = 0.0
+        tpsfex = 0.0
+        tpsffit = 0.0
+        
         fname = self._get_meds_orig_filename(meds, mindex, icut)
+        
+        tio = -time.time()
         im = self._get_meds_image(meds, mindex, icut)
+        tio += time.time()
+        tio_tot += tio
+        if self['debug_level'] >= 2:
+            print("        img I/O: %0.2g seconds" % tio)
+        
+        tio = -time.time()
         wt = self._get_meds_weight(meds, mindex, icut)
+        tio += time.time()
+        tio_tot += tio
+        if self['debug_level'] >= 2:
+            print("        wgt I/O: %0.2g seconds" % tio)
+        
+        tio = -time.time()
         jacob = self._get_jacobian(meds, mindex, icut)
-
+        tio += time.time()
+        tio_tot += tio
+        if self['debug_level'] >= 2:
+            print("        jac I/O: %0.2g seconds" % tio)
+            
+        if self['debug_level'] >= 2:
+            print("        tot I/O: %0.2g seconds" % tio_tot)
+        
         # for the psf fitting code
         wt=wt.clip(min=0.0)
-
+        
+        tpsfex -= time.time()
         psf_obs = self._get_psf_observation(band, mindex, icut, jacob)
-
+        tpsfex += time.time()
+        if self['debug_level'] >= 2:
+            print("        psfex: %0.2g seconds" % tpsfex)
+        
+        tpsffit -= time.time()
         psf_fitter = self._fit_psf(psf_obs)
         psf_gmix = psf_fitter.get_gmix()
-
+        tpsffit += time.time()
+        if self['debug_level'] >= 2:
+            print("        psf fit: %0.2g seconds" % tpsffit)
+        
         # we only get here if psf fitting succeeds because an exception gets
         # raised on fit failure; note other metadata should always get set
         # above.  relies on global variable self.epoch_index
@@ -899,7 +942,8 @@ class MedsFit(dict):
         obs.update_meta_data(meta)
 
         psf_fwhm=2.35*numpy.sqrt(psf_gmix.get_T()/2.0)
-        print("        psf fwhm:",psf_fwhm)
+        if self['debug_level'] >= 1:
+            print("        psf fwhm:",psf_fwhm)
 
         if self['make_plots']:
             self._do_make_psf_plots(band, psf_gmix, psf_obs, mindex, icut)
@@ -1096,7 +1140,8 @@ class MedsFit(dict):
         #get nbrs model data and nbrs to model
         model_fits, epochs, meds_object_data = self._get_nbrs_model_data()
         nbr_numbers = self._get_nbrs_to_model(number)
-        print('            nbrs:',nbr_numbers)
+        if self['debug_level'] >= 2:
+            print('            nbrs:',nbr_numbers)
         
         #construct some indexes of fofmems into nbrs structs
         model_fits_indexes = {}
@@ -1183,7 +1228,8 @@ class MedsFit(dict):
                     obj_image = gmix_image.make_image(obs.image.shape, jacobian=jacob)
 
                     if nbr_number != number:
-                        print('                render nbr:',nbr_number)
+                        if self['debug_level'] >= 2:
+                            print('                render nbr:',nbr_number)
                         nbrs_image += obj_image
                         if self['nbrs_model']['method'] == 'subtract':
                             obs.image -= obj_image
@@ -1242,13 +1288,21 @@ class MedsFit(dict):
         tab[1,2] = images.view(obs.weight,title='weight map',show=False)
                     
         title_num = self.meds_list[0]['id'][self.mindex]
-        if icut_cen > 0:
-            tab.write_img(1920,1200,'%d-nbrs-model-band%d-icut%d.png' % (title_num,band,icut_cen))
-            print("                %d-nbrs-model-band%d-icut%d.png" % (title_num,band,icut_cen))
-        else:
-            tab.write_img(1920,1200,'%d-nbrs-model-band%d-coadd.png' % (title_num,band))
-            print("                %d-nbrs-model-band%d-coadd.png" % (title_num,band))
-
+        try:
+            os.system('mkdir -p %d-plots' % title_num)
+            if icut_cen > 0:
+                tab.write_img(1920,1200,'%d-plots/%d-nbrs-model-band%d-icut%d.png' % (title_num,title_num,band,icut_cen))
+                if self['debug_level'] >= 1:
+                    print("                %d-plots/%d-nbrs-model-band%d-icut%d.png" % (title_num,title_num,band,icut_cen))
+            else:
+                tab.write_img(1920,1200,'%d-plots/%d-nbrs-model-band%d-coadd.png' % (title_num,title_num,band))
+                if self['debug_level'] >= 1:
+                    print("                %d-plots/%d-nbrs-model-band%d-coadd.png" % (title_num,title_num,band))
+        except:
+            if self['debug_level'] >= 1:
+                print("caught error plotting nbrs")
+            pass
+                
     def _fit_psf(self, obs):
         """
         Fit the PSF observation to a gaussian mixture
@@ -1936,36 +1990,42 @@ class MedsFit(dict):
         
         title='%s %s' % (type,model)
         try:
+            os.system('mkdir -p %d-plots' % title_num)
             res_plots=fitter.plot_residuals(title=title)
             if res_plots is not None:
                 for band, band_plots in enumerate(res_plots):
                     for icut, plt in enumerate(band_plots):
-                        fname='%d-%s-resid-%s-band%d-im%d.png' % (title_num,type,model,band,icut+1)
-                        print("            ",fname)
+                        fname='%d-plots/%d-%s-resid-%s-band%d-im%d.png' % (title_num,title_num,type,model,band,icut+1)
+                        if self['debug_level'] >= 1:
+                            print("            ",fname)
                         plt.write_img(1920,1200,fname)
 
         except GMixRangeError as err:
-            print("caught error plotting resid: %s" % str(err))
+            if self['debug_level'] >= 1:
+                print("caught error plotting resid: %s" % str(err))
 
         if do_trials:
             try:
+                os.system('mkdir -p %d-plots' % title_num)
                 pdict=fitter.make_plots(title=title,
                                         weights=fitter.weights)
                 
                 pdict['trials'].aspect_ratio=1.5
                 pdict['wtrials'].aspect_ratio=1.5
 
-                trials_png='%06d-%s-trials-%s.png' % (title_num,type,model)
-                wtrials_png='%06d-%s-wtrials-%s.png' % (title_num,type,model)
-
-                print("            ",trials_png)
+                trials_png='%d-plots/%d-%s-trials-%s.png' % (title_num,title_num,type,model)
+                wtrials_png='%d-plots/%d-%s-wtrials-%s.png' % (title_num,title_num,type,model)
+                
+                if self['debug_level'] >= 1:
+                    print("            ",trials_png)
                 pdict['trials'].write_img(1200,1200,trials_png)
-
-                print("            ",wtrials_png)
+                
+                if self['debug_level'] >= 1:
+                    print("            ",wtrials_png)
                 pdict['wtrials'].write_img(1200,1200,wtrials_png)
             except:
-                print("caught error plotting trials")
-
+                if self['debug_level'] >= 1:
+                    print("caught error plotting trials")
 
 
     def _do_make_psf_plots(self, band, gmix, obs, mindex, icut):
@@ -2001,14 +2061,19 @@ class MedsFit(dict):
         plt.title=title
         
         title_num = self.meds_list[0]['id'][mindex]
-        if icut==0:
-            fname='%06d-psf-resid-band%d-coadd.png' % (title_num,band)
-        else:
-            fname='%06d-psf-resid-band%d-icut%d.png' % (title_num,band,icut+1)
-
-        print("            ",fname)
-        plt.write_img(1920,1200,fname)
-
+        try:
+            os.system('mkdir -p %d-plots' % title_num)
+            if icut==0:
+                fname='%d-plots/%d-psf-resid-band%d-coadd.png' % (title_num,title_num,band)
+            else:
+                fname='%d-plots/%d-psf-resid-band%d-icut%d.png' % (title_num,title_num,band,icut+1)
+                
+            if self['debug_level'] >= 1:
+                print("            ",fname)
+            plt.write_img(1920,1200,fname)
+        except:
+            if self['debug_level'] >= 1:
+                print("caught error plotting psf")
 
     def _combine_image_flags(self):
         """
@@ -2128,7 +2193,8 @@ class MedsFit(dict):
         for band in self.iband:
             mname = self['meds_files_full'][band]
             wcsname = mname.replace('-meds-','-meds-wcs-').replace('.fits.fz','.fits').replace('.fits','.json')
-            print('loading: %s' % wcsname)
+            if self['debug_level'] >= 1:
+                print('loading: %s' % wcsname)
             try:
                 with open(wcsname,'r') as fp:
                     wcs_list = json.load(fp)
@@ -2257,7 +2323,8 @@ class MedsFit(dict):
                     print("warning: missing psfex: %s" % psfpath)
                     flags = 1<<16
                 else:
-                    print("loading:",psfpath)
+                    if self['debug_level'] >= 1:
+                        print("loading:",psfpath)
                     pex=psfex.PSFEx(psfpath)
         
             #flags = flags << PSFEX_FLAGS_SHIFT
@@ -3073,9 +3140,15 @@ class MHMedsFitHybrid(MedsFit):
             plt=plot_autocorr(trials)
             plt.title='%06d-%s' % (self.mindex,model)
             title_num = self.meds_list[0]['id'][self.mindex]
-            fname='%d-%s-autocorr.png' % (title_num,model)
-            print("        ", fname)
-            plt.write_img(1000,1000,fname)
+            try:
+                os.system('mkdir -p %d-plots' % title_num)
+                fname='%d-plots/%d-%s-autocorr.png' % (title_num,title_num,model)
+                if self['debug_level'] >= 1:
+                    print("        ", fname)
+                plt.write_img(1000,1000,fname)
+            except:
+                if self['debug_level'] >= 1:
+                    print("caught error plotting autocorr")
         return fitter
 
 
