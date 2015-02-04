@@ -2,14 +2,61 @@ from __future__ import print_function
 import numpy
 from .nfit import *
 from ngmix import print_pars
-
+import copy
 from ngmix.fitting import MaxSimple, EIG_NOTFINITE
 
 class MLDeblender(MedsFit):
     """
     Maximum Likelihood Deblender
     """
-    
+
+    def _check_convergence(self,fofmems):
+        """
+        check convergence of fits
+        """
+        
+        dlevel = 0
+        
+        npars = 5+self['nband']
+        maxabs = numpy.zeros(npars,dtype='f8')
+        maxabs[:] = -numpy.inf
+        maxfrac = numpy.zeros(npars,dtype='f8')
+        maxfrac[:] = -numpy.inf
+        
+        print('convergence:')
+        for mindex in fofmems:
+            if self['debug_level'] >= dlevel:
+                print('    mindex:',mindex)
+            for model in self['fit_models']:                
+                old = self.prev_data[model+'_pars'][mindex]
+                new = self.data[model+'_pars'][mindex]
+                absdiff = numpy.abs(new-old)
+                absfracdiff = numpy.abs(new/old-1.0)
+
+                for i in xrange(npars):
+                    if absdiff[i] > maxabs[i]:
+                        maxabs[i] = copy.copy(absdiff[i])
+                    if absfracdiff[i] > maxfrac[i]:
+                        maxfrac[i] = copy.copy(absfracdiff[i])
+                
+                if self['debug_level'] >= dlevel:
+                    print('        %s:' % model)
+                    print_pars(old,        front='            old      ')
+                    print_pars(new,        front='            new      ')
+                    print_pars(absfracdiff,front='            frac diff')
+                    print_pars(absdiff,    front='            abs diff ')
+        
+        print("    max abs diff :",maxabs)
+        print("    max frac diff:",maxfrac)
+        
+        self.maxabs = maxabs
+        self.maxfrac = maxfrac
+        
+        if numpy.all(maxabs <= self['deblend_maxabs_conv']) and numpy.all(maxfrac <= self['deblend_maxfrac_conv']):
+            return True
+        else:
+            return False
+
     def do_fits(self):
         """
         Fit all objects in our list
@@ -27,6 +74,7 @@ class MLDeblender(MedsFit):
             #################################
             print('================================================================================')
             print('================================================================================')
+            print('FoF id:',fofid)
             print('first fit:')
             
             fofmems = self.fofid2mindex[fofid]
@@ -57,6 +105,8 @@ class MLDeblender(MedsFit):
             if len(fofmems) == 1:
                 continue
                         
+            converged = False
+            
             for itr in range(self['max_deblend_itr']):
                 #copy data
                 print (' ')
@@ -85,22 +135,19 @@ class MLDeblender(MedsFit):
                     print('    time:',ti)
                     loc += 1
                     
-                #FIXME do conv check
-                print('convergence:')
-                for mindex in fofmems:
-                    print('    mindex:',mindex)
-                    for model in self['fit_models']:
-                        print('        %s:' % model)
-                        old = self.prev_data[model+'_pars'][mindex]
-                        new = self.data[model+'_pars'][mindex]
-                        print_pars(old,front='            old      ')
-                        print_pars(new,front='            new      ')
-                        print_pars(new/old-1.0,front='            frac diff')
-                        print_pars(new-old,front='            abs diff ')
-                        
+                converged = self._check_convergence(fofmems)
+                if converged:
+                    break
+                
                 tm=time.time()-t0
                 self._try_checkpoint(tm) # only at certain intervals
                     
+            print('FoF id:',fofid)
+            print('    converged:',converged)
+            print('    itr:',itr+1)
+            print('    max abs diff:',self.maxabs)
+            print('    max frac diff:',self.maxfrac)
+            
             if self['save_obs_per_fof']:
                 del self.fof_mb_obs_list
         
