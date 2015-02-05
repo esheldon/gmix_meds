@@ -13,6 +13,7 @@ import numpy
 import meds
 import psfex
 import ngmix
+import copy
 from ngmix import srandu
 from ngmix import Jacobian
 from ngmix import GMixMaxIterEM, GMixRangeError, print_pars
@@ -127,7 +128,7 @@ class MedsFit(dict):
     def _set_some_defaults(self):
         self['fit_models'] = list( self['model_pars'].keys() )
 
-        self['psf_offset_max']=self.get('psf_offset_max',PSF_OFFSET_MAX)
+        self['psf_offset_max']=self.get('psf_offset_max',None)
         self['region']=self.get('region','cweight-nearest')
         self['max_box_size']=self.get('max_box_size',2048)
         self['reject_outliers']=self.get('reject_outliers',True) # from cutouts
@@ -1079,7 +1080,7 @@ class MedsFit(dict):
             if keep_nbr:
                 nbr_numbers_to_keep.append(nbr_number)
 
-        if self['make_plots']:
+        if self['make_plots'] or self['make_nbrs_plots']:
             nbr_numbers_to_keep.append(number)
         
         nbr_numbers = numpy.array(nbr_numbers_to_keep)
@@ -1352,7 +1353,13 @@ class MedsFit(dict):
                           sky,
                           maxiter=maxiter,
                           tol=tol)
-                break
+                keep_model,maxoff = self._should_keep_psf(fitter.get_gmix())
+                if keep_model:
+                    break
+                else:
+                    print("psf fit max offset too big:",maxoff)
+                    if i == (ntry-1):
+                        raise
             except GMixMaxIterEM:
                 res=fitter.get_result()
                 print('last fit:')
@@ -1523,22 +1530,25 @@ class MedsFit(dict):
 
     def _should_keep_psf(self, gm):
         """
-        For double gauss we limit the separation
+        The sep between any two should be smaller than this
         """
-        keep=True
-        offset_arcsec=0.0
-        psf_ngauss=self['psf_em_pars']['ngauss']
-        if psf_ngauss == 2:
-            offset_arcsec = calc_offset_arcsec(gm)
-            if offset_arcsec > self['psf_offset_max']:
+        keep = True
+        max_offset_arcsec = 0.0
+        if self['psf_offset_max'] is not None:
+            psf_ngauss=self['psf_em_pars']['ngauss']        
+            data=gm.get_data()        
+            for i in xrange(psf_ngauss):
+                for j in xrange(i+1,psf_ngauss):                
+                    rows = [data['row'][i],data['row'][j]]
+                    cols = [data['col'][i],data['col'][j]]
+                    offset_arcsec = calc_offset_arcsec(rows,cols)
+                    if offset_arcsec > max_offset_arcsec:
+                        max_offset_arcsec = copy.copy(offset_arcsec)
+            
+            if max_offset_arcsec > self['psf_offset_max']:
                 keep=False
 
-        return keep, offset_arcsec
-
-
-
-
-
+        return keep, max_offset_arcsec
 
     def _get_em_guess(self, sigma2, ngauss):
         """
@@ -1591,12 +1601,23 @@ class MedsFit(dict):
                             )
 
         else:
+            import random
+            pnorm = 0.0
+            pars = []
+            for i in xrange(ngauss):
+                j = random.randrange(3)                
+                pars.extend([_em3_pguess[j]*(1.0+0.1*srandu()),
+                             0.1*srandu(),
+                             0.1*srandu(),
+                             _em3_fguess[j]*sigma2*(1.0 + 0.1*srandu()),
+                             0.01*srandu(),
+                             _em3_fguess[j]*sigma2*(1.0 + 0.1*srandu())])
+                pnorm += pars[-6]
+            for i in xrange(ngauss):
+                pars[i*6] /= pnorm
             raise ValueError("only support 1,2,3 gauss for em")
 
         return ngmix.gmix.GMix(pars=pars)
-
-
-
 
     def _fit_psf_flux(self):
         """
@@ -2059,10 +2080,11 @@ class MedsFit(dict):
             return
 
         model_im *= ( im.sum()/modflux )
-
-        plt=images.compare_images(im, model_im,
+        
+        ims = 1e3/numpy.max(im)
+        plt=images.compare_images(im*ims, model_im*ims,
                                   label1='psf', label2='model',
-                                  show=False)
+                                  show=False, nonlinear=0.075)
         plt.title=title
         
         title_num = self.meds_list[0]['id'][mindex]
@@ -3230,11 +3252,9 @@ def get_as_list(data_in):
         out=data_in
     return out
 
-def calc_offset_arcsec(gm, scale=1.0):
-    data=gm.get_data()
-
-    offset=numpy.sqrt( (data['row'][0]-data['row'][1])**2 + 
-                       (data['col'][0]-data['col'][1])**2 )
+def calc_offset_arcsec(rows,cols,scale=1.0):
+    offset=numpy.sqrt( (rows[0]-rows[1])**2 + 
+                       (cols[0]-cols[1])**2 )
     offset_arcsec=offset*scale
     return offset_arcsec
 

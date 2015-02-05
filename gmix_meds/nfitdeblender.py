@@ -62,6 +62,15 @@ class MLDeblender(MedsFit):
         Fit all objects in our list
         """
         
+        #fix up conv criterion
+        for key in ['deblend_maxabs_conv','deblend_maxfrac_conv']:
+            if len(self[key]) < self['nband']+5:
+                ndiff = self['nband']+5 - len(self[key])
+                for i in xrange(ndiff):
+                    self[key].append(self[key][-1])
+                self[key] = numpy.array(self[key])
+                assert len(self[key]) == self['nband']+5
+        
         t0=time.time()
         num = len(self.fofids)
         
