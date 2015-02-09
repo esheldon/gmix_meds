@@ -1,6 +1,7 @@
 from __future__ import print_function
 import os
 import numpy
+from numpy import log
 import fitsio
 
 import ngmix
@@ -157,8 +158,8 @@ class FromPSFGuesser(GuesserBase):
         self.fluxes=fluxes
         self.scaling=scaling
 
-        self.log_T = numpy.log10(T)
-        self.log_fluxes = numpy.log10(fluxes)
+        self.log_T = log(T)
+        self.log_fluxes = log(fluxes)
 
     def __call__(self, n=1, prior=None, **keys):
         """
@@ -173,7 +174,6 @@ class FromPSFGuesser(GuesserBase):
         guess[:,1] = 0.01*srandu(n)
         guess[:,2] = 0.1*srandu(n)
         guess[:,3] = 0.1*srandu(n)
-        #guess[:,4] = numpy.log10( self.T*(1.0 + 0.2*srandu(n)) )
 
         if self.scaling=='linear':
             guess[:,4] = self.T*(1.0 + 0.1*srandu(n))
