@@ -170,19 +170,19 @@ class Concat(object):
             
             n=Namer(model)
 
-            w,=numpy.where(data[n['flags']] == 0)
+            w,=numpy.where(data[n('flags')] == 0)
             if w.size > 0:
-                data[n['pars']][:,2] *= self.blind_factor
-                data[n['pars']][:,3] *= self.blind_factor
-                if n['pars_best'] in names:
-                    data[n['pars_best']][:,2] *= self.blind_factor
-                    data[n['pars_best']][:,3] *= self.blind_factor
+                data[n('pars')][:,2] *= self.blind_factor
+                data[n('pars')][:,3] *= self.blind_factor
+                if n('pars_best') in names:
+                    data[n('pars_best')][:,2] *= self.blind_factor
+                    data[n('pars_best')][:,3] *= self.blind_factor
 
-                if n['g'] in names:
-                    data[n['g']][w,:] *= self.blind_factor
+                if n('g') in names:
+                    data[n('g')][w,:] *= self.blind_factor
 
-                if n['Q'] in names:
-                    data[n['Q']][w,:] *= self.blind_factor
+                if n('Q') in names:
+                    data[n('Q')][w,:] *= self.blind_factor
 
     def pick_epoch_fields(self, epoch_data0):
         """
@@ -227,7 +227,7 @@ class Concat(object):
         for model in model_names:
             n=Namer(model)
 
-            if n['flux'] in names:
+            if n('flux') in names:
                 models.append(model)
 
         return models
@@ -269,37 +269,37 @@ class Concat(object):
 
             # turn on when we fix sign
             gcind = names.index('%s_g_cov' % ft)
-            wtf = (n['weight'], 'f8')
+            wtf = (n('weight'), 'f8')
             dt.insert(gcind+1, wtf)
-            names.insert(gcind+1, n['weight'])
+            names.insert(gcind+1, n('weight'))
 
-            flux_ind = names.index(n['flux'])
+            flux_ind = names.index(n('flux'))
 
             offset=1
-            dt.insert(flux_ind+offset, (n['flux_s2n'], 'f8', nbands) )
-            names.insert(flux_ind+offset,n['flux_s2n'])
+            dt.insert(flux_ind+offset, (n('flux_s2n'), 'f8', nbands) )
+            names.insert(flux_ind+offset,n('flux_s2n'))
 
             offset += 1
-            magf = (n['mag'], 'f8', nbands)
+            magf = (n('mag'), 'f8', nbands)
             dt.insert(flux_ind+offset, magf)
-            names.insert(flux_ind+offset, n['mag'])
+            names.insert(flux_ind+offset, n('mag'))
 
             offset += 1
-            logsbf = (n['logsb'], 'f8', nbands)
+            logsbf = (n('logsb'), 'f8', nbands)
             dt.insert(flux_ind+offset, logsbf)
-            names.insert(flux_ind+offset, n['logsb'])
+            names.insert(flux_ind+offset, n('logsb'))
            
             pars_best_name='%s_pars_best' % ft
             if pars_best_name in names:
                 offset += 1
-                magf = (n['mag_best'], 'f8', nbands)
+                magf = (n('mag_best'), 'f8', nbands)
                 dt.insert(flux_ind+offset, magf)
-                names.insert(flux_ind+offset, n['mag_best'])
+                names.insert(flux_ind+offset, n('mag_best'))
 
-            if n['T'] not in data0.dtype.names:
-                fadd=[(n['T'],'f8'),
-                      (n['T_err'],'f8'),
-                      (n['T_s2n'],'f8')]
+            if n('T') not in data0.dtype.names:
+                fadd=[(n('T'),'f8'),
+                      (n('T_err'),'f8'),
+                      (n('T_s2n'),'f8')]
                 ind = names.index('%s_flux_cov' % ft)
                 for f in fadd:
                     dt.insert(ind+1, f)
@@ -339,16 +339,16 @@ class Concat(object):
         for ft in models:
             n=Namer(ft)
 
-            data[n['T']][:]   = -9999.0
-            data[n['T_err']][:]  =  9999.0
-            data[n['T_s2n']][:] = -9999.0
+            data[n('T')][:]   = -9999.0
+            data[n('T_err')][:]  =  9999.0
+            data[n('T_s2n')][:] = -9999.0
 
-            Tcov=data[n['pars_cov']][:,4,4]
-            w,=numpy.where( (data[n['flags']] == 0) & (Tcov > 0.0) )
+            Tcov=data[n('pars_cov')][:,4,4]
+            w,=numpy.where( (data[n('flags')] == 0) & (Tcov > 0.0) )
             if w.size > 0:
-                data[n['T']][w]   = data[n['pars']][w, 4]
-                data[n['T_err']][w]  =  numpy.sqrt(Tcov[w])
-                data[n['T_s2n']][w] = data[n['T']][w]/data[n['T_err']][w]
+                data[n('T')][w]   = data[n('pars')][w, 4]
+                data[n('T_err')][w]  =  numpy.sqrt(Tcov[w])
+                data[n('T_s2n')][w] = data[n('T')][w]/data[n('T_err')][w]
 
 
     def add_weight(self, data, models):
@@ -358,10 +358,10 @@ class Concat(object):
         for model in models:
             n=Namer(model)
 
-            c=data[n['g_cov']]
+            c=data[n('g_cov')]
             weight=1.0/(2.*SHAPENOISE2 + c[:,0,0] + 2*c[:,0,1] + c[:,1,1])
 
-            data[n['weight']] = weight
+            data[n('weight')] = weight
 
     def calc_mag_and_flux_stuff(self, data, meta, model, band):
         """
@@ -372,44 +372,47 @@ class Concat(object):
 
         n=Namer(model)
 
-        data[n['mag']][:,band] = -9999.
-        data[n['logsb']][:,band] = -9999.0
-        data[n['flux_s2n']][:,band] = 0.0
+        data[n('mag')][:,band] = -9999.
+        data[n('flux_s2n')][:,band] = 0.0
+
+        if 'psf' not in model:
+            data[n('logsb')][:,band] = -9999.0
 
         if model in ['coadd_psf','psf']:
-            w,=numpy.where(data[n['flags']][:,band] == 0)
+            w,=numpy.where(data[n('flags')][:,band] == 0)
         else:
-            w,=numpy.where(data[n['flags']] == 0)
+            w,=numpy.where(data[n('flags')] == 0)
 
         if w.size > 0:
-            flux = ( data[n['flux']][w,band]/PIXSCALE2 ).clip(min=0.001)
+            flux = ( data[n('flux')][w,band]/PIXSCALE2 ).clip(min=0.001)
             magzero=meta['magzp_ref'][band]
-            data[n['mag']][w,band] = magzero - 2.5*numpy.log10( flux )
+            data[n('mag')][w,band] = magzero - 2.5*numpy.log10( flux )
 
-            data[n['logsb']][w,band] = data[n['flux']][w,band]/data[n['T']][w]
+            if 'psf' not in model:
+                data[n('logsb')][w,band] = data[n('flux')][w,band]/data[n('T')][w]
 
-            if n['pars_best'] in names:
-                flux_best = data[n['pars_best']][w,5+band]
+            if n('pars_best') in names:
+                flux_best = data[n('pars_best')][w,5+band]
                 flux_best = (flux_best/PIXSCALE2 ).clip(min=0.001)
-                data[n['mag_best']][w,band] = magzero - 2.5*numpy.log10( flux_best )
+                data[n('mag_best')][w,band] = magzero - 2.5*numpy.log10( flux_best )
 
             if model in ['coadd_psf','psf']:
-                flux=data[n['flux']][w,band]
-                flux_err=data[n['flux_err']][w,band]
+                flux=data[n('flux')][w,band]
+                flux_err=data[n('flux_err')][w,band]
                 w2,=numpy.where(flux_err > 0)
                 if w2.size > 0:
                     flux=flux[w2]
                     flux_err=flux_err[w2]
-                    data[n['flux_s2n']][w[w2],band] = flux/flux_err
+                    data[n('flux_s2n')][w[w2],band] = flux/flux_err
             else:
-                flux=data[n['flux_cov']][w,band,band]
-                flux_var=data[n['flux_cov']][w,band,band]
+                flux=data[n('flux_cov')][w,band,band]
+                flux_var=data[n('flux_cov')][w,band,band]
 
                 w2,=numpy.where(flux_var > 0)
                 if w.size > 0:
                     flux=flux[w2]
                     flux_err=numpy.sqrt(flux_var[w2])
-                    data[n['flux_s2n']][w[w2], band] = flux/flux_err
+                    data[n('flux_s2n')][w[w2], band] = flux/flux_err
 
 
     def read_data(self, fname, split):
