@@ -45,7 +45,7 @@ nu: 0.0 #robust fitting usually 5
 # nbrs model
 ##########################
 nbrs_model:
-    model: "exp"
+    model: "best_chi2per"
     method: "subtract"
     flags: "flags"
     pars: "pars"
@@ -55,11 +55,12 @@ nbrs_model:
 ############################
 save_obs_per_fof: True
 max_deblend_itr: 10
-deblend_guess_frac: 0.01
+deblend_guess_frac: 0.00
 deblend_force_flags: True
 make_nbrs_plots: True
-deblend_maxabs_conv:  [0.001,0.001,0.0001,0.0001,0.0001,0.0]
-deblend_maxfrac_conv: [1.0e-4,1.0e-4,1.0e-4,1.0e-4,1.0e-4,1.0e-4]
+deblend_iter_decide: 0
+deblend_maxabs_conv: [0.001,0.001,0.001,0.001,0.001,0.001]
+deblend_maxfrac_conv: [1.0e-4,1.0e-4,1.0e-2,1.0e-2,1.0e-3,1.0e-4]
 
 ####################################
 # fits, models, masks and guesses
@@ -76,11 +77,11 @@ max_pars:
     ftol: 1.0e-4
     xtol: 1.0e-4
 
-lm_ntry: 5
+lm_ntry: 10
 lm_pars:
     ftol: 1.0e-6
-    xtol: 1.0e-3
-    maxfev: 500
+    xtol: 1.0e-6
+    maxfev: 1000
 
 gal_em_pars:
     tol: 1.0e-4
@@ -113,14 +114,14 @@ model_pars:
         counts_prior_pars: [-1.0, 0.1, 1.0e+09, 0.25e+08]
         cen_prior_type: "dgauss"
         cen_prior_pars: [0.27]
-#    dev:
-#        g_prior_type: "cosmos-sersic"
-#        T_prior_type: "TwoSidedErf"
-#        T_prior_pars: [-0.07, 0.03, 1.0e+06, 1.0e+05]
-#        counts_prior_type: "TwoSidedErf"
-#        counts_prior_pars: [-1.0, 0.1, 1.0e+09, 0.25e+08]
-#        cen_prior_type: "dgauss"
-#        cen_prior_pars: [0.27]
+    dev:
+        g_prior_type: "cosmos-sersic"
+        T_prior_type: "TwoSidedErf"
+        T_prior_pars: [-0.07, 0.03, 1.0e+06, 1.0e+05]
+        counts_prior_type: "TwoSidedErf"
+        counts_prior_pars: [-1.0, 0.1, 1.0e+09, 0.25e+08]
+        cen_prior_type: "dgauss"
+        cen_prior_pars: [0.27]
 
 # this means repeat the couns priors for each band
 counts_prior_repeat: True

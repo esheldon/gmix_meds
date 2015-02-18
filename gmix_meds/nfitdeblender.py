@@ -6,115 +6,17 @@ import copy
 from ngmix.fitting import LMSimple, MaxSimple, EIG_NOTFINITE
 from ngmix.em import ApproxEMSimple
 
-#FIXME duplicate - remove when merge is done
-def get_shape_guess(g1, g2, n, width, max=0.99):
+NOT_DEBLEND_MODEL = 2**29
+
+#FIXME - add to util.py when merge is done
+class FromFullParsErrGuesser(FromFullParsGuesser):
     """
-    Get guess, making sure in range
+    get full guesses
     """
-
-    g=numpy.sqrt(g1**2 + g2**2)
-    if g > max:
-        fac = max/g
-
-        g1 = g1 * fac
-        g2 = g2 * fac
-
-    guess=numpy.zeros( (n, 2) )
-    shape=ngmix.Shape(g1, g2)
-
-    for i in xrange(n):
-
-        while True:
-            try:
-                g1_offset = width[0]*srandu()
-                g2_offset = width[1]*srandu()
-                shape_new=shape.copy()
-                shape_new.shear(g1_offset, g2_offset)
-                break
-            except GMixRangeError:
-                pass
-
-        guess[i,0] = shape_new.g1
-        guess[i,1] = shape_new.g2
-
-    return guess
-
-class FromParsGuesser(GuesserBase):
-    """
-    get full guesses 
-    """
-    def __init__(self, pars, pars_err, widths=None):
+    def __init__(self, pars, pars_err, scaling='linear', frac=0.1):
         self.pars=pars
         self.pars_err=pars_err
-
-        if widths is None:
-            widths=pars*0 + 0.01
-
-        self.widths=widths
-
-    def __call__(self, n=None, get_sigmas=False, prior=None, ntry=10):
-        """
-        center, shape are just distributed around zero
-        """
-
-        if n is None:
-            n=1
-            is_scalar=True
-        else:
-            is_scalar=False
-
-        pars=self.pars
-        widths=self.widths
-        npars=pars.size
-
-        guess=numpy.zeros( (n, npars) )
-
-        # bigger than LOWVAL
-        badval=-9999.0e20
-        for i in xrange(n):
-
-            ok=False
-            for itry in xrange(ntry):
-                guess[i,0] = pars[0] + widths[0]*srandu()
-                guess[i,1] = pars[1] + widths[1]*srandu()
-
-                # prevent from getting too large
-                guess_shape=get_shape_guess(pars[2],pars[3],
-                                            1,
-                                            widths[2:2+2],
-                                            max=0.8)
-                guess[i,2]=guess_shape[0,0]
-                guess[i,3]=guess_shape[0,1]
-
-                for j in xrange(4,npars):
-                    guess[i,j] = pars[j] + widths[j]*srandu()
-
-                try:
-                    lnp=prior.get_lnprob_scalar(guess[i,:])
-                    if lnp > badval:
-                        ok=True
-                        break
-                except GMixRangeError as err:
-                    pass
-
-            if not ok:
-                print("    had to sample....")
-                guess[j,:] = prior.sample()
-
-        if is_scalar:
-            guess=guess[0,:]
-
-        if get_sigmas:
-            return guess, self.pars_err
-        else:
-            return guess
-
-class FromParsErrGuesser(FromParsGuesser):
-    """
-    get full guesses 
-    """
-    def __init__(self, pars, pars_err, frac=0.2):
-        self.pars=pars
+        self.scaling=scaling
         
         widths=frac*pars_err
 
@@ -128,11 +30,7 @@ class FromParsErrGuesser(FromParsGuesser):
 
         self.widths=widths
 
-    def __call__old(self, n=None, get_sigmas=False, prior=None):
-        """
-        center, shape are just distributed around zero
-        """
-
+    def __call__(self, n=None, get_sigmas=False, prior=None):
         if n is None:
             n=1
             is_scalar=True
@@ -140,21 +38,31 @@ class FromParsErrGuesser(FromParsGuesser):
             is_scalar=False
 
         pars=self.pars
-        widths=self.widths
         npars=pars.size
+
+        width = self.widths
 
         guess=numpy.zeros( (n, npars) )
 
-        # srandu() has std of 0.57..
-        guess[:,0] = pars[0] + widths[0]*srandu(n)
-        guess[:,1] = pars[1] + widths[1]*srandu(n)
+        for j in xrange(n):
+            itr = 0
+            maxitr = 100
+            while itr < maxitr:
+                for i in xrange(npars):
+                    if self.scaling=='linear' and i >= 4:
+                        if pars[i] <= 0.0:
+                            guess[j,:] = width[i]*srandu(1)
+                        else:
+                            guess[j,i] = pars[i]*(1.0 + width[i]*srandu(1))
+                    else:
+                        # we add to log pars!
+                        guess[j,i] = pars[i] + width[i]*srandu(1)
 
-        guess_shape=get_shape_guess(pars[2],pars[3],n,widths[2:2+2])
-        guess[:,2]=guess_shape[:,0]
-        guess[:,3]=guess_shape[:,1]
-
-        for i in xrange(4,npars):
-            guess[:,i] = pars[i] + widths[i]*srandu(n)
+                if numpy.abs(guess[j,2]) < 1.0 \
+                        and numpy.abs(guess[j,3]) < 1.0 \
+                        and guess[j,2]*guess[j,2] + guess[j,3]*guess[j,3] < 1.0:
+                    break
+                itr += 1
 
         if prior is not None:
             self._fix_guess(guess, prior)
@@ -166,7 +74,6 @@ class FromParsErrGuesser(FromParsGuesser):
             return guess, self.pars_err
         else:
             return guess
-
 
 class MLDeblender(MedsFit):
     """
@@ -191,8 +98,8 @@ class MLDeblender(MedsFit):
             if self['debug_level'] >= dlevel:
                 print('    mindex:',mindex)
                 print('    coadd_objects_id: %ld' % self.meds_list[0]['id'][mindex])
-                print('    number: %ld' % self.meds_list[0]['id'][mindex])
-            for model in self['fit_models']:                
+                print('    number: %ld' % self.meds_list[0]['number'][mindex])
+            for model in self.fof_models_to_fit[mindex]:                
                 old = self.prev_data[model+'_pars'][mindex]
                 new = self.data[model+'_pars'][mindex]
                 absdiff = numpy.abs(new-old)
@@ -219,7 +126,7 @@ class MLDeblender(MedsFit):
         self.maxabs = maxabs
         self.maxfrac = maxfrac
         
-        if numpy.all(maxabs <= self['deblend_maxabs_conv']) and numpy.all(maxfrac <= self['deblend_maxfrac_conv']):
+        if numpy.all((maxabs <= self['deblend_maxabs_conv']) | (maxfrac <= self['deblend_maxfrac_conv'])):
             return True
         else:
             return False
@@ -257,6 +164,10 @@ class MLDeblender(MedsFit):
             q = numpy.argsort(self.meds_list[0]['box_size'][fofmems])
             q = q[::-1]
             sfofmems = fofmems[q]
+            
+            self.fof_models_to_fit = {}
+            for mindex in fofmems:
+                self.fof_models_to_fit[mindex] = copy.copy(self['fit_models'])
             
             loc = 0
             for mindex in sfofmems:
@@ -311,9 +222,22 @@ class MLDeblender(MedsFit):
                     print('    time:',ti)
                     loc += 1
                     
-                converged = self._check_convergence(fofmems)
-                if converged:
-                    break
+                    
+                if itr == self['deblend_iter_decide'] and len(self['fit_models']) > 1:
+                    for mindex in fofmems:
+                        chi2 = []
+                        for model in self['fit_models']:
+                            chi2.append(self.data[model+'_chi2per'][mindex])
+                        chi2 = numpy.array(chi2)
+                        q = numpy.argmin(chi2)
+                        for model_ind,model in enumerate(self['fit_models']):
+                            if model_ind != q:
+                                self.data[model+'_flags'][mindex] |= NOT_DEBLEND_MODEL
+                        self.fof_models_to_fit[mindex] = [self['fit_models'][q]]                    
+                else:
+                    converged = self._check_convergence(fofmems)
+                    if converged:
+                        break
                 
                 tm=time.time()-t0
                 self._try_checkpoint(tm) # only at certain intervals
@@ -321,8 +245,9 @@ class MLDeblender(MedsFit):
             print('FoF id:',fofid)
             print('    converged:',converged)
             print('    itr:',itr+1)
-            print('    max abs diff:',self.maxabs)
-            print('    max frac diff:',self.maxfrac)
+            fmt = "%8.3g "*len(self.maxabs)
+            print("    max abs diff : "+fmt % tuple(self.maxabs))
+            print("    max frac diff: "+fmt % tuple(self.maxfrac))
             
             if self['save_obs_per_fof']:
                 del self.fof_mb_obs_list
@@ -360,7 +285,7 @@ class MLDeblender(MedsFit):
             assert flags == 0
         
         if fit_obj:
-            for model in self['fit_models']:
+            for model in self.fof_models_to_fit[dindex]:
                 print('    fitting:',model)
 
                 if self['fit_coadd_galaxy']:
@@ -386,7 +311,7 @@ class MLDeblender(MedsFit):
             else:
                 pars = self.data['coadd_'+model+'_pars'][dindex]
                 errs = numpy.sqrt(numpy.diag(self.data['coadd_'+model+'_pars_cov'][dindex]))
-                self.guesser = FromParsErrGuesser(pars,errs,frac=self['deblend_guess_frac'])
+                self.guesser = FromFullParsErrGuesser(pars,errs,frac=self['deblend_guess_frac'])
             mb_obs_list=self.sdata['coadd_mb_obs_list']
         else:
             if self.data['processed'][dindex] == 0 or self.data[model+'_flags'][dindex] > 0:
@@ -394,7 +319,7 @@ class MLDeblender(MedsFit):
             else:
                 pars = self.data[model+'_pars'][dindex]
                 errs = numpy.sqrt(numpy.diag(self.data[model+'_pars_cov'][dindex]))
-                self.guesser = FromParsErrGuesser(pars,errs,frac=self['deblend_guess_frac'])
+                self.guesser = FromFullParsErrGuesser(pars,errs,frac=self['deblend_guess_frac'])
             mb_obs_list=self.sdata['mb_obs_list']
 
         fitter=self._fit_model(mb_obs_list, model)
@@ -438,14 +363,10 @@ class MLDeblender(MedsFit):
         """
         
         if self.data['processed'][self.mindex] == 0:
-            #fitter = self._fit_simple_em(mb_obs_list, model, self['gal_em_pars'])
-            #fitter = self._fix_fitter(fitter)
-            #print_pars(fitter.get_result()['pars'],front='        final:')
-            #self.guesser = FromParsErrGuesser(fitter._result['pars'],fitter._result['pars_err'],frac=self['deblend_guess_frac'])
             fitter = self._fit_simple_max(mb_obs_list, model, self['max_pars'])
         else:
             fitter = self._fit_simple_lm(mb_obs_list, model, self)
-            
+        
         res = fitter.get_result()
         print_pars(res['pars'],front='        final:')
         print('        flags:',res['flags'])
