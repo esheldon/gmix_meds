@@ -30,6 +30,7 @@ psf_flags2check: 19
 # I/O
 ##########################
 print_params: True
+debug_level: 0
 
 ##########################
 #random options
@@ -53,8 +54,12 @@ nbrs_model:
 # deblender
 ############################
 save_obs_per_fof: True
-max_deblend_itr: 3
-deblend_guess_frac: 0.1
+max_deblend_itr: 10
+deblend_guess_frac: 0.01
+deblend_force_flags: True
+make_nbrs_plots: True
+deblend_maxabs_conv:  [0.001,0.001,0.0001,0.0001,0.0001,0.0]
+deblend_maxfrac_conv: [1.0e-4,1.0e-4,1.0e-4,1.0e-4,1.0e-4,1.0e-4]
 
 ####################################
 # fits, models, masks and guesses
@@ -65,11 +70,22 @@ me_model_guess: 'me_psf'
 
 max_pars:
     method: 'Nelder-Mead'
-    ntry: 3
-    maxiter: 4000
-    maxfev: 4000
+    ntry: 1
+    maxiter: 2000
+    maxfev: 2000
     ftol: 1.0e-4
     xtol: 1.0e-4
+
+lm_ntry: 5
+lm_pars:
+    ftol: 1.0e-6
+    xtol: 1.0e-3
+    maxfev: 500
+
+gal_em_pars:
+    tol: 1.0e-4
+    miniter: 10
+    maxiter: 40    
 
 psf_em_pars:
     ngauss: 3
