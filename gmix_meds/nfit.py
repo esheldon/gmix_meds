@@ -1019,6 +1019,7 @@ class MedsFit(dict):
             
             if self._check_model_nbrs_flags(model_fits_index, ntot, nexp, model_fits) == False and \
                self._check_model_nbrs_flags(model_fits_index, ntot, ndev, model_fits) == False:
+                print('                no model with good flags',model_fits['number'][model_fits_index])
                 use_nbr = False
             elif self._check_model_nbrs_flags(model_fits_index, ntot, nexp, model_fits) == False:
                 nmodel = ndev
@@ -1034,8 +1035,8 @@ class MedsFit(dict):
                 model = 'exp'
                             
         #always reject models with bad flags
-        if self._check_model_nbrs_flags(model_fits_index, ntot, nmodel, model_fits) == False:
-            print('                bad model flags',model_fits['number'][model_fits_index])
+        if use_nbr and self._check_model_nbrs_flags(model_fits_index, ntot, nmodel, model_fits) == False:
+            print('                bad model flags',model,model_fits['number'][model_fits_index])
             use_nbr = False
                             
         #see if need good ME fit 
@@ -1043,7 +1044,7 @@ class MedsFit(dict):
         if 'require_me_goodfit' in self['nbrs_model'] and \
            self['nbrs_model']['require_me_goodfit'] and \
            self._check_model_nbrs_flags(model_fits_index, nme, nmodel, model_fits) == False:
-            print('                bad me model flags',model_fits['number'][model_fits_index])
+            print('                bad me model flags',model,model_fits['number'][model_fits_index])
             use_nbr = False
 
         #only get here if things are OK

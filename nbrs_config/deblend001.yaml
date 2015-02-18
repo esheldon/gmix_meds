@@ -49,19 +49,21 @@ nbrs_model:
     method: "subtract"
     flags: "flags"
     pars: "pars"
+make_nbrs_plots: False
 
 ############################
 # deblender
 ############################
 save_obs_per_fof: True
 max_deblend_itr: 10
-deblend_guess_frac: 0.00
+deblend_guess_frac: 0.1
 deblend_force_flags: True
-make_nbrs_plots: True
 deblend_iter_decide: 0
 deblend_maxabs_conv: [0.001,0.001,0.001,0.001,0.001,0.001]
 deblend_maxfrac_conv: [1.0e-4,1.0e-4,1.0e-2,1.0e-2,1.0e-3,1.0e-4]
 deblend_maxerr_conv: 0.01
+deblend_first_iter_fitter: 'lm'
+deblend_rest_iter_fitter: 'lm'
 
 ####################################
 # fits, models, masks and guesses
@@ -78,8 +80,8 @@ max_pars:
     ftol: 1.0e-4
     xtol: 1.0e-4
 
-lm_ntry: 10
 lm_pars:
+    ntry: 10
     ftol: 1.0e-6
     xtol: 1.0e-6
     maxfev: 1000

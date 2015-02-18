@@ -6,7 +6,7 @@ import copy
 from ngmix.fitting import LMSimple, MaxSimple, EIG_NOTFINITE
 from ngmix.em import ApproxEMSimple
 
-NOT_DEBLEND_MODEL = 2**29
+NOT_DEBLENDED_MODEL = 2**29
 
 #FIXME - add to util.py when merge is done
 class FromFullParsErrGuesser(FromFullParsGuesser):
@@ -19,17 +19,15 @@ class FromFullParsErrGuesser(FromFullParsGuesser):
         self.scaling=scaling
         
         widths=frac*pars_err
-
-        # remember that srandu has width 0.57
-        sw=0.57
-        widths[0:0+2] = widths[0:0+2].clip(min=1.0e-2, max=1.0)
-        widths[2:2+2] = widths[2:2+2].clip(min=1.0e-2, max=1.0)
-        widths[4:] = widths[4:].clip(min=1.0e-1, max=10.0)
-
-        widths *= (1.0/sw)
-
+        widths[0:0+2] = widths[0:0+2].clip(min=1.0e-3, max=1.0)
+        widths[2:2+2] = widths[2:2+2].clip(min=1.0e-3, max=1.0)
+        widths[4:] = widths[4:].clip(min=1.0e-3, max=10.0)
+        
         self.widths=widths
-
+        
+        #fmt = "%8.6g " * len(widths)        
+        #print('        guess width: '+fmt % tuple(widths))
+        
     def __call__(self, n=None, get_sigmas=False, prior=None):
         if n is None:
             n=1
@@ -41,7 +39,6 @@ class FromFullParsErrGuesser(FromFullParsGuesser):
         npars=pars.size
 
         width = self.widths
-
         guess=numpy.zeros( (n, npars) )
 
         for j in xrange(n):
@@ -49,14 +46,7 @@ class FromFullParsErrGuesser(FromFullParsGuesser):
             maxitr = 100
             while itr < maxitr:
                 for i in xrange(npars):
-                    if self.scaling=='linear' and i >= 4:
-                        if pars[i] <= 0.0:
-                            guess[j,:] = width[i]*srandu(1)
-                        else:
-                            guess[j,i] = pars[i]*(1.0 + width[i]*srandu(1))
-                    else:
-                        # we add to log pars!
-                        guess[j,i] = pars[i] + width[i]*srandu(1)
+                    guess[j,i] = pars[i] + width[i]*numpy.random.normal()
 
                 if numpy.abs(guess[j,2]) < 1.0 \
                         and numpy.abs(guess[j,3]) < 1.0 \
@@ -240,7 +230,7 @@ class MLDeblender(MedsFit):
                         q = numpy.argmin(chi2)
                         for model_ind,model in enumerate(self['fit_models']):
                             if model_ind != q:
-                                self.data[model+'_flags'][mindex] |= NOT_DEBLEND_MODEL
+                                self.data[model+'_flags'][mindex] |= NOT_DEBLENDED_MODEL
                         self.fof_models_to_fit[mindex] = [self['fit_models'][q]]                    
                 else:
                     converged = self._check_convergence(fofmems)
@@ -336,7 +326,8 @@ class MLDeblender(MedsFit):
         self._copy_simple_pars(fitter, coadd=coadd)
 
         self._print_res(fitter, coadd=coadd)
-
+        print('        flags:',fitter.get_result()['orig_flags'])
+        
         if self['make_plots']:
             self._do_make_plots(fitter, model, coadd=coadd)
 
@@ -350,6 +341,7 @@ class MLDeblender(MedsFit):
         if not hasattr(fitter,'get_best_pars'):
             fitter.get_best_pars = lambda : fitter.get_result()['pars']
         
+        fitter._result['orig_flags'] = copy.copy(fitter._result['flags'])
         if self['deblend_force_flags'] and fitter._result['flags'] > 0:
             fitter._result['flags'] = 0
             
@@ -372,16 +364,23 @@ class MLDeblender(MedsFit):
         """
         
         if self.data['processed'][self.mindex] == 0:
-            fitter = self._fit_simple_max(mb_obs_list, model, self['max_pars'])
+            if self['deblend_first_iter_fitter'] == 'max':
+                fitter = self._fit_simple_max(mb_obs_list, model, self['max_pars'])
+            elif self['deblend_first_iter_fitter'] == 'lm':
+                fitter = self._fit_simple_lm(mb_obs_list, model, self['lm_pars'])
+            else:
+                assert False,"Must supply an implemented fitter for first deblending iteration!"
         else:
-            fitter = self._fit_simple_lm(mb_obs_list, model, self)
+            if self['deblend_rest_iter_fitter'] == 'max':
+                fitter = self._fit_simple_max(mb_obs_list, model, self['max_pars'])
+            elif self['deblend_rest_iter_fitter'] == 'lm':
+                fitter = self._fit_simple_lm(mb_obs_list, model, self['lm_pars'])
+            else:
+                assert False,"Must supply an implemented fitter for rest of deblending iterations!"
         
-        res = fitter.get_result()
-        print_pars(res['pars'],front='        final:')
-        print('        flags:',res['flags'])
-        
+        #useful i/o
         fitter = self._fix_fitter(fitter)
-            
+                
         #FIXME - not doing MCMC stats clearly - any side effects?
         # also adds .weights attribute
         #self._calc_mcmc_stats(fitter, model)
@@ -408,7 +407,8 @@ class MLDeblender(MedsFit):
                          method=max_pars['method'])
 
         guess=self.guesser(prior=prior)
-        print_pars(guess,front='        guess:')
+        print('        guess:')
+        print_pars(guess,front='        ')
         
         for i in xrange(max_pars['ntry']):
             fitter.run_max(guess, **max_pars)
@@ -419,9 +419,12 @@ class MLDeblender(MedsFit):
                 print_pars(res['pars'],front='        bad cov at pars')
                 self.guesser=FromParsGuesser(guess, guess*0.1)
                 guess=self.guesser(prior=prior)
-                print_pars(guess,front='        new guess')
+                print('        new guess:')
+                print_pars(guess,front='        ')
             else:
                 break
+            
+        fitter._result['model'] = model
             
         return fitter
 
@@ -438,7 +441,8 @@ class MLDeblender(MedsFit):
         """
         
         guess=self.guesser(prior=None)
-        print_pars(guess,front='        guess:')                
+        print('        guess:')
+        print_pars(guess,front='        ')                
         em_pars['guess'] = guess
         em_pars['verbose'] = True
         
@@ -451,7 +455,7 @@ class MLDeblender(MedsFit):
         
         return fitter
 
-    def _fit_simple_lm(self, mb_obs_list, model, params, use_prior=True):
+    def _fit_simple_lm(self, mb_obs_list, model, lm_pars, use_prior=True):
         """
         Fit one of the "simple" models, e.g. exp or dev
         use flat g prior
@@ -465,15 +469,18 @@ class MLDeblender(MedsFit):
             prior=None
 
         ok=False
-        ntry=params['lm_ntry']
+        ntry=lm_pars['ntry']
+        lm_pars_pars = copy.copy(lm_pars)
+        del lm_pars_pars['ntry']
         for i in xrange(ntry):
             guess=self.guesser(prior=prior)
-            print_pars(guess,front='        guess:')
+            print('        guess:')
+            print_pars(guess,front='        ')
             
             fitter=LMSimple(mb_obs_list,
                             model,
                             prior=prior,
-                            lm_pars=params['lm_pars'])
+                            lm_pars=lm_pars_pars)
 
             fitter.run_lm(guess)
             res=fitter.get_result()
