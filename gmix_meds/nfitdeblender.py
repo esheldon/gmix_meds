@@ -92,6 +92,8 @@ class MLDeblender(MedsFit):
         maxabs[:] = -numpy.inf
         maxfrac = numpy.zeros(npars,dtype='f8')
         maxfrac[:] = -numpy.inf
+        maxerr = numpy.zeros(npars,dtype='f8')
+        maxerr[:] = -numpy.inf
         
         print('convergence:')
         for mindex in fofmems:
@@ -104,29 +106,35 @@ class MLDeblender(MedsFit):
                 new = self.data[model+'_pars'][mindex]
                 absdiff = numpy.abs(new-old)
                 absfracdiff = numpy.abs(new/old-1.0)
-
+                abserr = numpy.abs((old-new)/numpy.sqrt(numpy.diag(self.data[model+'_pars_cov'][mindex])))
+                
                 for i in xrange(npars):
                     if absdiff[i] > maxabs[i]:
                         maxabs[i] = copy.copy(absdiff[i])
                     if absfracdiff[i] > maxfrac[i]:
                         maxfrac[i] = copy.copy(absfracdiff[i])
+                    if abserr[i] > maxerr[i]:
+                        maxerr[i] = copy.copy(abserr[i])
                 
                 if self['debug_level'] >= dlevel:
                     print('        %s:' % model)
                     print_pars(old,        front='            old      ')
                     print_pars(new,        front='            new      ')
-                    print_pars(absfracdiff,front='            frac diff')
                     print_pars(absdiff,    front='            abs diff ')
+                    print_pars(absfracdiff,front='            frac diff')
+                    print_pars(abserr,front='            err diff ')
         
                     
         fmt = "%8.3g "*len(maxabs)
         print("    max abs diff : "+fmt % tuple(maxabs))
         print("    max frac diff: "+fmt % tuple(maxfrac))
+        print("    max err diff : "+fmt % tuple(maxerr))
         
         self.maxabs = maxabs
         self.maxfrac = maxfrac
+        self.maxerr = maxerr
         
-        if numpy.all((maxabs <= self['deblend_maxabs_conv']) | (maxfrac <= self['deblend_maxfrac_conv'])):
+        if numpy.all((maxabs <= self['deblend_maxabs_conv']) | (maxfrac <= self['deblend_maxfrac_conv']) | (maxerr <= self['deblend_maxerr_conv'])):
             return True
         else:
             return False
@@ -248,6 +256,7 @@ class MLDeblender(MedsFit):
             fmt = "%8.3g "*len(self.maxabs)
             print("    max abs diff : "+fmt % tuple(self.maxabs))
             print("    max frac diff: "+fmt % tuple(self.maxfrac))
+            print("    max err diff : "+fmt % tuple(self.maxerr))
             
             if self['save_obs_per_fof']:
                 del self.fof_mb_obs_list

@@ -61,6 +61,7 @@ make_nbrs_plots: True
 deblend_iter_decide: 0
 deblend_maxabs_conv: [0.001,0.001,0.001,0.001,0.001,0.001]
 deblend_maxfrac_conv: [1.0e-4,1.0e-4,1.0e-2,1.0e-2,1.0e-3,1.0e-4]
+deblend_maxerr_conv: 0.01
 
 ####################################
 # fits, models, masks and guesses
