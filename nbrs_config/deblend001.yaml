@@ -49,7 +49,7 @@ nbrs_model:
     method: "subtract"
     flags: "flags"
     pars: "pars"
-make_nbrs_plots: False
+make_nbrs_plots: True
 
 ############################
 # deblender
@@ -75,16 +75,16 @@ me_model_guess: 'me_psf'
 max_pars:
     method: 'Nelder-Mead'
     ntry: 1
-    maxiter: 2000
-    maxfev: 2000
+    maxiter: 500
+    maxfev: 500
     ftol: 1.0e-4
     xtol: 1.0e-4
 
 lm_pars:
-    ntry: 10
+    ntry: 25
     ftol: 1.0e-6
     xtol: 1.0e-6
-    maxfev: 1000
+    maxfev: 2000
 
 gal_em_pars:
     tol: 1.0e-4

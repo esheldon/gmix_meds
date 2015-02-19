@@ -491,6 +491,14 @@ class MLDeblender(MedsFit):
         res['ntry']=i+1
         fitter._result['model'] = model
         
+        #ngmix refuses to set these if fit fails
+        # the deblender must go on!
+        if 'g' not in fitter._result:
+            fitter._result['g'] = fitter._result['pars'][2:2+2].copy()
+            fitter._result['g_cov'] = fitter._result['pars_cov'][2:2+2, 2:2+2].copy()
+            stat_dict=fitter.get_fit_stats(fitter._result['pars'])
+            fitter._result.update(stat_dict)
+        
         return fitter
 
     
