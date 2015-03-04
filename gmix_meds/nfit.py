@@ -32,18 +32,17 @@ BIG_PDEFVAL=9.999e9
 NO_CUTOUTS=2**0
 PSF_FIT_FAILURE=2**1
 PSF_LARGE_OFFSETS=2**2
-EXP_FIT_FAILURE=2**3
-DEV_FIT_FAILURE=2**4
+GAL_FIT_FAILURE=2**3
 
-BOX_SIZE_TOO_BIG=2**5
+BOX_SIZE_TOO_BIG=2**4
 
-EM_FIT_FAILURE=2**6
+EM_FIT_FAILURE=2**5
 
-LOW_PSF_FLUX=2**7
+LOW_PSF_FLUX=2**6
 
-UTTER_FAILURE=2**8
+UTTER_FAILURE=2**7
 
-IMAGE_FLAGS=2**9
+IMAGE_FLAGS=2**8
 
 NO_ATTEMPT=2**30
 
@@ -395,7 +394,8 @@ class MedsFit(dict):
         self._print_res(fitter, coadd=coadd)
 
         if self['make_plots']:
-            self._do_make_plots(fitter, model, coadd=coadd)
+            self._do_make_plots(fitter, model, coadd=coadd,
+                                fitter_type=self['fitter_class'])
 
         if coadd:
             self.coadd_fitter=fitter
@@ -569,8 +569,7 @@ class MedsFit(dict):
         # means must go accross bands
         self.set_psf_means()
         
-        print("        mask_frac:",self.data['mask_frac'][dindex],
-              "coadd mask_frac:",self.data['coadd_mask_frac'][dindex])
+        self._print_mask_frac()
 
         if self['model_neighbors']:
             print("    modelling neighbors:")
@@ -582,6 +581,14 @@ class MedsFit(dict):
                 self._model_neighbors(mb_obs_list)
 
         return coadd_mb_obs_list, mb_obs_list, n_im
+
+    def _print_mask_frac(self):
+        data=self.data
+        dindex=self.dindex
+        mess="        mask_frac: %.2f coadd_mask_frac: %.2f"
+        tup=(data['mask_frac'][dindex], data['coadd_mask_frac'][dindex])
+        print(mess % tup)
+
 
     def _check_model_nbrs_flags(self, cid, ntot, nmodel):
         if self.model_data['model_fits'][ntot(nmodel(self['nbrs_model']['flags']))][cid] != 0:
@@ -1654,7 +1661,7 @@ class MedsFit(dict):
             self.data[n('g')][dindex,:] = res['g']
             self.data[n('g_cov')][dindex,:,:] = res['g_cov']
 
-            for sn in _stat_names:
+            for sn in stat_names:
                 self.data[n(sn)][dindex] = res[sn]
 
             # this stuff won't be in the result for LM fitting
@@ -1717,7 +1724,7 @@ class MedsFit(dict):
         """
         import images
 
-        if fitter_type in ['emcee','mh']:
+        if fitter_type in ['emcee','mh','isample']:
             do_trials=True
         else:
             do_trials=False
@@ -2043,15 +2050,27 @@ class MedsFit(dict):
         else:
             type='mb'
 
-        if 'pars' in res:
-            if self['print_pars']:
-                print("        %s fit pars:" % type)
-                self._print_pars(res['pars'],    front='        ')
-                if 'pars_err' in res:
-                    self._print_pars(res['pars_err'],front='        ')
+        if res['flags']==0:
+            if 'pars' in res:
+                if self['print_pars']:
+                    print("        %s fit pars:" % type)
+                    self._print_pars(res['pars'],    front='        ')
+                    if 'pars_err' in res:
+                        self._print_pars(res['pars_err'],front='        ')
 
-        if 'arate' in res:
-            print('        arate: %.2f tau: %.1f chi2per: %.2f s2n: %.1f' % (res['arate'],res['tau'],res['chi2per'],res['s2n_w']))
+            mess=None
+
+            if 's2n_w' in res:
+                mess='        s2n: %(s2n_w).1f chi2per: %(chi2per).2f dof: %(dof)s'
+            if 'arate' in res:
+                mess = mess + ' arate: %(arate).2f %(tau)1f'
+
+            if 'nfev' in res:
+                mess = mess + ' nfev: %(nfev)d'
+
+            if mess is not None:
+                mess = mess % res
+                print(mess)
 
     def _setup_checkpoints(self):
         """
@@ -2788,9 +2807,9 @@ class MedsFitEmceeMax(MedsFit):
 
 
 
-_stat_names=['s2n_w',
-             'chi2per',
-             'dof']
+stat_names=['s2n_w',
+            'chi2per',
+            'dof']
 
 
 _psf_ngauss_map={'em1':1, 'em2':2}
