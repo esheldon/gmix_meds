@@ -132,6 +132,8 @@ def run_ngmix(meds_files,
         meds_fitter=gmix_meds.nfit.MedsFitEmceeMax
     elif conf['fitter_class']=="coadd-only":
         meds_fitter=gmix_meds.nfitcoadd.MedsFitCoadd
+    elif conf['fitter_class'] == 'maxlike':
+        meds_fitter=gmix_meds.maxfit.MedsFitMax
     else:
         raise ValueError("bad fitter class: '%s'" % conf['fitter_class'])
 
