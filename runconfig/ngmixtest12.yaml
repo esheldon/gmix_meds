@@ -1,6 +1,6 @@
 # same as 10 but saving max like fit pars
 run: "ngmixtest12"
-run_type: "mcmc"
+run_type: "maxlike"
 
 # testbeds are defined in deswl/desmeds/testbed
 dataset: "testbed"
@@ -8,15 +8,15 @@ testbed: {"name":"sva1-2", "release":"SVA1_COADD_SPTE"}
 
 
 # must exist in tiles
-withbands: ["r","i","z"]
+withbands: ["g","r","i","z"]
 
 # what we will process
-bands:     ["r","i","z"]
+bands:     ["g","r","i","z"]
 
 # if a testbed, we will only use a subset of the tiles
 # in here
 medsconf: "013"
 
-nper: 20
+nper: 300
 
 config: "nmedstest11"

@@ -4,22 +4,16 @@
 # allow smaller steps for T and cen
 
 fitter: "ngmix"
-fitter_class: "mh"
-coadd_fitter_class: null
-fit_me_galaxy: True
-fit_coadd_galaxy: False
+fitter_class: "maxlike"
 
-margsky: False
+fit_coadd_galaxy: False
+fit_me_galaxy: True
 
 # at least one band must have s/n > this or
 # we won't fit the slow mcmc 
 min_psf_s2n: 4
 
-#max_box_size: 2048
-max_box_size: 96
-
-use_guess_aper: False
-aperture_nsigma: 4.0
+max_box_size: 2048
 
 # SN
 #replacement_flags: "/gpfs/mnt/gpfs01/astro/workarea/desdata/EXTRA/combined-image-flags/sva1_astrom_run1.0.1-badflag+id+sn_stats_flagged_sheldon_psfv3_blacklists.json"
@@ -42,72 +36,10 @@ replacement_flags: "${DESDATA}/EXTRA/combined-image-flags/sva1_astrom_run1.0.1_s
 
 image_flags2check: 655343
 
-use_psf_rerun: True
-psf_rerun_version: "v3"
-
-coadd_model_guess: "iter"
-me_model_guess: "iter"
-
 print_params: True
 
-nu: 0.0
-
-nbrs_model:
-    model: "exp"
-    method: "subtract"
-    flags: "flags"
-    pars: "pars_best"
-    require_me_goodfit: True
-
-me_iter: 
-    maxiter: 1
-    emcee_only: False
-    skip_quick_emcee: True
-    always_long_emcee: True
-    
-    # get inital start for nm here
-    emcee_quick_pars:
-        a: 2.0
-        nwalkers: 50
-        burnin: 10
-        nstep: 40
-
-    # try to use this as a guess
-    nm_pars:
-        ntry: 1
-        maxiter: 1000
-        maxfev: 1000
-        ftol: 1.0e-3
-        xtol: 1.0e-3
-
-    # for when using emcee_only=True
-    # or for when nm fails, fall back to this after ntry
-    emcee_long_pars:
-        a: 2.0
-        nwalkers: 20
-        burnin: 200
-        nstep: 200
-
-mh_pars:
-    dotest: True
-
-    # converting errors from some other fit to step sizes
-    step_factor: 0.5
-
-    burnin: 4000
-    nstep: 4000
-
-    max_tau: 100
-    arate_range: [0.4, 0.6]
-
-    # heuristic based on arate
-    #step_size_fix: "heuristic"
-    # use cov of most recent run
-    step_size_fix: "last"
-
-    ntest_max: 2
-
-    min_step_sizes: [1.0e-5,1.0e-5,1.0e-3,1.0e-3,1.0e-4,0.05]
+use_psf_rerun: True
+psf_rerun_version: "v3"
 
 psf_em_pars:
     ngauss: 3
@@ -115,7 +47,16 @@ psf_em_pars:
     maxiter: 5000
     tol: 5.0e-6
 
-#region: "seg_and_sky"
+me_model_guess: "me_psf"
+
+max_pars:
+    method: "lm"
+    ntry: 4
+    lm_pars:
+        maxfev: 1000
+        ftol: 1.0e-4
+        xtol: 1.0e-4
+
 region: "cweight-nearest"
 
 # models in addition to a psf flux
@@ -129,10 +70,20 @@ model_pars:
         cen_prior_type: "dgauss"
         cen_prior_pars: [0.27]
 
+    dev:
+        g_prior_type: "cosmos-sersic"
+        T_prior_type: "TwoSidedErf"
+        T_prior_pars: [-0.07, 0.03, 1.0e+06, 1.0e+05]
+        counts_prior_type: "TwoSidedErf"
+        counts_prior_pars: [-1.0, 0.1, 1.0e+09, 0.25e+08]
+        cen_prior_type: "dgauss"
+        cen_prior_pars: [0.27]
+
+
 # this means repeat the couns priors for each band
 counts_prior_repeat: True
 
-do_shear: True
+do_shear: False
 
 # checkpoint times in minutes, needed for condor in case we pass a batch system
 # limit such as in the condor scavenge.
@@ -142,4 +93,4 @@ do_shear: True
 #checkpoints: [0,10,20,30,40,50,60,70,80,90,100,110]
 
 # checkpoints for wq
-checkpoints: [0,30,60,90,120,150,180,210,240]
+checkpoints: [30,60,90,110]
