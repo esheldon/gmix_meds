@@ -1,5 +1,6 @@
 from . import nfit
 from . import nfititer
+from . import maxfit
 from . import nfitcoadd
 from . import nfitnbrs
 from .nfit import MedsFit
