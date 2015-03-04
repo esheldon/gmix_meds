@@ -1065,23 +1065,20 @@ class MedsFit(dict):
 
             gm_guess=self._get_em_guess(s2guess, ngauss)
 
-            try:
-                fitter.go(gm_guess,
-                          sky,
-                          maxiter=maxiter,
-                          tol=tol)
+            fitter.go(gm_guess,
+                      sky,
+                      maxiter=maxiter,
+                      tol=tol)
+            res=fitter.get_result()
+            if res['flags']==0:
                 break
-            except GMixMaxIterEM:
-                res=fitter.get_result()
-                print('last fit:')
-                print( fitter.get_gmix() )
-                print( 'try:',i+1,'fdiff:',res['fdiff'],'numiter:',res['numiter'] )
-                if i == (ntry-1):
-                    raise
-            except GMixRangeError as e:
-                print("            em: range: %s" % str(e))
-                if i == (ntry-1):
-                    raise GMixMaxIterEM("too many iter")
+
+            print('last fit:')
+            print( fitter.get_gmix() )
+            print( 'try:',i+1,'fdiff:',res['fdiff'],'numiter:',res['numiter'] )
+ 
+        if res['flags'] != 0:
+            raise GMixMaxIterEM("too many iter")
 
         return fitter
 
