@@ -13,6 +13,10 @@ fit_me_galaxy: True
 # we won't fit the slow mcmc 
 min_psf_s2n: 4
 
+# min value for weights, set to zero below this
+# this deals with noise from old fpack code
+min_weight: 1.0e-4
+
 max_box_size: 2048
 
 # SN
@@ -52,10 +56,15 @@ me_model_guess: "me_psf"
 max_pars:
     method: "lm"
     ntry: 4
+    replace_cov: False
+    cov_pars:
+        h: 1.0e-3
+        m: 5.0
+
     lm_pars:
         maxfev: 1000
-        ftol: 1.0e-4
-        xtol: 1.0e-4
+        ftol: 1.0e-5
+        xtol: 1.0e-5
 
 region: "cweight-nearest"
 

@@ -17,6 +17,6 @@ bands:     ["g","r","i","z"]
 # in here
 medsconf: "013"
 
-nper: 300
+nper: 600
 
 config: "nmedstest11"
