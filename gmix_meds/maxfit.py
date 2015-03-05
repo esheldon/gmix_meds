@@ -138,8 +138,29 @@ class MedsFitMax(MedsFit):
                 res={'flags': GAL_FIT_FAILURE}
                 fitter=None
 
+        if res['flags']==0 and max_pars['replace_cov']:
+            self._try_replace_cov(fitter)
+
         res['ntry']=i+1
         return fitter
+
+    def _try_replace_cov(self, fitter):
+        """
+        the lm cov sucks, try to replace it
+        """
+
+        cov_pars = self['max_pars']['cov_pars']
+
+        # reference to res
+        res=fitter.get_result()
+
+        print("        replacing cov")
+        fitter.calc_cov(cov_pars['h'],cov_pars['m'])
+
+        if res['flags'] != 0:
+            print("        replacement failed")
+            res['flags']=0
+
 
     def _copy_simple_pars(self, fitter, coadd=False):
         """
