@@ -1008,8 +1008,8 @@ class MedsFit(dict):
               'orig_start_col':meds['orig_start_col'][mindex, icut]}
         obs.update_meta_data(meta)
 
-        psf_fwhm=2.35*sqrt(psf_gmix.get_T()/2.0)
-        print("        psf fwhm:",psf_fwhm)
+        #psf_fwhm=2.35*sqrt(psf_gmix.get_T()/2.0)
+        #print("        psf fwhm:",psf_fwhm)
 
         if self['make_plots']:
             self._do_make_psf_plots(band, psf_gmix, psf_obs, mindex, icut)
@@ -1170,6 +1170,10 @@ class MedsFit(dict):
             raise ValueError("support other region types")
 
         wt=wt.astype('f8', copy=False)
+
+        w=numpy.where(wt < self['min_weight'])
+        if w[0].size > 0:
+            wt[w] = 0.0
         return wt
 
     def _convert_jacobian_dict(self, jdict):
