@@ -1079,10 +1079,6 @@ class MedsFit(dict):
             res=fitter.get_result()
             if res['flags']==0:
                 break
-
-            print('last fit:')
-            print( fitter.get_gmix() )
-            print( 'try:',i+1,'fdiff:',res['fdiff'],'numiter:',res['numiter'] )
  
         if res['flags'] != 0:
             raise GMixMaxIterEM("too many iter")
