@@ -193,8 +193,8 @@ class MedsFitMax(MedsFit):
             self.data[n('pars')][dindex,:] = pars
             self.data[n('pars_cov')][dindex,:,:] = pars_cov
 
-            self.data[n('T')][dindex] = pars[4]
-            self.data[n('T_s2n')][dindex] = pars[4]
+            self.data[n('T')][dindex] = T
+            self.data[n('T_s2n')][dindex] = T_s2n
 
             self.data[n('flux')][dindex] = flux
             self.data[n('flux_cov')][dindex] = flux_cov
@@ -304,6 +304,8 @@ class MedsFitMax(MedsFit):
             
             data[n('pars')] = DEFVAL
             data[n('pars_cov')] = PDEFVAL*1.e6
+            data[n('T')] = DEFVAL
+            data[n('T_s2n')] = DEFVAL
             data[n('flux')] = DEFVAL
             data[n('flux_cov')] = PDEFVAL*1.e6
             data[n('g')] = DEFVAL
