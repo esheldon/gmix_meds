@@ -1,0 +1,21 @@
+run: "ngmixtestg01"
+run_type: "maxlike"
+
+# testbeds are defined in deswl/desmeds/testbed
+dataset: "testbed"
+testbed: {"name":"sva1-2", "release":"SVA1_COADD_SPTE"}
+
+
+# must exist in tiles
+withbands: ["g","r","i","z"]
+
+# what we will process
+bands:     ["g"]
+
+# if a testbed, we will only use a subset of the tiles
+# in here
+medsconf: "013"
+
+nper: 3000
+
+config: "nmedstest11"
