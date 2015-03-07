@@ -325,10 +325,9 @@ class Concat(object):
         for ft in all_models:
             for band in xrange(nbands):
                 self.calc_mag_and_flux_stuff(data, meta, ft, band)
-        
 
         # turn this on when we fix sign
-        #self.add_weight(data, models)
+        self.add_weight(data, models)
 
         return data
 
@@ -358,10 +357,14 @@ class Concat(object):
         for model in models:
             n=Namer(model)
 
-            c=data[n('g_cov')]
-            weight=1.0/(2.*SHAPENOISE2 + c[:,0,0] + 2*c[:,0,1] + c[:,1,1])
+            w,=numpy.where(data[n('flags')]==0)
+            if w.size > 0:
+                c=data[n('g_cov')]
+                weight=1.0/(2.*SHAPENOISE2 + c[w,0,0] + 2*c[w,0,1] + c[w,1,1])
 
-            data[n('weight')] = weight
+                data[n('weight')][w] = weight
+
+                data[n('T_s2n')][w] = data[n('T')][w]/numpy.sqrt(data[n('pars_cov')][w,4,4])
 
     def calc_mag_and_flux_stuff(self, data, meta, model, band):
         """
@@ -389,7 +392,8 @@ class Concat(object):
             data[n('mag')][w,band] = magzero - 2.5*numpy.log10( flux )
 
             if 'psf' not in model:
-                data[n('logsb')][w,band] = data[n('flux')][w,band]/data[n('T')][w]
+                sb = data[n('flux')][w,band]/data[n('T')][w]
+                data[n('logsb')][w,band] = numpy.log10(numpy.abs(sb))
 
             if n('pars_best') in names:
                 flux_best = data[n('pars_best')][w,5+band]
