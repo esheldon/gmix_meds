@@ -375,48 +375,95 @@ class Concat(object):
 
         n=Namer(model)
 
-        data[n('mag')][:,band] = -9999.
-        data[n('flux_s2n')][:,band] = 0.0
+        nband=self.nbands
+
+        if nband == 1:
+            data[n('mag')] = -9999.
+            data[n('flux_s2n')] = 0.0
+        else:
+            data[n('mag')][:,band] = -9999.
+            data[n('flux_s2n')][:,band] = 0.0
 
         if 'psf' not in model:
-            data[n('logsb')][:,band] = -9999.0
+            if nband == 1:
+                data[n('logsb')] = -9999.0
+            else:
+                data[n('logsb')][:,band] = -9999.0
 
         if model in ['coadd_psf','psf']:
-            w,=numpy.where(data[n('flags')][:,band] == 0)
+            if nband == 1:
+                w,=numpy.where(data[n('flags')] == 0)
+            else:
+                w,=numpy.where(data[n('flags')][:,band] == 0)
         else:
             w,=numpy.where(data[n('flags')] == 0)
 
         if w.size > 0:
-            flux = ( data[n('flux')][w,band]/PIXSCALE2 ).clip(min=0.001)
+            if nband == 1:
+                flux = ( data[n('flux')][w]/PIXSCALE2 ).clip(min=0.001)
+            else:
+                flux = ( data[n('flux')][w,band]/PIXSCALE2 ).clip(min=0.001)
             magzero=meta['magzp_ref'][band]
-            data[n('mag')][w,band] = magzero - 2.5*numpy.log10( flux )
+
+            if nband==1:
+                data[n('mag')][w] = magzero - 2.5*numpy.log10( flux )
+            else:
+                data[n('mag')][w,band] = magzero - 2.5*numpy.log10( flux )
 
             if 'psf' not in model:
-                sb = data[n('flux')][w,band]/data[n('T')][w]
-                data[n('logsb')][w,band] = numpy.log10(numpy.abs(sb))
+                if nband==1:
+                    sb = data[n('flux')][w]/data[n('T')][w]
+                    data[n('logsb')][w] = numpy.log10(numpy.abs(sb))
+                else:
+                    sb = data[n('flux')][w,band]/data[n('T')][w]
+                    data[n('logsb')][w,band] = numpy.log10(numpy.abs(sb))
 
             if n('pars_best') in names:
-                flux_best = data[n('pars_best')][w,5+band]
-                flux_best = (flux_best/PIXSCALE2 ).clip(min=0.001)
-                data[n('mag_best')][w,band] = magzero - 2.5*numpy.log10( flux_best )
+                if nband==1:
+                    flux_best = data[n('pars_best')][w,5]
+                    flux_best = (flux_best/PIXSCALE2 ).clip(min=0.001)
+                    data[n('mag_best')][w] = magzero - 2.5*numpy.log10( flux_best )
+                else:
+                    flux_best = data[n('pars_best')][w,5+band]
+                    flux_best = (flux_best/PIXSCALE2 ).clip(min=0.001)
+                    data[n('mag_best')][w,band] = magzero - 2.5*numpy.log10( flux_best )
 
             if model in ['coadd_psf','psf']:
-                flux=data[n('flux')][w,band]
-                flux_err=data[n('flux_err')][w,band]
-                w2,=numpy.where(flux_err > 0)
-                if w2.size > 0:
-                    flux=flux[w2]
-                    flux_err=flux_err[w2]
-                    data[n('flux_s2n')][w[w2],band] = flux/flux_err
+                if nband==1:
+                    flux=data[n('flux')][w]
+                    flux_err=data[n('flux_err')][w]
+                    w2,=numpy.where(flux_err > 0)
+                    if w2.size > 0:
+                        flux=flux[w2]
+                        flux_err=flux_err[w2]
+                        data[n('flux_s2n')][w[w2]] = flux/flux_err
+                else:
+                    flux=data[n('flux')][w,band]
+                    flux_err=data[n('flux_err')][w,band]
+                    w2,=numpy.where(flux_err > 0)
+                    if w2.size > 0:
+                        flux=flux[w2]
+                        flux_err=flux_err[w2]
+                        data[n('flux_s2n')][w[w2],band] = flux/flux_err
             else:
-                flux=data[n('flux_cov')][w,band,band]
-                flux_var=data[n('flux_cov')][w,band,band]
+                if nband==1:
+                    flux=data[n('flux_cov')][w]
+                    flux_var=data[n('flux_cov')][w]
 
-                w2,=numpy.where(flux_var > 0)
-                if w.size > 0:
-                    flux=flux[w2]
-                    flux_err=numpy.sqrt(flux_var[w2])
-                    data[n('flux_s2n')][w[w2], band] = flux/flux_err
+                    w2,=numpy.where(flux_var > 0)
+                    if w.size > 0:
+                        flux=flux[w2]
+                        flux_err=numpy.sqrt(flux_var[w2])
+                        data[n('flux_s2n')][w[w2]] = flux/flux_err
+                else:
+                    flux=data[n('flux_cov')][w]
+                    flux_var=data[n('flux_cov')][w,band,band]
+
+                    w2,=numpy.where(flux_var > 0)
+                    if w.size > 0:
+                        flux=flux[w2]
+                        flux_err=numpy.sqrt(flux_var[w2])
+                        data[n('flux_s2n')][w[w2], band] = flux/flux_err
 
 
     def read_data(self, fname, split):
