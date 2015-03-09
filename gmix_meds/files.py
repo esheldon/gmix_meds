@@ -854,7 +854,7 @@ class CondorMaker(MakerBase):
                 if self['missing'] and os.path.exists(self['out_file']):
                     continue
 
-                job_name=[]
+                job_name=[self['run_name']]
                 if self['sub_dir'] is not None:
                     job_name.append(self['sub_dir'])
                 job_name.append('%06d' % split[0])
