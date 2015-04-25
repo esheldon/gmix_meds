@@ -17,3 +17,5 @@ from .constants import PIXSCALE, PIXSCALE2
 from . import dbload
 
 from . import files
+
+from . import afterburn
