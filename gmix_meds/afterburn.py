@@ -1,13 +1,18 @@
 from __future__ import print_function
 
 import numpy
-from numpy import where, zeros
+from numpy import where, zeros, sqrt
 import fitsio
 import meds
 import ngmix
 from ngmix import Observation, ObsList, MultiBandObsList, Jacobian
+from ngmix import GMixRangeError
 from . import files
-from .nfit import MedsFit
+from .util import Namer
+from .nfit import MedsFit, NO_ATTEMPT, DEFVAL
+
+BAD_MODEL=2**9
+MISSING_FIT=2**10
 
 class MissingFit(Exception):
     """
@@ -29,8 +34,11 @@ class RoundModelBurner(dict):
         self.collated_file=collated_file
         self.update(conf)
 
+        self['use_logpars'] = self.get('use_logpars',False)
+
         self.load()
         self.set_rev()
+        self.set_struct()
 
     def go(self):
         """
@@ -44,12 +52,80 @@ class RoundModelBurner(dict):
 
             self.process_obj(i)
 
+    def get_data(self):
+        """
+        get the round data struct
+        """
+        return self.data
+
     def process_obj(self, index):
 
         try:
             mbo=self.get_mb_obs_list(index)
+            self.process_models(index,mbo)
         except MissingFit as e:
             print("   skipping object: '%s'" % str(e))
+            self.data['round_flags'] = MISSING_FIT
+
+    def process_models(self, index, mbo):
+
+        for model in self['model_pars']:
+            print("    model:",model)
+
+            try:
+                self.process_model(index, mbo, model)
+            except GMixRangeError as e:
+                print("   bad model found: '%s'" % str(e))
+                n=Namer(model)
+                self.data[n('round_flags')] = BAD_MODEL
+
+    def process_model(self, index, mbo, model):
+
+        bpars=zeros(6)
+
+        n=Namer(model)
+        pname=n('pars')
+        #pname=n('pars_best')
+        pars=self.model_fits[n('pars')][index].copy()
+
+        if self['use_logpars']:
+            pars[4:] = exp(pars[4:])
+
+        s2n_sum=0.0
+        for band in xrange(self.nband):
+            bpars[0:5] = pars[0:5] 
+            bpars[5] = pars[5+band]
+            obslist=mbo[band]
+
+            tmp_s2n_sum,Tround = self.get_band_s2n_sum(bpars,model,obslist)
+
+            s2n_sum += tmp_s2n_sum
+
+        if s2n_sum < 0.0:
+            s2n_sum=0.0
+
+        s2n = sqrt(s2n_sum)
+        self.data[n('T_r')] = Tround
+        self.data[n('s2n_r')] = s2n
+
+
+    def get_band_s2n_sum(self, pars, model, obslist):
+
+        gm0=ngmix.GMixModel(pars, model)
+
+        gm0round=gm0.make_round()
+
+        s2n_sum=0.0
+        for obs in obslist:
+            psf_round=obs.psf.gmix.make_round()
+
+            gm=gm0round.convolve(psf_round)
+
+            s2n_sum += gm.get_model_s2n_sum(obs)
+
+        Tround = gm0round.get_T()
+
+        return s2n_sum, Tround
 
 
     def get_mb_obs_list(self, index):
@@ -170,3 +246,38 @@ class RoundModelBurner(dict):
 
         self.h_number=h_number
         self.rev_number=rev
+
+    def get_dtype(self):
+        dt=[('id','i8'),
+            ('number','i4'),
+            ('round_flags','i4')]
+
+        for model in self['model_pars']:
+            n=Namer(model)
+
+            dt += [(n('round_flags'),'i4'),
+                   (n('T_r'),'f8'),
+                   (n('s2n_r'),'f8'),
+                   (n('T_s2n_r'),'f8')]
+
+        return dt
+
+    def set_struct(self):
+        dt=self.get_dtype()
+
+        nobj=self.model_fits.size
+        st=zeros(nobj, dtype=dt)
+
+        st['id'] = self.model_fits['id']
+        st['number'] = self.model_fits['number']
+        st['round_flags'] = NO_ATTEMPT
+
+        for model in self['model_pars']:
+            n=Namer(model)
+
+            st[n('round_flags')] = NO_ATTEMPT
+            st[n('T_r')]=DEFVAL
+            st[n('s2n_r')]=DEFVAL
+            st[n('T_s2n_r')]=DEFVAL
+
+        self.data=st
