@@ -32,7 +32,8 @@ class RoundModelBurner(dict):
     Run through a collated file and comput the round model as well
     as s2n_r, T_s2n_r
     """
-    def __init__(self, config_file, collated_file):
+    def __init__(self, config_file, collated_file, tmpdir=None):
+        self.tmpdir=tmpdir
         self.Ts2n_ntry=5
         conf=files.read_yaml(config_file)
         self.collated_file=collated_file
@@ -415,10 +416,16 @@ class RoundModelBurner(dict):
         self.staged_files=[]
         for fname in meds_fnames:
 
-            sf=StagedInFile(fname)
-            self.staged_files.append(sf)
-            print("loading MEDS file:",sf.path)
-            m=meds.MEDS(sf.path.strip())
+            if self.tmpdir is not None:
+                sf=StagedInFile(fname)
+                self.staged_files.append(sf)
+
+                fname_use=sf.path
+            else:
+                fname=fname
+
+            print("loading MEDS file:",fname)
+            m=meds.MEDS(fname.strip())
             self.meds_list.append( m )
 
     def set_rev(self):
