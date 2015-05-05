@@ -1,7 +1,8 @@
 from __future__ import print_function
+import time
 
 import numpy
-from numpy import where, zeros, sqrt, median
+from numpy import where, zeros, sqrt, median, exp, log
 from numpy.linalg import LinAlgError
 import fitsio
 import meds
@@ -9,7 +10,7 @@ import ngmix
 from ngmix import Observation, ObsList, MultiBandObsList, Jacobian
 from ngmix import GMixRangeError
 from . import files
-from .util import Namer
+from .util import Namer, FromFullParsGuesser
 from .nfit import MedsFit, NO_ATTEMPT, DEFVAL
 
 MISSING_FIT=2**9
@@ -32,6 +33,7 @@ class RoundModelBurner(dict):
     as s2n_r, T_s2n_r
     """
     def __init__(self, config_file, collated_file):
+        self.Ts2n_ntry=5
         conf=files.read_yaml(config_file)
         self.collated_file=collated_file
         self.update(conf)
@@ -48,17 +50,33 @@ class RoundModelBurner(dict):
         loop over objects, load data, create the round
         info, copy to the output
         """
+        tm0=time.time()
+
         nobj = self.model_fits.size
 
+        #nobj=100
         for i in xrange(nobj):
             print("%d:%d" % (i+1,nobj))
             self.process_obj(i)
+
+        tm=time.time()-tm0
+        print("total time:",tm,"time per:",tm/nobj)
 
     def get_data(self):
         """
         get the round data struct
         """
         return self.data
+
+    def write(self, fname):
+        """
+        write to output file
+        """
+        files.makedir_fromfile(fname)
+        data=self.get_data()
+        print("writing:",fname)
+        fitsio.write(fname, self.data, clobber=True)
+
 
     def process_obj(self, index):
         """
@@ -126,7 +144,55 @@ class RoundModelBurner(dict):
         flags=0
         return s2n, flags
 
-    def get_Ts2n_r(self, mbo, model, pars_round):
+    def get_Ts2n_r(self, mbo, model, pars_round_linear):
+        """
+        input round version of observations
+        """
+
+        pars_round=pars_round_linear.copy()
+        if self['use_logpars']:
+            pars_round[4:] = log(pars_round[4:])
+
+        Ts2n=-9999.0
+        flags=0
+
+        prior=self.priors[model]
+        fitter=ngmix.fitting.LMSimple(mbo, model,
+                                      prior=prior,
+                                      use_logpars=self['use_logpars'])
+
+        if self['use_logpars']:
+            scaling='log'
+        else:
+            scaling='linear'
+
+        guesser=FromFullParsGuesser(pars_round, pars_round*0, 
+                                    scaling=scaling)
+
+        # first guess is truth
+        guess=pars_round.copy()
+
+        for i in xrange(self.Ts2n_ntry):
+            fitter.go(guess)
+            fitter.calc_cov(1.0e-3, 5.0)
+
+            res=fitter.get_result()
+            if res['flags']==0:
+                break
+            else:
+                guess=guesser(prior=prior)
+
+        if res['flags'] != 0:
+            print("    failure: fit round Ts2n after",i+1,"tries")
+            flags = TS2N_FAIL
+        else:
+            print("    Ts2n ntries:",i+1)
+            cov=res['pars_cov']
+            Ts2n = pars_round[4]/sqrt(cov[4,4])
+
+        return Ts2n, flags
+
+    def get_Ts2n_r_old(self, mbo, model, pars_round):
         """
         input round version of observations
         """
@@ -156,6 +222,7 @@ class RoundModelBurner(dict):
             flags = TS2N_FAIL
 
         return Ts2n, flags
+
 
 
 
@@ -330,6 +397,8 @@ class RoundModelBurner(dict):
 
 
     def load(self):
+        from gmix_meds.files import StagedInFile
+
         print("loading data from:",self.collated_file)
         with fitsio.FITS(self.collated_file) as fits:
             print("    loading model fits")
@@ -343,9 +412,13 @@ class RoundModelBurner(dict):
         self.nband=len(meds_fnames)
 
         self.meds_list=[]
+        self.staged_files=[]
         for fname in meds_fnames:
-            print("loading MEDS file:",fname)
-            m=meds.MEDS(fname.strip())
+
+            sf=StagedInFile(fname)
+            self.staged_files.append(sf)
+            print("loading MEDS file:",sf.path)
+            m=meds.MEDS(sf.path.strip())
             self.meds_list.append( m )
 
     def set_rev(self):
