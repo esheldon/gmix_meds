@@ -119,7 +119,7 @@ class RoundModelBurner(dict):
             pars[4:] = exp(pars[4:])
 
         s2n,s2n_flags=self.get_s2n_r(mbo_round)
-        Ts2n,Ts2n_flags=self.get_Ts2n_r(mbo_round, model, pars_round)
+        Ts2n,Ts2n_flags=self.get_Ts2n_r_sim(mbo_round, model, pars_round)
 
         self.data[n('round_flags')][index] = s2n_flags | Ts2n_flags
         self.data[n('T_r')][index] = pars_round[4]
@@ -145,7 +145,7 @@ class RoundModelBurner(dict):
         flags=0
         return s2n, flags
 
-    def get_Ts2n_r(self, mbo, model, pars_round_linear):
+    def get_Ts2n_r_sim(self, mbo, model, pars_round_linear):
         """
         input round version of observations
         """
