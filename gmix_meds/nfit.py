@@ -1994,7 +1994,7 @@ class MedsFit(dict):
         """
         Load psfex objects for all images, including coadd
         """
-        from psfex import PSFExError
+        from psfex import PSFExError, PSFEx
 
         psfex_list=[]
 
@@ -2018,7 +2018,7 @@ class MedsFit(dict):
                 else:
                     print("loading:",psfpath)
                     try:
-                        pex=psfex.PSFEx(psfpath)
+                        pex=PSFEx(psfpath)
                     except PSFExError as err:
                         print("    problem with psfex file:",str(err))
                         pex=None

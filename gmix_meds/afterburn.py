@@ -157,7 +157,7 @@ class RoundModelBurner(dict):
         Ts2n=-9999.0
         flags=0
 
-        prior=self.priors[model]
+        prior=self.priors_round[model]
         fitter=ngmix.fitting.LMSimple(mbo, model,
                                       prior=prior,
                                       use_logpars=self['use_logpars'])
@@ -447,6 +447,8 @@ class RoundModelBurner(dict):
     def set_priors(self):
 
         priors={}
+        priors_round={}
+
         for model in self['model_pars']:
             mpars=self['model_pars'][model]
             assert mpars['g_prior_type']=="cosmos-sersic","g prior must be cosmos-sersic"
@@ -458,6 +460,8 @@ class RoundModelBurner(dict):
             cen_prior=ngmix.priors.CenPrior(0.0, 0.0, width, width)
 
             g_prior = ngmix.priors.make_gprior_cosmos_sersic(type='erf')
+            g_prior_round = ngmix.priors.GPriorBA(0.001)
+            tmp=g_prior_round.sample1d(10)
 
             Tpars=mpars['T_prior_pars']
             T_prior=ngmix.priors.TwoSidedErf(*Tpars)
@@ -470,9 +474,16 @@ class RoundModelBurner(dict):
                                                      g_prior,
                                                      T_prior,
                                                      counts_priors)
+            prior_round = ngmix.joint_prior.PriorSimpleSep(cen_prior,
+                                                     g_prior_round,
+                                                     T_prior,
+                                                     counts_priors)
+
             priors[model]=prior
+            priors_round[model]=prior_round
 
         self.priors=priors
+        self.priors_round=priors_round
 
 
 
