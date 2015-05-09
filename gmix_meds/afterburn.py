@@ -118,12 +118,12 @@ class RoundModelBurner(dict):
         if self['use_logpars']:
             pars[4:] = exp(pars[4:])
 
-        s2n,s2n_flags=self.get_s2n_r(mbo_round)
-        s2n, Ts2n, flags = self.get_s2n_Tvar_r(mbo_round)
+        #s2n,s2n_flags=self.get_s2n_r(mbo_round)
+        s2n, Ts2n, s2n_flags = self.get_s2n_Tvar_r(mbo_round)
 
         #Ts2n,Ts2n_flags=self.get_Ts2n_r_sim(mbo_round, model, pars_round)
         #self.data[n('round_flags')][index] = s2n_flags | Ts2n_flags
-        self.data[n('round_flags')][index] = s2n_flags | flags
+        self.data[n('round_flags')][index] = s2n_flags
 
         self.data[n('T_r')][index] = pars_round[4]
         self.data[n('s2n_r')][index] = s2n
@@ -363,8 +363,8 @@ class RoundModelBurner(dict):
 
         new_obs=Observation(im,
                             gmix=gm_round,
-                            weight=obs.weight,
-                            jacobian=obs.jacobian,
+                            weight=obs.weight.copy(),
+                            jacobian=obs.jacobian.copy(),
                             psf=psf_obs)
 
         new_obs.im_nonoise=im
