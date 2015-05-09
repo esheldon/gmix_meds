@@ -119,14 +119,77 @@ class RoundModelBurner(dict):
             pars[4:] = exp(pars[4:])
 
         s2n,s2n_flags=self.get_s2n_r(mbo_round)
-        Ts2n,Ts2n_flags=self.get_Ts2n_r_sim(mbo_round, model, pars_round)
+        s2n, Ts2n, flags = self.get_s2n_Tvar_r(mbo_round)
 
-        self.data[n('round_flags')][index] = s2n_flags | Ts2n_flags
+        #Ts2n,Ts2n_flags=self.get_Ts2n_r_sim(mbo_round, model, pars_round)
+        #self.data[n('round_flags')][index] = s2n_flags | Ts2n_flags
+        self.data[n('round_flags')][index] = s2n_flags | flags
+
         self.data[n('T_r')][index] = pars_round[4]
         self.data[n('s2n_r')][index] = s2n
         self.data[n('T_s2n_r')][index] = Ts2n
 
         self.print_one(self.data[index],n)
+
+    def get_s2n_Tvar_r(self, mbo):
+        """
+        get the round s2n and var(T)
+        """
+
+        s2n_sum=0.0
+        Ts2n_sum1=0.0
+        Ts2n_sum2=0.0
+
+        psf_s2n_sum=0.0
+        psf_Ts2n_sum1=0.0
+        psf_Ts2n_sum2=0.0
+
+
+        for obslist in mbo:
+            for obs in obslist:
+                gm=obs.gmix
+                psf_gm=obs.psf.gmix
+
+                #s2n_sum += gm.get_model_s2n_sum(obs)
+
+                # these use only the weight maps. Use the same weight map
+                # for gal and psf
+                t_s2n_sum, t_Ts2n_sum1, t_Ts2n_sum2 = \
+                    gm.get_model_s2n_Tvar_sums(obs)
+
+                t_psf_s2n_sum, t_psf_Ts2n_sum1, t_psf_Ts2n_sum2 = \
+                    psf_gm.get_model_s2n_Tvar_sums(obs)
+
+                s2n_sum += t_s2n_sum
+                Ts2n_sum1 += t_Ts2n_sum1
+                Ts2n_sum2 += t_Ts2n_sum2
+
+                psf_s2n_sum += t_psf_s2n_sum
+                psf_Ts2n_sum1 += t_psf_Ts2n_sum1
+                psf_Ts2n_sum2 += t_psf_Ts2n_sum2
+
+        if s2n_sum < 0.0:
+            s2n_sum=0.0
+        s2n=sqrt(s2n_sum)
+
+        # weighted means
+        r4_mean = Ts2n_sum1/s2n_sum
+        r2_mean = Ts2n_sum2/s2n_sum
+
+        #r4_psf_mean = psf_Ts2n_sum1/s2n_sum
+        r2_psf_mean = psf_Ts2n_sum2/psf_s2n_sum
+
+        # note s2n_sum = s2n^2
+        Tvar = (1/s2n_sum) * ( r4_mean + r2_mean**2 )
+
+        r2 = r2_mean - r2_psf_mean
+
+        Ts2n = r2/sqrt(Tvar)
+
+        flags=0
+        return s2n, Ts2n, flags
+
+
 
     def get_s2n_r(self, mbo):
         """
@@ -144,6 +207,8 @@ class RoundModelBurner(dict):
 
         flags=0
         return s2n, flags
+
+
 
     def get_Ts2n_r_sim(self, mbo, model, pars_round_linear):
         """
