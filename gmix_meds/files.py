@@ -631,7 +631,9 @@ class StagedInFile(object):
         # read some data
     sf.cleanup()
     """
-    def __init__(self, fname, tmpdir=None):
+    def __init__(self, fname, tmpdir=None, funpack=False):
+
+        self.funpack=funpack
         self.original_path=fname
         self._set_tmpdir(tmpdir=tmpdir)
         self._set_local_path()
@@ -652,6 +654,9 @@ class StagedInFile(object):
         if self.path == self.original_path:
             raise ValueError("tmp path is same as original path")
 
+        if self.funpack:
+            self.path = self.path.replace('.fits.fz','.fits')
+
     def _stage_in(self):
         """
         make a local copy of the file
@@ -667,8 +672,15 @@ class StagedInFile(object):
         else:
             makedir_fromfile(self.path)
 
-        print("staging in",self.original_path,"->",self.path)
-        shutil.copy(self.original_path,self.path)
+        if self.funpack:
+            command='funpack -O %s %s' % (self.path, self.original_path)
+            print(command)
+            res=os.system(command)
+            if res != 0:
+                raise RuntimeError("error funpacking")
+        else:
+            print("staging in",self.original_path,"->",self.path)
+            shutil.copy(self.original_path,self.path)
 
     def cleanup(self):
         if os.path.exists(self.path):

@@ -13,9 +13,15 @@ from . import files
 from .util import Namer, FromFullParsGuesser
 from .nfit import MedsFit, NO_ATTEMPT, DEFVAL
 
+import gc
+
 MISSING_FIT=2**9
 BAD_MODEL=2**10
 TS2N_FAIL=2**11
+S2N_LOW=2**12
+PSF_S2N_LOW=2**13
+R2_LOW=2**14
+R4_LOW=2**15
 
 class MissingFit(Exception):
     """
@@ -32,7 +38,8 @@ class RoundModelBurner(dict):
     Run through a collated file and comput the round model as well
     as s2n_r, T_s2n_r
     """
-    def __init__(self, config_file, collated_file, tmpdir=None):
+    def __init__(self, config_file, collated_file, use_alg=True, tmpdir=None):
+        self.use_alg=use_alg
         self.tmpdir=tmpdir
         self.Ts2n_ntry=5
         conf=files.read_yaml(config_file)
@@ -41,7 +48,7 @@ class RoundModelBurner(dict):
 
         self['use_logpars'] = self.get('use_logpars',False)
 
-        self.load()
+        self.load_data()
         self.set_rev()
         self.set_struct()
         self.set_priors()
@@ -55,8 +62,8 @@ class RoundModelBurner(dict):
 
         nobj = self.model_fits.size
 
-        #nobj=100
         for i in xrange(nobj):
+
             print("%d:%d" % (i+1,nobj))
             self.process_obj(i)
 
@@ -83,11 +90,14 @@ class RoundModelBurner(dict):
         """
         process a single object
         """
+
         try:
             mbo=self.get_mb_obs_list(index)
+
             print("    ",mbo[0][0].image.shape)
             self.process_models(index,mbo)
             self.data['round_flags'][index]=0
+
         except MissingFit as e:
             print("   skipping object: %s" % str(e))
             self.data['round_flags'][index] = MISSING_FIT
@@ -108,6 +118,7 @@ class RoundModelBurner(dict):
         """
         calc round stats for the requested model
         """
+
         mbo_round, pars_round = self.get_round_mbo(index, mbo_orig, model)
 
         n=Namer(model)
@@ -118,12 +129,13 @@ class RoundModelBurner(dict):
         if self['use_logpars']:
             pars[4:] = exp(pars[4:])
 
-        #s2n,s2n_flags=self.get_s2n_r(mbo_round)
-        s2n, Ts2n, s2n_flags = self.get_s2n_Tvar_r(mbo_round)
-
-        #Ts2n,Ts2n_flags=self.get_Ts2n_r_sim(mbo_round, model, pars_round)
-        #self.data[n('round_flags')][index] = s2n_flags | Ts2n_flags
-        self.data[n('round_flags')][index] = s2n_flags
+        if self.use_alg:
+            s2n, Ts2n, s2n_flags = self.get_s2n_Tvar_r(mbo_round, pars_round[4])
+            self.data[n('round_flags')][index] = s2n_flags
+        else:
+            s2n,s2n_flags=self.get_s2n_r(mbo_round)
+            Ts2n,Ts2n_flags=self.get_Ts2n_r_sim(mbo_round, model, pars_round)
+            self.data[n('round_flags')][index] = s2n_flags | Ts2n_flags
 
         self.data[n('T_r')][index] = pars_round[4]
         self.data[n('s2n_r')][index] = s2n
@@ -131,18 +143,20 @@ class RoundModelBurner(dict):
 
         self.print_one(self.data[index],n)
 
-    def get_s2n_Tvar_r(self, mbo):
+    def get_s2n_Tvar_r(self, mbo, Tround):
         """
         get the round s2n and var(T)
         """
 
+        flags=0
+
         s2n_sum=0.0
-        Ts2n_sum1=0.0
-        Ts2n_sum2=0.0
+        r4sum=0.0
+        r2sum=0.0
 
         psf_s2n_sum=0.0
-        psf_Ts2n_sum1=0.0
-        psf_Ts2n_sum2=0.0
+        psf_r4sum=0.0
+        psf_r2sum=0.0
 
 
         for obslist in mbo:
@@ -154,39 +168,57 @@ class RoundModelBurner(dict):
 
                 # these use only the weight maps. Use the same weight map
                 # for gal and psf
-                t_s2n_sum, t_Ts2n_sum1, t_Ts2n_sum2 = \
+                t_s2n_sum, t_r2sum, t_r4sum = \
                     gm.get_model_s2n_Tvar_sums(obs)
 
-                t_psf_s2n_sum, t_psf_Ts2n_sum1, t_psf_Ts2n_sum2 = \
+                t_psf_s2n_sum, t_psf_r2sum, t_psf_r4sum = \
                     psf_gm.get_model_s2n_Tvar_sums(obs)
 
                 s2n_sum += t_s2n_sum
-                Ts2n_sum1 += t_Ts2n_sum1
-                Ts2n_sum2 += t_Ts2n_sum2
+                r2sum += t_r2sum
+                r4sum += t_r4sum
 
                 psf_s2n_sum += t_psf_s2n_sum
-                psf_Ts2n_sum1 += t_psf_Ts2n_sum1
-                psf_Ts2n_sum2 += t_psf_Ts2n_sum2
+                psf_r2sum += t_psf_r2sum
+                psf_r4sum += t_psf_r4sum
 
-        if s2n_sum < 0.0:
-            s2n_sum=0.0
-        s2n=sqrt(s2n_sum)
+        if s2n_sum <= 0.0:
+            print("    failure: s2n_sum <= 0.0 :",s2n_sum)
+            flags |= S2N_LOW
+            s2n=-9999.0
+            Ts2n=-9999.0
+        else:
+            s2n=sqrt(s2n_sum)
 
-        # weighted means
-        r4_mean = Ts2n_sum1/s2n_sum
-        r2_mean = Ts2n_sum2/s2n_sum
+            #if psf_s2n_sum <= 0.0:
+            if False:
+                print("    failure: psf_s2n_sum <= 0.0 :",psf_s2n_sum)
+                flags |= PSF_S2N_LOW
+                Ts2n=-9999.0
+            else:
 
-        #r4_psf_mean = psf_Ts2n_sum1/s2n_sum
-        r2_psf_mean = psf_Ts2n_sum2/psf_s2n_sum
+                # weighted means
+                r2_mean = r2sum/s2n_sum
+                r4_mean = r4sum/s2n_sum
 
-        # note s2n_sum = s2n^2
-        Tvar = (1/s2n_sum) * ( r4_mean + r2_mean**2 )
+                if r2_mean <= 0.0:
+                    print("    failure: round r2 <= 0.0 :",r2_mean)
+                    flags |= R2_LOW
+                    Ts2n=-9999.0
+                elif r4_mean <= 0.0:
+                    print("    failure: round r2 == 0.0 :",r2_mean)
+                    flags |= R4_LOW
+                    Ts2n=-9999.0
+                else:
 
-        r2 = r2_mean - r2_psf_mean
+                    print("        r2_mean: %g r4_mean: %g" % (r2_mean, r4_mean) )
+                    Ts2n = Tround * s2n * sqrt(r4_mean) / (4. * r2_mean**2)
 
-        Ts2n = r2/sqrt(Tvar)
+                    #psf_r2_mean = psf_r2sum/psf_s2n_sum
+                    #Tg = r2_mean - psf_r2_mean
 
-        flags=0
+                    #Ts2n = Tg * s2n * sqrt(r4_mean) / (4. * r2_mean**2)
+
         return s2n, Ts2n, flags
 
 
@@ -432,7 +464,8 @@ class RoundModelBurner(dict):
         cutid = epoch_data['cutout_index']
 
         m=self.meds_list[band]
-        wt = m.get_cutout(index, cutid, type='weight')
+        #wt = m.get_cutout(index, cutid, type='weight')
+        wt=m.get_cweight_cutout_nearest(index, cutid)
 
         jdict = m.get_jacobian(index, cutid)
         jacob=Jacobian(jdict['row0'],
@@ -462,8 +495,7 @@ class RoundModelBurner(dict):
         print(mess % tup)
 
 
-    def load(self):
-        from gmix_meds.files import StagedInFile
+    def load_data(self):
 
         print("loading data from:",self.collated_file)
         with fitsio.FITS(self.collated_file) as fits:
@@ -474,23 +506,45 @@ class RoundModelBurner(dict):
             print("    loading meta data")
             self.meta=fits['meta_data'].read()
 
+        self.load_meds()
+
+    def load_meds(self):
+        """
+        run load_data() first at construction
+        """
+        from gmix_meds.files import StagedInFile
+
+        #if self.tmpdir is not None:
+        #    raise RuntimeError("no staged files for now")
+
         meds_fnames=self.meta['meds_file']
         self.nband=len(meds_fnames)
+
+        '''
+        if hasattr(self, 'meds_list'):
+            for m in self.meds_list:
+                m._fits.close()
+                del m
+
+            del self.meds_list
+            del self.staged_files
+        '''
 
         self.meds_list=[]
         self.staged_files=[]
         for fname in meds_fnames:
 
             if self.tmpdir is not None:
-                sf=StagedInFile(fname)
+                funpack=False
+                sf=StagedInFile(fname, tmpdir=self.tmpdir, funpack=funpack)
                 self.staged_files.append(sf)
 
                 fname_use=sf.path
             else:
-                fname=fname
+                fname_use=fname
 
-            print("loading MEDS file:",fname)
-            m=meds.MEDS(fname.strip())
+            print("loading MEDS file:",fname_use)
+            m=meds.MEDS(fname_use.strip())
             self.meds_list.append( m )
 
     def set_rev(self):
