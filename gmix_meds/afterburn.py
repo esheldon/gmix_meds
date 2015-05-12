@@ -39,6 +39,12 @@ class RoundModelBurner(dict):
     as s2n_r, T_s2n_r
     """
     def __init__(self, config_file, collated_file, use_alg=True, tmpdir=None):
+
+        # for ngmix011 pars_best is no g prior, as is pars_uw
+        self.pname = 'pars_best'
+        #self.pname = 'pars'
+        #self.pname = 'pars_uw'
+
         self.use_alg=use_alg
         self.tmpdir=tmpdir
         self.Ts2n_ntry=5
@@ -122,19 +128,17 @@ class RoundModelBurner(dict):
         mbo_round, pars_round = self.get_round_mbo(index, mbo_orig, model)
 
         n=Namer(model)
-        pname=n('pars')
-        #pname=n('pars_best')
-        pars=self.model_fits[n('pars')][index].copy()
 
         if self['use_logpars']:
             pars[4:] = exp(pars[4:])
 
         if self.use_alg:
-            s2n, Ts2n, s2n_flags = self.get_s2n_Tvar_r(mbo_round, pars_round[4])
+            s2n, Ts2n, s2n_flags = self.get_s2n_Ts2n_r(mbo_round, pars_round[4])
             self.data[n('round_flags')][index] = s2n_flags
         else:
             s2n,s2n_flags=self.get_s2n_r(mbo_round)
-            Ts2n,Ts2n_flags=self.get_Ts2n_r_sim(mbo_round, model, pars_round)
+            #Ts2n,Ts2n_flags=self.get_Ts2n_r_sim(mbo_round, model, pars_round)
+            Ts2n,Ts2n_flags=self.get_Ts2n_r_sim_covonly(mbo_round, model, pars_round)
             self.data[n('round_flags')][index] = s2n_flags | Ts2n_flags
 
         self.data[n('T_r')][index] = pars_round[4]
@@ -143,9 +147,9 @@ class RoundModelBurner(dict):
 
         self.print_one(self.data[index],n)
 
-    def get_s2n_Tvar_r(self, mbo, Tround):
+    def get_s2n_Ts2n_r(self, mbo, Tround):
         """
-        get the round s2n and var(T)
+        get the round s2n and Ts2n
         """
 
         flags=0
@@ -264,8 +268,15 @@ class RoundModelBurner(dict):
         else:
             scaling='linear'
 
+        # we set the centers to the exact fit position
+        # in the get_round_obs method
+        pars_round[0:0+2] = 0.0
+
+        #widths=pars_round*0 + 0.05
+        widths=None
         guesser=FromFullParsGuesser(pars_round, pars_round*0, 
-                                    scaling=scaling)
+                                    scaling=scaling,
+                                    widths=widths)
 
         # first guess is truth
         guess=pars_round.copy()
@@ -279,6 +290,10 @@ class RoundModelBurner(dict):
                 break
             else:
                 guess=guesser(prior=prior)
+                print("    guess from sample")
+                g1,g2=prior.g_prior.sample2d(1)
+                guess[2]=g1[0]
+                guess[3]=g2[0]
 
         if res['flags'] != 0:
             print("    failure: fit round Ts2n after",i+1,"tries")
@@ -290,10 +305,14 @@ class RoundModelBurner(dict):
 
         return Ts2n, flags
 
-    def get_Ts2n_r_old(self, mbo, model, pars_round):
+    def get_Ts2n_r_sim_covonly(self, mbo, model, pars_round_in):
         """
         input round version of observations
         """
+
+        # we reset the jacobians
+        pars_round=pars_round_in.copy()
+        pars_round[0:0+2] = 0.0
 
         Ts2n=-9999.0
         flags=0
@@ -334,9 +353,8 @@ class RoundModelBurner(dict):
         bpars=zeros(6)
 
         n=Namer(model)
-        pname=n('pars')
-        #pname=n('pars_best')
-        pars=self.model_fits[n('pars')][index].copy()
+        pname=n(self.pname)
+        pars=self.model_fits[pname][index].copy()
 
         if self['use_logpars']:
             pars[4:] = exp(pars[4:])
@@ -380,12 +398,36 @@ class RoundModelBurner(dict):
     def get_round_obs(self, obs, gm0round):
         """
         get round version of obs, with simulated galaxy image
+
+        set jacobian center to current best center, to simplify
+        fitting later
         """
+
+        # a copy
+        jacob=obs.get_jacobian()
+
+        #jrow,jcol=jacob.get_cen()
+
+        # in arcsec
+        #row,col=gm0round.get_cen()
+        #pix_scale=jacob.get_scale()
+
+        # this is approximate
+        #jrow = jrow + row/pix_scale
+        #jcol = jcol + col/pix_scale
+
+        # set center to best
+        #jacob.set_cen(jrow, jcol)
+
         psf_round=obs.psf.gmix.make_round()
 
         gm_round = gm0round.convolve( psf_round )
+
+        # we reset the jacobian above
+        gm_round.set_cen(0.0, 0.0)
+
         im_nonoise=gm_round.make_image(obs.image.shape,
-                                       jacobian=obs.jacobian)
+                                       jacobian=jacob)
         
         noise=1.0/sqrt( median(obs.weight) )
         nim = numpy.random.normal(scale=noise, size=im_nonoise.shape)
@@ -396,7 +438,7 @@ class RoundModelBurner(dict):
         new_obs=Observation(im,
                             gmix=gm_round,
                             weight=obs.weight.copy(),
-                            jacobian=obs.jacobian.copy(),
+                            jacobian=jacob,
                             psf=psf_obs)
 
         new_obs.im_nonoise=im
@@ -578,7 +620,8 @@ class RoundModelBurner(dict):
             width=mpars['cen_prior_pars'][0]
             cen_prior=ngmix.priors.CenPrior(0.0, 0.0, width, width)
 
-            g_prior = ngmix.priors.make_gprior_cosmos_sersic(type='erf')
+            #g_prior = ngmix.priors.make_gprior_cosmos_sersic(type='erf')
+            g_prior = ngmix.priors.ZDisk2D(1.0)
             g_prior_round = ngmix.priors.GPriorBA(0.001)
             tmp=g_prior_round.sample1d(10)
 
