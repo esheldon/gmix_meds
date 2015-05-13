@@ -215,8 +215,11 @@ class RoundModelBurner(dict):
                     Ts2n=-9999.0
                 else:
 
-                    print("        r2_mean: %g r4_mean: %g" % (r2_mean, r4_mean) )
-                    Ts2n = Tround * s2n * sqrt(r4_mean) / (4. * r2_mean**2)
+                    #Ts2n = Tround * s2n * sqrt(r4_mean) / (4. * r2_mean**2)
+                    
+                    # this one partially accounts for T-F covariance
+                    r2sq = r2_mean**2
+                    Ts2n = Tround * s2n * sqrt(r4_mean-r2sq) / (4. * r2sq)
 
                     #psf_r2_mean = psf_r2sum/psf_s2n_sum
                     #Tg = r2_mean - psf_r2_mean
