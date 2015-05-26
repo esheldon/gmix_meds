@@ -41,8 +41,8 @@ class RoundModelBurner(dict):
     def __init__(self, config_file, collated_file, use_alg=True, tmpdir=None):
 
         # for ngmix011 pars_best is no g prior, as is pars_uw
-        self.pname = 'pars_best'
-        #self.pname = 'pars'
+        #self.pname = 'pars_best'
+        self.pname = 'pars'
         #self.pname = 'pars_uw'
 
         self.use_alg=use_alg
@@ -130,15 +130,15 @@ class RoundModelBurner(dict):
         n=Namer(model)
 
         if self['use_logpars']:
-            pars[4:] = exp(pars[4:])
+            pars_round[4:] = exp(pars_round[4:])
 
         if self.use_alg:
             s2n, Ts2n, s2n_flags = self.get_s2n_Ts2n_r(mbo_round, pars_round[4])
             self.data[n('round_flags')][index] = s2n_flags
         else:
             s2n,s2n_flags=self.get_s2n_r(mbo_round)
-            #Ts2n,Ts2n_flags=self.get_Ts2n_r_sim(mbo_round, model, pars_round)
-            Ts2n,Ts2n_flags=self.get_Ts2n_r_sim_covonly(mbo_round, model, pars_round)
+            Ts2n,Ts2n_flags=self.get_Ts2n_r_sim(mbo_round, model, pars_round)
+            #Ts2n,Ts2n_flags=self.get_Ts2n_r_sim_covonly(mbo_round, model, pars_round)
             self.data[n('round_flags')][index] = s2n_flags | Ts2n_flags
 
         self.data[n('T_r')][index] = pars_round[4]
@@ -158,15 +158,9 @@ class RoundModelBurner(dict):
         r4sum=0.0
         r2sum=0.0
 
-        psf_s2n_sum=0.0
-        psf_r4sum=0.0
-        psf_r2sum=0.0
-
-
         for obslist in mbo:
             for obs in obslist:
                 gm=obs.gmix
-                psf_gm=obs.psf.gmix
 
                 #s2n_sum += gm.get_model_s2n_sum(obs)
 
@@ -175,16 +169,9 @@ class RoundModelBurner(dict):
                 t_s2n_sum, t_r2sum, t_r4sum = \
                     gm.get_model_s2n_Tvar_sums(obs)
 
-                t_psf_s2n_sum, t_psf_r2sum, t_psf_r4sum = \
-                    psf_gm.get_model_s2n_Tvar_sums(obs)
-
                 s2n_sum += t_s2n_sum
                 r2sum += t_r2sum
                 r4sum += t_r4sum
-
-                psf_s2n_sum += t_psf_s2n_sum
-                psf_r2sum += t_psf_r2sum
-                psf_r4sum += t_psf_r4sum
 
         if s2n_sum <= 0.0:
             print("    failure: s2n_sum <= 0.0 :",s2n_sum)
@@ -194,37 +181,25 @@ class RoundModelBurner(dict):
         else:
             s2n=sqrt(s2n_sum)
 
-            #if psf_s2n_sum <= 0.0:
-            if False:
-                print("    failure: psf_s2n_sum <= 0.0 :",psf_s2n_sum)
-                flags |= PSF_S2N_LOW
+            # weighted means
+            r2_mean = r2sum/s2n_sum
+            r4_mean = r4sum/s2n_sum
+
+            if r2_mean <= 0.0:
+                print("    failure: round r2 <= 0.0 :",r2_mean)
+                flags |= R2_LOW
+                Ts2n=-9999.0
+            elif r4_mean <= 0.0:
+                print("    failure: round r4 == 0.0 :",r4_mean)
+                flags |= R4_LOW
                 Ts2n=-9999.0
             else:
 
-                # weighted means
-                r2_mean = r2sum/s2n_sum
-                r4_mean = r4sum/s2n_sum
-
-                if r2_mean <= 0.0:
-                    print("    failure: round r2 <= 0.0 :",r2_mean)
-                    flags |= R2_LOW
-                    Ts2n=-9999.0
-                elif r4_mean <= 0.0:
-                    print("    failure: round r2 == 0.0 :",r2_mean)
-                    flags |= R4_LOW
-                    Ts2n=-9999.0
-                else:
-
-                    #Ts2n = Tround * s2n * sqrt(r4_mean) / (4. * r2_mean**2)
-                    
-                    # this one partially accounts for T-F covariance
-                    r2sq = r2_mean**2
-                    Ts2n = Tround * s2n * sqrt(r4_mean-r2sq) / (4. * r2sq)
-
-                    #psf_r2_mean = psf_r2sum/psf_s2n_sum
-                    #Tg = r2_mean - psf_r2_mean
-
-                    #Ts2n = Tg * s2n * sqrt(r4_mean) / (4. * r2_mean**2)
+                #Ts2n = Tround * s2n * sqrt(r4_mean) / (4. * r2_mean**2)
+                
+                # this one partially accounts for T-F covariance
+                r2sq = r2_mean**2
+                Ts2n = Tround * s2n * sqrt(r4_mean-r2sq) / (4. * r2sq)
 
         return s2n, Ts2n, flags
 
@@ -253,18 +228,26 @@ class RoundModelBurner(dict):
         """
         input round version of observations
         """
+        from ngmix.fitting import print_pars
+        import covmatrix
 
         pars_round=pars_round_linear.copy()
         if self['use_logpars']:
             pars_round[4:] = log(pars_round[4:])
+        else:
+            Tround = pars_round[4]
+
+        #print_pars(pars_round, front="    sim Ts2n from pars:")
+        guess=zeros(pars_round.size-2)
 
         Ts2n=-9999.0
         flags=0
 
-        prior=self.priors_round[model]
-        fitter=ngmix.fitting.LMSimple(mbo, model,
-                                      prior=prior,
-                                      use_logpars=self['use_logpars'])
+        prior=self.priors[model]
+        prior_round=self.priors_round[model]
+        fitter=ngmix.fitting.LMSimpleRound(mbo, model,
+                                           prior=prior_round,
+                                           use_logpars=self['use_logpars'])
 
         if self['use_logpars']:
             scaling='log'
@@ -273,30 +256,45 @@ class RoundModelBurner(dict):
 
         # we set the centers to the exact fit position
         # in the get_round_obs method
-        pars_round[0:0+2] = 0.0
+        pars_round[2:2+2] = 0.0
 
-        #widths=pars_round*0 + 0.05
-        widths=None
+        widths=pars_round*0 + 0.10
         guesser=FromFullParsGuesser(pars_round, pars_round*0, 
                                     scaling=scaling,
                                     widths=widths)
 
         # first guess is truth
-        guess=pars_round.copy()
+
+        guess[0:0+2] = pars_round[0:0+2]
+        guess[2:] = pars_round[4:]
 
         for i in xrange(self.Ts2n_ntry):
+            print_pars(guess, front="        guess:")
+            covold=None
             fitter.go(guess)
-            fitter.calc_cov(1.0e-3, 5.0)
 
             res=fitter.get_result()
             if res['flags']==0:
-                break
-            else:
-                guess=guesser(prior=prior)
-                print("    guess from sample")
-                g1,g2=prior.g_prior.sample2d(1)
-                guess[2]=g1[0]
-                guess[3]=g2[0]
+                # try to replace cov
+                try:
+                    # if the replacement cov fails and this is the last iter,
+                    # we still at least get the LM cov
+                    # otherwise try again
+                    cov=covmatrix.calc_cov(fitter.calc_lnprob, res['pars'], 1.0e-3)
+                    if cov[2,2] > 0:
+                        res['pars_cov']=cov
+                        break
+
+                except LinAlgError:
+                    print("    caught linalg")
+
+                if i==(self.Ts2n_ntry-1):
+                    print("    using LM cov")
+
+            guess0 = guesser(prior=prior)
+
+            guess[0:0+2] = guess0[0:0+2]
+            guess[2:] = guess0[4:]
 
         if res['flags'] != 0:
             print("    failure: fit round Ts2n after",i+1,"tries")
@@ -304,7 +302,12 @@ class RoundModelBurner(dict):
         else:
             print("    Ts2n ntries:",i+1)
             cov=res['pars_cov']
-            Ts2n = pars_round[4]/sqrt(cov[4,4])
+            if self['use_logpars']:
+                Ts2n = sqrt(1.0/cov[2,2])
+            else:
+                err=sqrt(cov[2,2])
+                #print("        Terr:",err)
+                Ts2n = Tround/err
 
         return Ts2n, flags
 
@@ -313,25 +316,30 @@ class RoundModelBurner(dict):
         input round version of observations
         """
 
-        # we reset the jacobians
+        assert self['use_logpars']==False,"only linear for now"
+
         pars_round=pars_round_in.copy()
-        pars_round[0:0+2] = 0.0
+
+        pars = zeros(pars_round.size-2)
+        pars[0:0+2] = pars_round[0:0+2]
+        pars[2:] = pars_round[4:]
 
         Ts2n=-9999.0
         flags=0
 
-        fitter=ngmix.fitting.LMSimple(mbo, model,
-                                      prior=self.priors[model],
-                                      use_logpars=self['use_logpars'])
+        fitter=ngmix.fitting.LMSimpleRound(mbo, model,
+                                           prior=self.priors_round[model],
+                                           use_logpars=self['use_logpars'])
 
         try:
-            fitter._setup_data(pars_round)
+            fitter._setup_data(pars)
 
             try:
-                cov=fitter.get_cov(pars_round, 1.0e-3, 5.0)
+                cov=fitter.get_cov(pars, 1.0e-3, 5.0)
                 if cov[4,4] > 0:
                     Ts2n=pars_round[4]/sqrt(cov[4,4])
                 else:
+                    print("    failure: cov negative")
                     flags = TS2N_FAIL
             except LinAlgError:
                 print("    failure: could not invert Hess in Ts2n")
@@ -409,30 +417,15 @@ class RoundModelBurner(dict):
         # a copy
         jacob=obs.get_jacobian()
 
-        #jrow,jcol=jacob.get_cen()
-
-        # in arcsec
-        #row,col=gm0round.get_cen()
-        #pix_scale=jacob.get_scale()
-
-        # this is approximate
-        #jrow = jrow + row/pix_scale
-        #jcol = jcol + col/pix_scale
-
-        # set center to best
-        #jacob.set_cen(jrow, jcol)
-
         psf_round=obs.psf.gmix.make_round()
 
         gm_round = gm0round.convolve( psf_round )
 
-        # we reset the jacobian above
-        gm_round.set_cen(0.0, 0.0)
-
         im_nonoise=gm_round.make_image(obs.image.shape,
                                        jacobian=jacob)
         
-        noise=1.0/sqrt( median(obs.weight) )
+        #noise=1.0/sqrt( median(obs.weight) )
+        noise=1.0/sqrt( obs.weight.max() )
         nim = numpy.random.normal(scale=noise, size=im_nonoise.shape)
         im = im_nonoise + nim
 
@@ -623,10 +616,10 @@ class RoundModelBurner(dict):
             width=mpars['cen_prior_pars'][0]
             cen_prior=ngmix.priors.CenPrior(0.0, 0.0, width, width)
 
-            #g_prior = ngmix.priors.make_gprior_cosmos_sersic(type='erf')
-            g_prior = ngmix.priors.ZDisk2D(1.0)
-            g_prior_round = ngmix.priors.GPriorBA(0.001)
-            tmp=g_prior_round.sample1d(10)
+            g_prior = ngmix.priors.make_gprior_cosmos_sersic(type='erf')
+            #g_prior = ngmix.priors.ZDisk2D(1.0)
+            #g_prior_round = ngmix.priors.GPriorBA(0.001)
+            #tmp=g_prior_round.sample1d(10)
 
             Tpars=mpars['T_prior_pars']
             T_prior=ngmix.priors.TwoSidedErf(*Tpars)
@@ -639,11 +632,15 @@ class RoundModelBurner(dict):
                                                      g_prior,
                                                      T_prior,
                                                      counts_priors)
+            '''
             prior_round = ngmix.joint_prior.PriorSimpleSep(cen_prior,
                                                      g_prior_round,
                                                      T_prior,
                                                      counts_priors)
-
+            '''
+            prior_round = ngmix.joint_prior.PriorSimpleSepRound(cen_prior,
+                                                                T_prior,
+                                                                counts_priors)
             priors[model]=prior
             priors_round[model]=prior_round
 
