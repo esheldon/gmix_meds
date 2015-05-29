@@ -25,8 +25,8 @@ def get_bootstrapper(obs, type='boot', **keys):
                           use_logpars=use_logpars)
     elif type=='composite':
         #print("    loading composite bootstrapper")
-        fracdev_prior = keys['fracdev_prior']
-        fracdev_grid  = keys['fracdev_grid']
+        fracdev_prior = keys.get('fracdev_prior',None)
+        fracdev_grid  = keys.get('fracdev_grid',None)
         boot=CompositeBootstrapper(obs,
                                    fracdev_prior=fracdev_prior,
                                    fracdev_grid=fracdev_grid,
@@ -157,6 +157,164 @@ class MedsFitBootBase(MedsFit):
         self.boot.set_round_s2n(max_pars,
                                 method='sim',
                                 fitter_type='max')
+
+
+    def _get_lnames(self):
+        if self['use_logpars']:
+            fname='log_flux'
+            Tname='log_T'
+        else:
+            fname='flux'
+            Tname='T'
+
+        return fname, Tname
+
+    def _get_dtype(self):
+        self._check_models()
+
+        nband=self['nband']
+        bshape=(nband,)
+        simple_npars=5+nband
+
+        dt=[('id','i8'),
+            ('number','i4'),
+            ('processed','i1'),
+            ('flags','i4'),
+            ('nimage_tot','i4',bshape),
+            ('nimage_use','i4',bshape),
+            ('time','f8'),
+
+            ('box_size','i2'),
+
+            ('mask_frac','f8'),
+            ('psfrec_T','f8'),
+            ('psfrec_g','f8', 2)
+
+           ]
+
+        # coadd fit with em 1 gauss
+        # the psf flux fits are done for each band separately
+        for name in ['psf']:
+            n=Namer(name)
+            dt += [(n('flags'),   'i4',bshape),
+                   (n('flux'),    'f8',bshape),
+                   (n('flux_err'),'f8',bshape),
+                   (n('chi2per'),'f8',bshape),
+                   (n('dof'),'f8',bshape)]
+
+        if nband==1:
+            fcov_shape=(nband,)
+        else:
+            fcov_shape=(nband,nband)
+
+        
+        fname, Tname=self._get_lnames()
+
+        models=self._get_all_models()
+        for model in models:
+
+            n=Namer(model)
+
+            np=simple_npars
+            
+            dt+=[(n('flags'),'i4'),
+                 (n('pars'),'f8',np),
+                 (n('pars_cov'),'f8',(np,np)),
+                 (n(fname),'f8',bshape),
+                 (n(fname+'_cov'),'f8',fcov_shape),
+                 (n('g'),'f8',2),
+                 (n('g_cov'),'f8',(2,2)),
+
+                 (n('max_flags'),'i4'),
+                 (n('max_pars'),'f8',np),
+                 (n('max_pars_cov'),'f8',(np,np)),
+                 (n('max_flags_r'),'i4')
+                 (n('max_s2n_r'),'f8'),
+                 (n('max_'+Tname+'_r'),'f8'),
+                 (n('max_T_s2n_r'),'f8'),
+                
+                 (n('s2n_w'),'f8'),
+                 (n('chi2per'),'f8'),
+                 (n('dof'),'f8'),
+
+                 (n('flags_r'),'i4')
+                 (n('s2n_r'),'f8'),
+                 (n(Tname+'_r'),'f8'),
+                 (n('T_s2n_r'),'f8'),
+                ]
+            
+            
+            if self['do_shear']:
+                dt += [(n('g_sens'), 'f8', 2),
+                       (n('P'), 'f8'),
+                       (n('Q'), 'f8', 2),
+                       (n('R'), 'f8', (2,2))]
+            
+        return dt
+
+    def _make_struct(self):
+        """
+        make the output structure
+        """
+        dt=self._get_dtype()
+
+        num=self.index_list.size
+        data=numpy.zeros(num, dtype=dt)
+
+
+        data['mask_frac'] = PDEFVAL
+        data['psfrec_T'] = DEFVAL
+        data['psfrec_g'] = DEFVAL
+        
+        for name in ['psf']:
+            n=Namer(name)
+            data[n('flags')] = NO_ATTEMPT
+            data[n('flux')] = DEFVAL
+            data[n('flux_err')] = PDEFVAL
+            data[n('chi2per')] = PDEFVAL
+
+        fname, Tname=self._get_lnames()
+
+        models=self._get_all_models()
+        for model in models:
+            n=Namer(model)
+
+            data[n('flags')] = NO_ATTEMPT
+            
+            data[n('pars')] = DEFVAL
+            data[n('pars_cov')] = PDEFVAL*1.e6
+
+            data[(n(fname)] = DEFVAL
+            data[(n(fname+'_cov')] =  PDEFVAL*1.e6
+
+            data[n('g')] = DEFVAL
+            data[n('g_cov')] = PDEFVAL*1.e6
+
+            data[n('s2n_w')] = DEFVAL
+            data[n('chi2per')] = PDEFVAL
+            
+            data[n('max_flags')] = NO_ATTEMPT
+            data[n('max_pars')] = DEFVAL
+            data[n('max_pars_cov')] = PDEFVAL*1.e6
+
+            data[(n('max_flags_r')] = NO_ATTEMPT
+            data[(n('max_s2n_r')] = DEFVAL
+            data[(n('max_'+Tname+'_r')] = DEFVAL
+            data[(n('max_T_s2n_r')] = DEFVAL
+ 
+            data[(n('flags_r')] = NO_ATTEMPT
+            data[(n('s2n_r')] = DEFVAL
+            data[(n(Tname+'_r')] = DEFVAL
+            data[(n('T_s2n_r')] = DEFVAL
+            
+            if self['do_shear']:
+                data[n('g_sens')] = DEFVAL
+                data[n('P')] = DEFVAL
+                data[n('Q')] = DEFVAL
+                data[n('R')] = DEFVAL
+
+     
+        self.data=data
 
 
 class MedsFitISampleBoot(MedsFitBootBase):
