@@ -47,8 +47,10 @@ class MedsFitBootBase(MedsFit):
         """
         
         if model=='cm':
+            fracdev_prior=self['model_pars']['cm']['fracdev_prior']
             boot=get_bootstrapper(self.sdata['mb_obs_list'],
                                   type='composite',
+                                  fracdev_prior=fracdev_prior,
                                   **self)
         else:
             boot=get_bootstrapper(self.sdata['mb_obs_list'], **self)
@@ -191,9 +193,9 @@ class MedsFitBootBase(MedsFit):
         boot.try_replace_cov(cov_pars)
 
 
-        self.boot.set_round_s2n(max_pars,
-                                method='sim',
-                                fitter_type='max')
+        #self.boot.set_round_s2n(max_pars,
+        #                        method='sim',
+        #                        fitter_type='max')
 
 
 
@@ -209,8 +211,9 @@ class MedsFitBootBase(MedsFit):
         rres=self.boot.get_round_result()
 
         n=Namer(model)
+        data=self.data
 
-        self.data[n('flags')][dindex] = res['flags']
+        data[n('flags')][dindex] = res['flags']
 
         fname, Tname = self._get_lnames()
 
@@ -221,25 +224,31 @@ class MedsFitBootBase(MedsFit):
             flux=pars[5:]
             flux_cov=pars_cov[5:, 5:]
 
-            self.data[n('pars')][dindex,:] = pars
-            self.data[n('pars_cov')][dindex,:,:] = pars_cov
+            data[n('pars')][dindex,:] = pars
+            data[n('pars_cov')][dindex,:,:] = pars_cov
 
-            self.data[n(fname)][dindex] = flux
-            self.data[n(fname+'_cov')][dindex] = flux_cov
+            data[n(fname)][dindex] = flux
+            data[n(fname+'_cov')][dindex] = flux_cov
 
-            self.data[n('g')][dindex,:] = res['g']
-            self.data[n('g_cov')][dindex,:,:] = res['g_cov']
+            data[n('g')][dindex,:] = res['g']
+            data[n('g_cov')][dindex,:,:] = res['g_cov']
+
+            data[n('flags_r')][dindex]  = rres['flags']
+            data[n('s2n_r')][dindex]    = rres['s2n_r']
+            data[n(Tname+'_r')][dindex] = rres['pars'][4]
+            data[n('T_s2n_r')][dindex]  = rres['T_s2n_r']
+            data[n('psf_T_r')][dindex]  = rres['psf_T_r']
 
             for sn in stat_names:
-                self.data[n(sn)][dindex] = res[sn]
+                data[n(sn)][dindex] = res[sn]
 
             if self['do_shear']:
-                self.data[n('g_sens')][dindex,:] = res['g_sens']
+                data[n('g_sens')][dindex,:] = res['g_sens']
 
                 if 'R' in res:
-                    self.data[n('P')][dindex] = res['P']
-                    self.data[n('Q')][dindex,:] = res['Q']
-                    self.data[n('R')][dindex,:,:] = res['R']
+                    data[n('P')][dindex] = res['P']
+                    data[n('Q')][dindex,:] = res['Q']
+                    data[n('R')][dindex,:,:] = res['R']
 
     def _print_galaxy_result(self):
         res=self.gal_fitter.get_result()
@@ -317,10 +326,11 @@ class MedsFitBootBase(MedsFit):
                  (n('max_flags'),'i4'),
                  (n('max_pars'),'f8',np),
                  (n('max_pars_cov'),'f8',(np,np)),
-                 (n('max_flags_r'),'i4'),
-                 (n('max_s2n_r'),'f8'),
-                 (n('max_'+Tname+'_r'),'f8'),
-                 (n('max_T_s2n_r'),'f8'),
+
+                 #(n('max_flags_r'),'i4'),
+                 #(n('max_s2n_r'),'f8'),
+                 #(n('max_'+Tname+'_r'),'f8'),
+                 #(n('max_T_s2n_r'),'f8'),
                 
                  (n('s2n_w'),'f8'),
                  (n('chi2per'),'f8'),
@@ -330,6 +340,7 @@ class MedsFitBootBase(MedsFit):
                  (n('s2n_r'),'f8'),
                  (n(Tname+'_r'),'f8'),
                  (n('T_s2n_r'),'f8'),
+                 (n('psf_T_r'),'f8'),
                 ]
             
             
@@ -386,15 +397,16 @@ class MedsFitBootBase(MedsFit):
             data[n('max_pars')] = DEFVAL
             data[n('max_pars_cov')] = PDEFVAL*1.e6
 
-            data[n('max_flags_r')] = NO_ATTEMPT
-            data[n('max_s2n_r')] = DEFVAL
-            data[n('max_'+Tname+'_r')] = DEFVAL
-            data[n('max_T_s2n_r')] = DEFVAL
+            #data[n('max_flags_r')] = NO_ATTEMPT
+            #data[n('max_s2n_r')] = DEFVAL
+            #data[n('max_'+Tname+'_r')] = DEFVAL
+            #data[n('max_T_s2n_r')] = DEFVAL
  
             data[n('flags_r')] = NO_ATTEMPT
             data[n('s2n_r')] = DEFVAL
             data[n(Tname+'_r')] = DEFVAL
             data[n('T_s2n_r')] = DEFVAL
+            data[n('psf_T_r')] = DEFVAL
             
             if self['do_shear']:
                 data[n('g_sens')] = DEFVAL
@@ -511,7 +523,7 @@ class MedsFitISampleBoot(MedsFitBootBase):
             d[n('neff')] = DEFVAL
 
 
-class MedsFitISampleBootComposite(MedsFitBootBase):
+class MedsFitISampleBootComposite(MedsFitISampleBoot):
 
     def _copy_galaxy_result(self, model):
         super(MedsFitISampleBootComposite,self)._copy_galaxy_result(model)

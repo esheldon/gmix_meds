@@ -2176,7 +2176,7 @@ class MedsFit(dict):
         make sure all models are supported
         """
         for model in self['fit_models']:
-            if model not in ['exp','dev']:
+            if model not in ['exp','dev','cm']:
                 raise ValueError("model '%s' not supported" % model)
 
     def _get_all_models(self):
