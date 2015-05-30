@@ -1749,7 +1749,9 @@ class MedsFit(dict):
 
         title='%s %s' % (type,model)
         try:
-            res_plots=fitter.plot_residuals(title=title)
+            res_plots = None
+            if fitter_type != 'isample':
+                res_plots=fitter.plot_residuals(title=title)
             if res_plots is not None:
                 for band, band_plots in enumerate(res_plots):
                     for icut, plt in enumerate(band_plots):
@@ -1759,13 +1761,16 @@ class MedsFit(dict):
 
         except GMixRangeError as err:
             print("caught error plotting resid: %s" % str(err))
-        except:
-            print("caught error plotting resid")
-        
+
         if do_trials:
             try:
+                if fitter_type == 'isample':
+                    wgts = fitter.get_iweights()
+                else:
+                    wgts = fitter.weights
+
                 pdict=fitter.make_plots(title=title,
-                                        weights=fitter.weights)
+                                        weights=wgts)
                 
                 pdict['trials'].aspect_ratio=1.5
                 pdict['wtrials'].aspect_ratio=1.5
