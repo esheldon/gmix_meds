@@ -7,10 +7,10 @@ and isample
 from __future__ import print_function
 import numpy
 from .nfit import *
-from ngmix import print_pars
 
+from ngmix import print_pars
 from ngmix.fitting import EIG_NOTFINITE
-from ngmix.gexceptions import BootPSFFailure,BootGalFailure
+from ngmix.gexceptions import BootPSFFailure, BootGalFailure
 
 def get_bootstrapper(obs, type='boot', **keys):
     from ngmix.bootstrap import Bootstrapper
@@ -71,7 +71,6 @@ class MedsFitBootBase(MedsFit):
         return flags
 
     def _run_fitters(self, model):
-        from great3.generic import PSFFailure,GalFailure
 
         flags=0
 
