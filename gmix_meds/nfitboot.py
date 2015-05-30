@@ -232,9 +232,6 @@ class MedsFitBootBase(MedsFit):
             data[n('pars')][dindex,:] = pars
             data[n('pars_cov')][dindex,:,:] = pars_cov
 
-            data[n(fname)][dindex] = flux
-            data[n(fname+'_cov')][dindex] = flux_cov
-
             data[n('g')][dindex,:] = res['g']
             data[n('g_cov')][dindex,:,:] = res['g_cov']
 
@@ -321,8 +318,6 @@ class MedsFitBootBase(MedsFit):
             dt+=[(n('flags'),'i4'),
                  (n('pars'),'f8',np),
                  (n('pars_cov'),'f8',(np,np)),
-                 (n(fname),'f8',bshape),
-                 (n(fname+'_cov'),'f8',fcov_shape),
                  (n('g'),'f8',2),
                  (n('g_cov'),'f8',(2,2)),
 
@@ -385,9 +380,6 @@ class MedsFitBootBase(MedsFit):
             
             data[n('pars')] = DEFVAL
             data[n('pars_cov')] = PDEFVAL*1.e6
-
-            data[n(fname)] = DEFVAL
-            data[n(fname+'_cov')] =  PDEFVAL*1.e6
 
             data[n('g')] = DEFVAL
             data[n('g_cov')] = PDEFVAL*1.e6
