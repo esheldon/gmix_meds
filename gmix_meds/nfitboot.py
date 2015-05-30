@@ -207,6 +207,7 @@ class MedsFitBootBase(MedsFit):
         dindex=self.dindex
 
         res=self.gal_fitter.get_result()
+        mres=self.boot.get_max_fitter().get_result()
 
         rres=self.boot.get_round_result()
 
@@ -223,6 +224,10 @@ class MedsFitBootBase(MedsFit):
 
             flux=pars[5:]
             flux_cov=pars_cov[5:, 5:]
+
+            data[n('max_flags')][dindex] = mres['flags']
+            data[n('max_pars')][dindex,:] = mres['pars']
+            data[n('max_pars_cov')][dindex,:,:] = mres['pars_cov']
 
             data[n('pars')][dindex,:] = pars
             data[n('pars_cov')][dindex,:,:] = pars_cov
@@ -296,9 +301,7 @@ class MedsFitBootBase(MedsFit):
             n=Namer(name)
             dt += [(n('flags'),   'i4',bshape),
                    (n('flux'),    'f8',bshape),
-                   (n('flux_err'),'f8',bshape),
-                   (n('chi2per'),'f8',bshape),
-                   (n('dof'),'f8',bshape)]
+                   (n('flux_err'),'f8',bshape)]
 
         if nband==1:
             fcov_shape=(nband,)
@@ -371,7 +374,6 @@ class MedsFitBootBase(MedsFit):
             data[n('flags')] = NO_ATTEMPT
             data[n('flux')] = DEFVAL
             data[n('flux_err')] = PDEFVAL
-            data[n('chi2per')] = PDEFVAL
 
         fname, Tname=self._get_lnames()
 
