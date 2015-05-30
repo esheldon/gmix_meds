@@ -115,7 +115,8 @@ def run_ngmix(meds_files,
             set_T_prior(params)
             set_counts_prior(params, repeat=counts_prior_repeat)
 
-            if 'fracdev_prior_run' in params:
+            #if 'fracdev_prior_run' in params:
+            if 'fracdev_prior_file' in params:
                 set_fracdev_prior(params)
 
     cmguess=conf.get('coadd_model_guess',None)
@@ -215,10 +216,26 @@ def set_counts_prior(params, repeat=False):
 
 def set_fracdev_prior(params):
     import ngmix
-    import great_des
+    #import great_des
 
-    params['fracdev_prior']=great_des.files.read_prior(run=params['fracdev_prior_run'],
-                                                       partype=params['fracdev_partype'])
+    fname=params['fracdev_prior_file']
+    print("reading fracdev_prior:",fname)
+    data = fitsio.read(fname)
+
+    weights=data['weights']
+    means=data['means']
+    covars=data['covars']
+
+    if len(means.shape) == 1:
+        means = means.reshape( (means.size, 1) )
+
+    prior = ngmix.gmix.GMixND(weights,
+                              means,
+                              covars)
+
+    params['fracdev_prior'] = prior
+    #params['fracdev_prior']=great_des.files.read_prior(run=params['fracdev_prior_run'],
+    #                                                   partype=params['fracdev_partype'])
 
 
 def set_g_prior(params):

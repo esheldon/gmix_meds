@@ -101,8 +101,10 @@ model_pars:
         cen_prior_pars: [0.27]
 
         # for now use stuff from great-des
-        fracdev_prior_run: "sfit-noisefree-c01"
-        fracdev_partype: "fracdev"
+        fracdev_prior_file: '/nfs/slac/des/fs1/g/sims/esheldon/lensing/great-des/sfit-noisefree-c01/prior/sfit-noisefree-c01-fracdev.fits'
+
+        #fracdev_prior_run: "sfit-noisefree-c01"
+        #fracdev_partype: "fracdev"
 
 fracdev_grid:
     min: -1.0
