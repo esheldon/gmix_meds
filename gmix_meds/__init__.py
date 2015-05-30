@@ -1,4 +1,5 @@
 from . import nfit
+from . import nfitboot
 from . import nfititer
 from . import maxfit
 from . import nfitcoadd

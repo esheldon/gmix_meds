@@ -108,21 +108,33 @@ def run_ngmix(meds_files,
     else:
         model_pars=conf['model_pars']
 
+        counts_prior_repeat=conf.get('counts_prior_repeat',False)
         for model,params in model_pars.iteritems():
             set_cen_prior(params)
             set_g_prior(params)
             set_T_prior(params)
-            set_counts_prior(params)
+            set_counts_prior(params, repeat=counts_prior_repeat)
+
+            if 'fracdev_prior_run' in params:
+                set_fracdev_prior(params)
 
     cmguess=conf.get('coadd_model_guess',None)
     meguess=conf.get('me_model_guess',None)
-    if conf['fitter_class']=='mh':
+
+    if conf['fitter_class'] == 'isample':
+        meds_fitter=gmix_meds.nfitboot.MedsFitISampleBoot
+
+    elif conf['fitter_class'] == 'isample-comp':
+        meds_fitter=gmix_meds.nfitboot.MedsFitISampleBootComposite
+
+    elif conf['fitter_class']=='mh':
         if cmguess == 'iter' or meguess == "iter":
             meds_fitter=gmix_meds.nfititer.MHMedsFitHybridIter
         elif model_data is not None:
             meds_fitter=gmix_meds.nfitnbrs.MHMedsFitModelNbrs
         else:
             meds_fitter=gmix_meds.nfit.MHMedsFitHybrid
+
     elif conf['fitter_class']=='emcee':
         if cmguess == 'iter' or meguess == "iter":
             meds_fitter=gmix_meds.nfititer.MedsFitEmceeIter
@@ -176,13 +188,23 @@ def set_T_prior(params):
     else:
         raise ValueError("bad T prior type: %s" % T_prior_type)
 
-def set_counts_prior(params):
+def set_counts_prior(params, repeat=False):
     import ngmix
+
 
     typ=params['counts_prior_type']
     if typ == 'flat':
-        pars=params['counts_prior_pars']
-        params['counts_prior']=ngmix.priors.FlatPrior(pars[0], pars[1])
+        if repeat:
+            # we assume this is one that will be repeated
+            pars=params['counts_prior_pars']
+            params['counts_prior']=ngmix.priors.FlatPrior(pars[0], pars[1])
+        else:
+            # assum this is a list of lists
+            plist=[]
+            for pars in params['counts_prior_pars']:
+                cp = ngmix.priors.FlatPrior(pars[0], pars[1])
+                plist.append(cp)
+            params['counts_prior'] = plist
 
     elif typ=='TwoSidedErf':
         pars=params['counts_prior_pars']
@@ -190,6 +212,13 @@ def set_counts_prior(params):
 
     else:
         raise ValueError("bad counts prior type: %s" % counts_prior_type)
+
+def set_fracdev_prior(params):
+    import ngmix
+    import great_des
+
+    params['fracdev_prior']=great_des.files.read_prior(run=params['fracdev_prior_run'],
+                                                       partype=params['fracdev_partype'])
 
 
 def set_g_prior(params):

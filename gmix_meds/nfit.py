@@ -44,6 +44,8 @@ UTTER_FAILURE=2**7
 
 IMAGE_FLAGS=2**8
 
+PSF_FLUX_FIT_FAILURE=2**9
+
 NO_ATTEMPT=2**30
 
 #PSF_S2N=1.e6
@@ -187,6 +189,10 @@ class MedsFit(dict):
             cp = params['counts_prior']
             if counts_prior_repeat:
                 cp = [cp]*self['nband']
+            else:
+                mess=("counts prior must be length "
+                      "%d, bot %d" % (self['nband'],len(cp)) )
+                assert len(cp)==self['nband'],mess
 
             print("    full")
             prior = PriorSimpleSep(params['cen_prior'],
@@ -585,8 +591,8 @@ class MedsFit(dict):
     def _print_mask_frac(self):
         data=self.data
         dindex=self.dindex
-        mess="        mask_frac: %.2f coadd_mask_frac: %.2f"
-        tup=(data['mask_frac'][dindex], data['coadd_mask_frac'][dindex])
+        mess="        mask_frac: %.2f"
+        tup=(data['mask_frac'][dindex], )
         print(mess % tup)
 
 
@@ -818,6 +824,7 @@ class MedsFit(dict):
 
     def set_psf_means(self):
         dindex=self.dindex
+        data=self.data
 
         # if npix == 0 there was some problem, and mask_frac would
         # not be calculable
@@ -842,10 +849,11 @@ class MedsFit(dict):
             g1=DEFVAL
             g2=DEFVAL
 
-        self.data['coadd_mask_frac'][dindex]=mask_frac
-        self.data['coadd_psfrec_T'][dindex]=T
-        self.data['coadd_psfrec_g'][dindex,0]=g1
-        self.data['coadd_psfrec_g'][dindex,1]=g2
+        if 'coadd_mask_frac' in data.dtype.names:
+            data['coadd_mask_frac'][dindex]=mask_frac
+            data['coadd_psfrec_T'][dindex]=T
+            data['coadd_psfrec_g'][dindex,0]=g1
+            data['coadd_psfrec_g'][dindex,1]=g2
 
         npix=self.npix
         wsum=self.wsum
@@ -868,10 +876,10 @@ class MedsFit(dict):
             g1=DEFVAL
             g2=DEFVAL
 
-        self.data['mask_frac'][dindex]=mask_frac
-        self.data['psfrec_T'][dindex]=T
-        self.data['psfrec_g'][dindex,0]=g1
-        self.data['psfrec_g'][dindex,1]=g2
+        data['mask_frac'][dindex]=mask_frac
+        data['psfrec_T'][dindex]=T
+        data['psfrec_g'][dindex,0]=g1
+        data['psfrec_g'][dindex,1]=g2
 
 
     def _reject_outliers(self, obs_list):
@@ -1329,8 +1337,8 @@ class MedsFit(dict):
         dindex=self.dindex
 
         print('    fitting: psf')
-        for band,obs_list in enumerate(sdata['coadd_mb_obs_list']):
-            self._fit_psf_flux_oneband(dindex, band, obs_list,coadd=True)
+        #for band,obs_list in enumerate(sdata['coadd_mb_obs_list']):
+        #    self._fit_psf_flux_oneband(dindex, band, obs_list,coadd=True)
 
         # this can be zero length
         for band,obs_list in enumerate(sdata['mb_obs_list']):

@@ -41,7 +41,7 @@ class MedsFitBootBase(MedsFit):
     Use a ngmix bootstrapper
     """
 
-    def get_bootstrapper(self):
+    def get_bootstrapper(self, model):
         """
         get the bootstrapper for fitting psf through galaxy
         """
@@ -60,11 +60,13 @@ class MedsFitBootBase(MedsFit):
         Fit psf flux and other models
         """
 
+        flags=0
         for model in self['fit_models']:
             print('    fitting:',model)
 
-            self._run_fitters(model)
+            flags |= self._run_fitters(model)
 
+        return flags
 
     def _run_fitters(self, model):
         from great3.generic import PSFFailure,GalFailure
@@ -78,25 +80,58 @@ class MedsFitBootBase(MedsFit):
 
         try:
 
-            self._fit_psfs()
-            self._fit_psf_flux()
+            # we currently fit the psf elsewhere
+            #self._fit_psfs()
+            flags |= self._fit_psf_flux()
 
-            try:
+            if flags == 0:
 
-                self._fit_galaxy(model)
-                self._copy_galaxy_result()
-                self._print_galaxy_result()
+                try:
 
-            except BootGalFailure:
-                print("    galaxy fitting failed")
-                flags = GAL_FIT_FAILURE
+                    self._fit_galaxy(model)
+                    self._copy_galaxy_result(model)
+                    self._print_galaxy_result()
+
+                except BootGalFailure:
+                    print("    galaxy fitting failed")
+                    flags = GAL_FIT_FAILURE
 
         except BootPSFFailure:
             print("    psf fitting failed")
             flags = PSF_FIT_FAILURE
 
+        return flags
+
+    def _fit_psf_flux(self):
+        self.boot.fit_gal_psf_flux()
+
+        res=self.boot.get_psf_flux_result()
+
+        n=Namer("psf")
+        dindex=self.dindex
+        data=self.data
+
+        flagsall=0
+        for band in xrange(self['nband']):
+            flags=res['flags'][band]
+            flagsall |= flags
+
+            flux=res['psf_flux'][band]
+            flux_err=res['psf_flux_err'][band]
+
+            data[n('flags')][dindex,band] = flags
+            data[n('flux')][dindex,band] = flux
+            data[n('flux_err')][dindex,band] = flux_err
+
+            print("        psf flux(%s): %g +/- %g" % (band,flux,flux_err))
+
+        return flagsall
+
 
     def _fit_psfs(self):
+        """
+        fit the psf model to every observation's psf image
+        """
 
         dindex=self.dindex
         boot=self.boot
@@ -131,7 +166,7 @@ class MedsFitBootBase(MedsFit):
         raise RuntimeError("over-ride me")
 
  
-    def fit_max(self, model):
+    def _fit_max(self, model):
         """
         do a maximum likelihood fit
 
@@ -151,12 +186,68 @@ class MedsFitBootBase(MedsFit):
                      max_pars,
                      prior=prior,
                      ntry=max_pars['ntry'])
+
+        print("        replacing cov")
         boot.try_replace_cov(cov_pars)
 
 
         self.boot.set_round_s2n(max_pars,
                                 method='sim',
                                 fitter_type='max')
+
+
+
+    def _copy_galaxy_result(self, model):
+        """
+        Copy from the result dict to the output array
+        """
+
+        dindex=self.dindex
+
+        res=self.gal_fitter.get_result()
+
+        rres=self.boot.get_round_result()
+
+        n=Namer(model)
+
+        self.data[n('flags')][dindex] = res['flags']
+
+        fname, Tname = self._get_lnames()
+
+        if res['flags'] == 0:
+            pars=res['pars']
+            pars_cov=res['pars_cov']
+
+            flux=pars[5:]
+            flux_cov=pars_cov[5:, 5:]
+
+            self.data[n('pars')][dindex,:] = pars
+            self.data[n('pars_cov')][dindex,:,:] = pars_cov
+
+            self.data[n(fname)][dindex] = flux
+            self.data[n(fname+'_cov')][dindex] = flux_cov
+
+            self.data[n('g')][dindex,:] = res['g']
+            self.data[n('g_cov')][dindex,:,:] = res['g_cov']
+
+            for sn in stat_names:
+                self.data[n(sn)][dindex] = res[sn]
+
+            if self['do_shear']:
+                self.data[n('g_sens')][dindex,:] = res['g_sens']
+
+                if 'R' in res:
+                    self.data[n('P')][dindex] = res['P']
+                    self.data[n('Q')][dindex,:] = res['Q']
+                    self.data[n('R')][dindex,:,:] = res['R']
+
+    def _print_galaxy_result(self):
+        res=self.gal_fitter.get_result()
+
+        if 'pars' in res:
+            print_pars(res['pars'],    front='    gal_pars: ')
+        if 'pars_err' in res:
+            print_pars(res['pars_err'],front='    gal_perr: ')
 
 
     def _get_lnames(self):
@@ -192,8 +283,6 @@ class MedsFitBootBase(MedsFit):
 
            ]
 
-        # coadd fit with em 1 gauss
-        # the psf flux fits are done for each band separately
         for name in ['psf']:
             n=Namer(name)
             dt += [(n('flags'),   'i4',bshape),
@@ -228,7 +317,7 @@ class MedsFitBootBase(MedsFit):
                  (n('max_flags'),'i4'),
                  (n('max_pars'),'f8',np),
                  (n('max_pars_cov'),'f8',(np,np)),
-                 (n('max_flags_r'),'i4')
+                 (n('max_flags_r'),'i4'),
                  (n('max_s2n_r'),'f8'),
                  (n('max_'+Tname+'_r'),'f8'),
                  (n('max_T_s2n_r'),'f8'),
@@ -237,7 +326,7 @@ class MedsFitBootBase(MedsFit):
                  (n('chi2per'),'f8'),
                  (n('dof'),'f8'),
 
-                 (n('flags_r'),'i4')
+                 (n('flags_r'),'i4'),
                  (n('s2n_r'),'f8'),
                  (n(Tname+'_r'),'f8'),
                  (n('T_s2n_r'),'f8'),
@@ -245,10 +334,10 @@ class MedsFitBootBase(MedsFit):
             
             
             if self['do_shear']:
-                dt += [(n('g_sens'), 'f8', 2),
-                       (n('P'), 'f8'),
-                       (n('Q'), 'f8', 2),
-                       (n('R'), 'f8', (2,2))]
+                dt += [(n('g_sens'), 'f8', 2)]
+                       #(n('P'), 'f8'),
+                       #(n('Q'), 'f8', 2),
+                       #(n('R'), 'f8', (2,2))]
             
         return dt
 
@@ -284,8 +373,8 @@ class MedsFitBootBase(MedsFit):
             data[n('pars')] = DEFVAL
             data[n('pars_cov')] = PDEFVAL*1.e6
 
-            data[(n(fname)] = DEFVAL
-            data[(n(fname+'_cov')] =  PDEFVAL*1.e6
+            data[n(fname)] = DEFVAL
+            data[n(fname+'_cov')] =  PDEFVAL*1.e6
 
             data[n('g')] = DEFVAL
             data[n('g_cov')] = PDEFVAL*1.e6
@@ -297,21 +386,21 @@ class MedsFitBootBase(MedsFit):
             data[n('max_pars')] = DEFVAL
             data[n('max_pars_cov')] = PDEFVAL*1.e6
 
-            data[(n('max_flags_r')] = NO_ATTEMPT
-            data[(n('max_s2n_r')] = DEFVAL
-            data[(n('max_'+Tname+'_r')] = DEFVAL
-            data[(n('max_T_s2n_r')] = DEFVAL
+            data[n('max_flags_r')] = NO_ATTEMPT
+            data[n('max_s2n_r')] = DEFVAL
+            data[n('max_'+Tname+'_r')] = DEFVAL
+            data[n('max_T_s2n_r')] = DEFVAL
  
-            data[(n('flags_r')] = NO_ATTEMPT
-            data[(n('s2n_r')] = DEFVAL
-            data[(n(Tname+'_r')] = DEFVAL
-            data[(n('T_s2n_r')] = DEFVAL
+            data[n('flags_r')] = NO_ATTEMPT
+            data[n('s2n_r')] = DEFVAL
+            data[n(Tname+'_r')] = DEFVAL
+            data[n('T_s2n_r')] = DEFVAL
             
             if self['do_shear']:
                 data[n('g_sens')] = DEFVAL
-                data[n('P')] = DEFVAL
-                data[n('Q')] = DEFVAL
-                data[n('R')] = DEFVAL
+                #data[n('P')] = DEFVAL
+                #data[n('Q')] = DEFVAL
+                #data[n('R')] = DEFVAL
 
      
         self.data=data
@@ -320,13 +409,13 @@ class MedsFitBootBase(MedsFit):
 class MedsFitISampleBoot(MedsFitBootBase):
     def _fit_galaxy(self, model):
         self._fit_max(model)
-        self._do_isample()
+        self._do_isample(model)
 
         self._add_shear_info(model)
 
-        self.fitter=self.boot.get_isampler()
+        self.gal_fitter=self.boot.get_isampler()
 
-    def do_isample(self):
+    def _do_isample(self, model):
         """
         run isample on the bootstrapper
         """
@@ -375,8 +464,91 @@ class MedsFitISampleBoot(MedsFitBootBase):
         res['g_sens'] = g_sens
         res['nuse'] = ls.get_nuse()
 
- 
+    def _copy_galaxy_result(self, model):
+        super(MedsFitISampleBoot,self)._copy_galaxy_result(model)
+
+        res=self.gal_fitter.get_result()
+        if res['flags'] == 0:
+
+            dindex=self.dindex
+            res=self.gal_fitter.get_result()
+            n=Namer(model)
+
+            for f in ['efficiency','neff']:
+                self.data[n(f)][dindex] = res[f]
+
+    def _print_galaxy_result(self):
+        super(MedsFitISampleBoot,self)._print_galaxy_result()
+        mres=self.boot.get_max_fitter().get_result()
+
+        if 's2n_w' in mres:
+            rres=self.boot.get_round_result()
+            tup=(mres['s2n_w'],rres['s2n_r'],rres['T_s2n_r'],mres['chi2per'])
+            print("    s2n: %.1f s2n_r: %.1f T_s2n_r: %.3g chi2per: %.3f" % tup)
+
+
+    def _get_dtype(self):
+
+        dt=super(MedsFitISampleBoot,self)._get_dtype()
+
+        for model in self._get_all_models():
+            n=Namer(model)
+            dt += [
+                (n('efficiency'),'f4'),
+                (n('neff'),'f4'),
+            ]
+
+        return dt
+
+    def _make_struct(self):
+        super(MedsFitISampleBoot,self)._make_struct()
+
+        d=self.data
+        for model in self._get_all_models():
+            n=Namer(model)
+
+            d[n('efficiency')] = DEFVAL
+            d[n('neff')] = DEFVAL
+
 
 class MedsFitISampleBootComposite(MedsFitBootBase):
-    pass
+
+    def _copy_galaxy_result(self, model):
+        super(MedsFitISampleBootComposite,self)._copy_galaxy_result(model)
+
+        res=self.gal_fitter.get_result()
+        if res['flags'] == 0:
+
+            dindex=self.dindex
+            res=self.gal_fitter.get_result()
+            n=Namer(model)
+
+            for f in ['fracdev','fracdev_noclip','fracdev_err','TdByTe']:
+                self.data[n(f)][dindex] = res[f]
+
+    def _get_dtype(self):
+
+        dt=super(MedsFitISampleBootComposite,self)._get_dtype()
+
+        n=Namer('cm')
+        dt += [
+            (n('fracdev'),'f4'),
+            (n('fracdev_noclip'),'f4'),
+            (n('fracdev_err'),'f4'),
+            (n('TdByTe'),'f4'),
+        ]
+
+        return dt
+
+    def _make_struct(self):
+        super(MedsFitISampleBootComposite,self)._make_struct()
+
+        n=Namer('cm')
+
+        d=self.data
+        d[n('fracdev')] = PDEFVAL
+        d[n('fracdev_noclip')] = PDEFVAL
+        d[n('fracdev_err')] = PDEFVAL
+        d[n('TdByTe')] = PDEFVAL
+
 
