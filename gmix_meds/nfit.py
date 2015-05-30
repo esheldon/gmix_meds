@@ -1759,7 +1759,9 @@ class MedsFit(dict):
 
         except GMixRangeError as err:
             print("caught error plotting resid: %s" % str(err))
-
+        except:
+            print("caught error plotting resid")
+        
         if do_trials:
             try:
                 pdict=fitter.make_plots(title=title,

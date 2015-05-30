@@ -413,8 +413,17 @@ class MedsFitBootBase(MedsFit):
 class MedsFitISampleBoot(MedsFitBootBase):
     def _fit_galaxy(self, model):
         self._fit_max(model)
+
+        if self['make_plots']:
+            fitter = self.boot.get_max_fitter()
+            self._do_make_plots(fitter, model, fitter_type='lm')
+        
         self._do_isample(model)
 
+        if self['make_plots']:
+            fitter = self.boot.get_isampler()
+            self._do_make_plots(fitter, model, fitter_type='isample')
+        
         self._add_shear_info(model)
 
         self.gal_fitter=self.boot.get_isampler()
