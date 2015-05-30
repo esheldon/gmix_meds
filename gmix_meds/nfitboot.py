@@ -183,7 +183,6 @@ class MedsFitBootBase(MedsFit):
         prior=self['model_pars'][model]['prior']
 
         # now with prior
-        print("fitting with g prior")
         boot.fit_max(model,
                      max_pars,
                      prior=prior,
