@@ -1,0 +1,22 @@
+run: "testboot"
+run_type: "isample"
+
+# testbeds are defined in deswl/desmeds/testbed
+dataset:
+  - "SVA1_COADD_SPTE"
+
+# must exist in tiles
+withbands: ["r","i","z"]
+
+# what we will process
+bands:     ["r","i","z"]
+
+# if a testbed, we will only use a subset of the tiles
+# in here
+medsconf: "013"
+
+nper: 100
+
+# new emcee and simplifications
+# new psf
+config: "testboot"
