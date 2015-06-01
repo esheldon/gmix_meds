@@ -56,6 +56,7 @@ def get_gmix_meds_config_file(config):
     return os.path.join(dir, name)
 
 def get_coadd_runs(rc):
+    print("getting full coadd run list")
     dataset=rc['dataset']
 
     if dataset == "testbed":
@@ -115,6 +116,33 @@ def check_meds(meds_files, stats_files, ignore_stats=False):
 
     return True
 
+def read_tile_subset(tfile):
+
+    tfile=os.path.expandvars(tfile)
+    with open(tfile) as fobj:
+        tiles=fobj.readlines()
+
+    tiles=[tile.strip() for tile in tiles]
+    return tiles
+
+def extract_tile_subset(tfile, coadd_runs):
+    print("extracting tile subset")
+
+    tile_subset=read_tile_subset(tfile)
+    print("tile subset size:",len(tile_subset))
+
+    tiles = [ (run.split('_'))[1] for run in coadd_runs]
+
+    keep_runs=[]
+    for i,tile in enumerate(tiles):
+        if tile in tile_subset:
+            keep_runs.append(coadd_runs[i])
+
+    print("kept %d/%d runs" % (len(keep_runs),len(coadd_runs)))
+    assert len(keep_runs)==len(tile_subset),"not all subset tiles matched"
+
+    return keep_runs
+
 def main():
 
     options, args = parser.parse_args(sys.argv[1:])
@@ -133,6 +161,10 @@ def main():
         coadd_runs=args[1:]
     else:
         coadd_runs=get_coadd_runs(runconfig)
+
+    if 'tile_subset' in runconfig:
+        coadd_runs=extract_tile_subset(runconfig['tile_subset'],
+                                       coadd_runs)
 
     df=desdb.files.DESFiles()
 

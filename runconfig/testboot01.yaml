@@ -5,6 +5,8 @@ run_type: "isample"
 dataset:
   - "SVA1_COADD_SPTE"
 
+tile_subset: "$DESDATA/wlpipe/spte-used-tiles/sva1gold_spte_tiles.dat"
+
 # must exist in tiles
 withbands: ["r","i","z"]
 
