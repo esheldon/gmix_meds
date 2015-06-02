@@ -162,9 +162,9 @@ def main():
     else:
         coadd_runs=get_coadd_runs(runconfig)
 
-    if 'tile_subset' in runconfig:
-        coadd_runs=extract_tile_subset(runconfig['tile_subset'],
-                                       coadd_runs)
+        if 'tile_subset' in runconfig:
+            coadd_runs=extract_tile_subset(runconfig['tile_subset'],
+                                           coadd_runs)
 
     df=desdb.files.DESFiles()
 
