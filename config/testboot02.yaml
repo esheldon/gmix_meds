@@ -65,8 +65,7 @@ round_pars:
 isample_pars:
 
     nsample: [500,500]
-    #ifactor: 1.0
-    ifactor: 1.2
+    ifactor: 1.0
     df: 2.1
 
     # assuming 3 bands and log parameters
