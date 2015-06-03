@@ -236,7 +236,6 @@ class MedsFitBootBase(MedsFit):
             data[n('flags_r')][dindex]  = rres['flags']
             data[n('s2n_r')][dindex]    = rres['s2n_r']
             data[n(Tname+'_r')][dindex] = rres['pars'][4]
-            data[n('T_s2n_r')][dindex]  = rres['T_s2n_r']
             data[n('psf_T_r')][dindex]  = rres['psf_T_r']
 
             for sn in stat_names:
@@ -326,7 +325,6 @@ class MedsFitBootBase(MedsFit):
                  #(n('max_flags_r'),'i4'),
                  #(n('max_s2n_r'),'f8'),
                  #(n('max_'+Tname+'_r'),'f8'),
-                 #(n('max_T_s2n_r'),'f8'),
                 
                  (n('s2n_w'),'f8'),
                  (n('chi2per'),'f8'),
@@ -335,7 +333,6 @@ class MedsFitBootBase(MedsFit):
                  (n('flags_r'),'i4'),
                  (n('s2n_r'),'f8'),
                  (n(Tname+'_r'),'f8'),
-                 (n('T_s2n_r'),'f8'),
                  (n('psf_T_r'),'f8'),
                 ]
             
@@ -392,12 +389,10 @@ class MedsFitBootBase(MedsFit):
             #data[n('max_flags_r')] = NO_ATTEMPT
             #data[n('max_s2n_r')] = DEFVAL
             #data[n('max_'+Tname+'_r')] = DEFVAL
-            #data[n('max_T_s2n_r')] = DEFVAL
  
             data[n('flags_r')] = NO_ATTEMPT
             data[n('s2n_r')] = DEFVAL
             data[n(Tname+'_r')] = DEFVAL
-            data[n('T_s2n_r')] = DEFVAL
             data[n('psf_T_r')] = DEFVAL
             
             if self['do_shear']:
@@ -436,9 +431,9 @@ class MedsFitISampleBoot(MedsFitBootBase):
         prior=self['model_pars'][model]['prior']
         self.boot.isample(ipars, prior=prior)
 
+        rpars=self['round_pars']
         self.boot.set_round_s2n(self['max_pars'],
-                                method='sim',
-                                fitter_type='isample')
+                                fitter_type=rpars['fitter_type'])
 
 
     def _add_shear_info(self, model):
@@ -496,8 +491,8 @@ class MedsFitISampleBoot(MedsFitBootBase):
 
         if 's2n_w' in mres:
             rres=self.boot.get_round_result()
-            tup=(mres['s2n_w'],rres['s2n_r'],rres['T_s2n_r'],mres['chi2per'])
-            print("    s2n: %.1f s2n_r: %.1f T_s2n_r: %.3g chi2per: %.3f" % tup)
+            tup=(mres['s2n_w'],rres['s2n_r'],mres['chi2per'])
+            print("    s2n: %.1f s2n_r: %.1f chi2per: %.3f" % tup)
 
 
     def _get_dtype(self):

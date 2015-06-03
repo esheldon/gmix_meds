@@ -217,7 +217,8 @@ def set_fracdev_prior(params):
     import ngmix
     #import great_des
 
-    fname=params['fracdev_prior_file']
+    fname=os.path.expanduser( params['fracdev_prior_file'] )
+    fname=os.path.expandvars( fname )
     print("reading fracdev_prior:",fname)
     data = fitsio.read(fname)
 
