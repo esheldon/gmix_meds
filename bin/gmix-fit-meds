@@ -192,27 +192,26 @@ def set_T_prior(params):
 def set_counts_prior(params, repeat=False):
     import ngmix
 
-
     typ=params['counts_prior_type']
+    pars=params['counts_prior_pars']
+
     if typ == 'flat':
-        if repeat:
-            # we assume this is one that will be repeated
-            pars=params['counts_prior_pars']
-            params['counts_prior']=ngmix.priors.FlatPrior(pars[0], pars[1])
-        else:
-            # assum this is a list of lists
-            plist=[]
-            for pars in params['counts_prior_pars']:
-                cp = ngmix.priors.FlatPrior(pars[0], pars[1])
-                plist.append(cp)
-            params['counts_prior'] = plist
-
+        pclass = ngmix.priors.FlatPrior
     elif typ=='TwoSidedErf':
-        pars=params['counts_prior_pars']
-        params['counts_prior']=ngmix.priors.TwoSidedErf(*pars)
-
+        pclass = ngmix.priors.TwoSidedErf
     else:
-        raise ValueError("bad counts prior type: %s" % counts_prior_type)
+        raise ValueError("bad counts prior type: %s" % typ)
+
+    if repeat:
+        # we assume this is one that will be repeated
+        params['counts_prior']=pclass(*pars)
+    else:
+        # assume this is a list of lists
+        plist=[]
+        for tpars in pars:
+            cp = pclass(*tpars)
+            plist.append(cp)
+        params['counts_prior'] = plist
 
 def set_fracdev_prior(params):
     import ngmix
