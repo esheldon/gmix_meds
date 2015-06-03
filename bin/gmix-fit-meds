@@ -108,11 +108,14 @@ def run_ngmix(meds_files,
     else:
         model_pars=conf['model_pars']
 
-        counts_prior_repeat=conf.get('counts_prior_repeat',False)
         for model,params in model_pars.iteritems():
             set_cen_prior(params)
             set_g_prior(params)
             set_T_prior(params)
+
+            counts_prior_repeat=params.get('counts_prior_repeat',False)
+            if counts_prior_repeat:
+                print("repeating counts prior for model '%s'" % model)
             set_counts_prior(params, repeat=counts_prior_repeat)
 
             #if 'fracdev_prior_run' in params:

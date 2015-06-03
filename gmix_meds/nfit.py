@@ -177,15 +177,15 @@ class MedsFit(dict):
         from ngmix.joint_prior import PriorSimpleSep
         from ngmix.priors import ZDisk2D
 
-        counts_prior_repeat=self.get('counts_prior_repeat',False)
         g_prior_flat=ZDisk2D(1.0)
 
         model_pars=self['model_pars']
 
         for model, params in model_pars.iteritems():
-
+            
             print("loading prior for:",model)
 
+            counts_prior_repeat=params.get('counts_prior_repeat',False)
             cp = params['counts_prior']
             if counts_prior_repeat:
                 cp = [cp]*self['nband']
