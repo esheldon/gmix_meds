@@ -40,7 +40,11 @@ class MedsFitBootBase(MedsFit):
     """
     Use a ngmix bootstrapper
     """
-
+    def __init__(self,*args,**kw):
+        super(MedsFitBootBase,self).__init__(*args,**kw)        
+        self['replace_cov'] = self.get('replace_cov',False)
+        
+        
     def get_bootstrapper(self, model):
         """
         get the bootstrapper for fitting psf through galaxy
@@ -187,7 +191,6 @@ class MedsFitBootBase(MedsFit):
                      prior=prior,
                      ntry=max_pars['ntry'])
 
-        self['replace_cov'] = self.get('replace_cov',False)
         if self['replace_cov']:
             print("        replacing cov")
             boot.try_replace_cov(cov_pars)
