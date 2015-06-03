@@ -187,8 +187,10 @@ class MedsFitBootBase(MedsFit):
                      prior=prior,
                      ntry=max_pars['ntry'])
 
-        print("        replacing cov")
-        boot.try_replace_cov(cov_pars)
+        self['replace_cov'] = self.get('replace_cov',False)
+        if self['replace_cov']:
+            print("        replacing cov")
+            boot.try_replace_cov(cov_pars)
 
 
         #self.boot.set_round_s2n(max_pars,
