@@ -1,0 +1,133 @@
+# bootstrap
+# isample
+
+fitter: "ngmix"
+fitter_class: "isample-comp"
+
+fit_me_galaxy: True
+fit_coadd_galaxy: False
+
+max_box_size: 48
+
+min_weight: 1.0e-4
+
+# SN
+#replacement_flags: "/gpfs/mnt/gpfs01/astro/workarea/desdata/EXTRA/combined-image-flags/sva1_astrom_run1.0.1-badflag+id+sn_stats_flagged_sheldon_psfv3_blacklists.json"
+# spt-e
+replacement_flags: "${DESDATA}/EXTRA/combined-image-flags/sva1_astrom_run1.0.1_stats_flagged_sheldon_psfv3_blacklists.json"
+
+# astrom
+# 2**0 + 2**1 + 2**2 + 2**3 + 2**5 + 2**6 + 2**7 + 2**8 + 2**9
+#  = 1007
+# blacklists
+# 2**(10+0) + 2**(10+1) + 2**(10+2) + 2**(10+3) + 2**(10+4) = (31<<10)
+#  = 31744
+# psf
+# 2**(15+0) + 2**(15+1) + 2**(15+4)
+#  = (19<<15)
+# total
+# 
+# 1007 + (31<<10) + (19<<15)
+#  = 655343
+
+image_flags2check: 655343
+
+use_psf_rerun: True
+psf_rerun_version: "v3"
+
+print_params: True
+
+psf_em_pars:
+    ngauss: 3
+    ntry: 20
+    maxiter: 5000
+    tol: 5.0e-6
+
+
+max_pars:
+    method: 'lm'
+    ntry: 4
+
+    #use_fracdev_grid: False
+    fracdev_range: [-1.2,2.0]
+
+    lm_pars:
+        maxfev: 4000
+
+cov_pars:
+    m: 5
+    h: 1.0e-3
+
+# which result to use to get round pars
+round_pars:
+    fitter_type: 'max'
+
+isample_pars:
+
+    nsample: [500,500]
+    ifactor: 1.0
+    df: 2.1
+
+    # assuming 3 bands and log parameters
+    min_err: [1.0e-4,1.0e-4,
+              1.0e-3,1.0e-3,
+              1.0e-4,
+              1.0e-4,1.0e-4,1.0e-4]
+    max_err: [1.0,1.0,
+              1.0,1.0,
+              1.0,
+              1.0,1.0,1.0]
+
+
+#region: "seg_and_sky"
+region: "cweight-nearest"
+
+use_logpars: True
+model_pars:
+    cm:
+        g_prior_type: "cosmos-sersic"
+
+        #T_prior_type: "TwoSidedErf"
+        #T_prior_pars: [-0.07, 0.03, 1.0e+06, 1.0e+05]
+
+        T_prior_type: "flat"
+        T_prior_pars: [-11.5, 13.8]
+
+        #counts_prior_type: "TwoSidedErf"
+        #counts_prior_pars: [-10.0, 1.0, 1.0e+09, 0.25e+08]
+
+        counts_prior_type: "flat"
+        counts_prior_pars: [ [-11.5, 20.7],
+                             [-11.5, 20.7],
+                             [-11.5, 20.7] ]
+
+        cen_prior_type: "dgauss"
+        cen_prior_pars: [0.27]
+
+        # for now use stuff from great-des
+        fracdev_prior_file: '~esheldon/lensing/great-des/sfit-noisefree-c01/prior/sfit-noisefree-c01-fracdev.fits'
+
+        #fracdev_prior_run: "sfit-noisefree-c01"
+        #fracdev_partype: "fracdev"
+
+fracdev_grid:
+    min: -1.0
+    max:  1.1
+    num:  22
+
+
+do_shear: True
+
+# checkpoint times in minutes, needed for condor in case we pass a batch system
+# limit such as in the condor scavenge.
+# 0 means after the first object
+
+# checkpoints for lsf
+checkpoints: [0,
+              30,60,
+              90,120, 
+              150,180,
+              210,240,
+              270,300,
+              330,360,
+              390,420]

@@ -431,6 +431,8 @@ class RoundModelBurner(dict):
 
         psf_obs=Observation(zeros( (1,1) ), gmix=psf_round)
 
+        # note this is different from roundify in ngmix where
+        # the gmix is the unconvolved one
         new_obs=Observation(im,
                             gmix=gm_round,
                             weight=obs.weight.copy(),
