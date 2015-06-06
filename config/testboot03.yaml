@@ -7,7 +7,7 @@ fitter_class: "isample-comp"
 fit_me_galaxy: True
 fit_coadd_galaxy: False
 
-max_box_size: 48
+max_box_size: 64
 
 min_weight: 1.0e-4
 
