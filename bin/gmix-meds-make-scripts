@@ -60,8 +60,8 @@ def get_coadd_runs(rc):
     dataset=rc['dataset']
 
     if dataset == "testbed":
-        raise RuntimeError("use desmeds for this")
-        runs=desdb.files.get_testbed_runs(rc)
+        import desmeds
+        runs=desmeds.files.get_testbed_runs(rc['testbed']['name'])
     else:
         runs=desdb.files.get_release_runs(dataset, withbands=rc['withbands'])
         print("found",len(runs),"runs")
